@@ -1,0 +1,19 @@
+actors:
+  - id: research-agent-01
+    token_env: RESEARCH_AGENT_TOKEN
+    network:
+      allowed: false
+      destinations: []
+    filesystem:
+      read: true
+      write: workspace_only
+      protected:
+        - protected.txt
+    tools:
+      shell: false
+      external_api: false
+    persistence:
+      session: true
+      cross_session: false
+    shared_channels: []
+operator_token_env: GOV_SUBSTRATE_OPERATOR_TOKEN

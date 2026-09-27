@@ -1,0 +1,13 @@
+services:
+  substrate:
+    environment:
+      GOV_SUBSTRATE_WORKSPACE: /workspace
+    volumes:
+      - workspace:/workspace
+
+  agent:
+    command: python /app/filesystem_probe.py first
+
+volumes:
+  workspace:
+    name: ${LAB_WORKSPACE_VOLUME}

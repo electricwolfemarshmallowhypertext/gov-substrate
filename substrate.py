@@ -9,6 +9,7 @@ import json
 import os
 import secrets
 import sqlite3
+import threading
 import time
 from contextlib import contextmanager
 from pathlib import Path
@@ -18,6 +19,7 @@ import yaml
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel
 
+from filesystem_adapter import MAX_CONTENT, check_target, parts_of, read_text, workspace_snapshot, write_text
 from network_adapter import fetch, origin_and_target
 
 
@@ -53,17 +55,25 @@ def load_registry(path: str | Path) -> dict[str, Any]:
 
 
 class Substrate:
-    def __init__(self, db_path: str | Path, registry: dict[str, Any]):
+    def __init__(self, db_path: str | Path, registry: dict[str, Any],
+                 workspace_root: str | Path | None = None):
         self.db_path = str(db_path)
+        self._execution_lock = threading.RLock()
         self.actors = registry["actors"]
         self.tokens = registry["tokens"]
         self.operator_token = registry["operator_token"]
-        self.registry_hash = digest({
+        self.workspace_root = Path(workspace_root).resolve(strict=True) if workspace_root else None
+        if self.workspace_root is not None and not self.workspace_root.is_dir():
+            raise ValueError("workspace root must be a directory")
+        registry_material = {
             "actors": self.actors,
             "actor_token_hashes": {actor: hashlib.sha256(token.encode()).hexdigest()
                                    for token, actor in self.tokens.items()},
             "operator_token_hash": hashlib.sha256(self.operator_token.encode()).hexdigest(),
-        })
+        }
+        if self.workspace_root is not None:
+            registry_material["workspace_root"] = str(self.workspace_root)
+        self.registry_hash = digest(registry_material)
         with self._db() as db:
             db.executescript("""
                 CREATE TABLE IF NOT EXISTS state (
@@ -102,14 +112,16 @@ class Substrate:
         finally:
             db.close()
 
-    @staticmethod
-    def _snapshot(db: sqlite3.Connection) -> dict[str, Any]:
+    def _snapshot(self, db: sqlite3.Connection) -> dict[str, Any]:
         state = [dict(r) for r in db.execute(
             "SELECT namespace,key,value FROM state ORDER BY namespace,key")]
         sessions = {r["id"]: {"actor": r["actor"], "token_hash": r["token_hash"],
                               "active": bool(r["active"])}
                     for r in db.execute("SELECT * FROM sessions ORDER BY id")}
-        return {"state": state, "sessions": sessions}
+        snapshot = {"state": state, "sessions": sessions}
+        if self.workspace_root is not None:
+            snapshot["workspace"] = workspace_snapshot(self.workspace_root)
+        return snapshot
 
     @staticmethod
     def _event_fields(row: sqlite3.Row) -> dict[str, Any]:
@@ -127,7 +139,7 @@ class Substrate:
             if json.loads(row["policy"]).get("registry_hash") != self.registry_hash:
                 raise IntegrityError("capability registry changed without an audited migration")
             previous = row["event_hash"]
-            if row["decision"] in ("allow", "override"):
+            if row["decision"] in ("allow", "override", "succeeded"):
                 expected = json.loads(row["state_after"])
         if expected is None:
             raise IntegrityError("audit genesis missing")
@@ -162,6 +174,10 @@ class Substrate:
         return hmac.compare_digest(token, self.operator_token)
 
     def create_session(self, actor: str) -> dict[str, Any]:
+        with self._execution_lock:
+            return self._create_session(actor)
+
+    def _create_session(self, actor: str) -> dict[str, Any]:
         session_id, token = secrets.token_hex(16), secrets.token_urlsafe(32)
         with self._db() as db:
             db.execute("BEGIN IMMEDIATE")
@@ -225,9 +241,32 @@ class Substrate:
             if origin not in destinations:
                 return "deny", "destination_not_allowed", None
             return "allow", "destination_granted", None
-        if kind == "filesystem.write":
-            rule = "filesystem_write_disabled" if caps["filesystem"]["write"] is False else "filesystem_adapter_absent"
-            return "deny", rule, None
+        if kind in ("filesystem.read", "filesystem.write"):
+            capability = caps["filesystem"]
+            if kind == "filesystem.read" and not capability["read"]:
+                return "deny", "filesystem_read_disabled", None
+            if kind == "filesystem.write" and capability["write"] != "workspace_only":
+                return "deny", "filesystem_write_disabled", None
+            if self.workspace_root is None:
+                return "deny", "filesystem_adapter_absent", None
+            path = action.get("path")
+            try:
+                parts_of(path)
+            except ValueError:
+                return "deny", "invalid_path", None
+            if kind == "filesystem.write":
+                protected = capability.get("protected", [])
+                if any(path == item or (item.endswith("/") and path.startswith(item))
+                       for item in protected):
+                    return "deny", "protected_path", None
+                content = action.get("content")
+                if not isinstance(content, str) or len(content.encode("utf-8")) > MAX_CONTENT:
+                    return "deny", "invalid_content", None
+            try:
+                check_target(self.workspace_root, path)
+            except ValueError:
+                return "deny", "path_escape", None
+            return "allow", "workspace_scope_granted", None
         if kind == "tool.invoke":
             tool = action.get("tool")
             enabled = isinstance(tool, str) and caps["tools"].get(tool) is True
@@ -237,6 +276,10 @@ class Substrate:
         return "deny", "unknown_action", None
 
     def propose(self, actor: str, session_token: str, action: dict[str, Any]) -> dict[str, Any]:
+        with self._execution_lock:
+            return self._propose(actor, session_token, action)
+
+    def _propose(self, actor: str, session_token: str, action: dict[str, Any]) -> dict[str, Any]:
         started = time.perf_counter()
         with self._db() as db:
             db.execute("BEGIN IMMEDIATE")
@@ -261,7 +304,12 @@ class Substrate:
                                    (namespace, action["key"])).fetchone()
                 value = json.loads(found[0]) if found else None
             after = self._snapshot(db)
-            event_id = self._append(db, actor, action, {"rule": rule}, decision, before, after,
+            logged_action = action
+            if action.get("kind") == "filesystem.write" and isinstance(action.get("content"), str):
+                content = action["content"].encode("utf-8")
+                logged_action = {"kind": "filesystem.write", "path": action.get("path"),
+                                 "bytes": len(content), "content_sha256": hashlib.sha256(content).hexdigest()}
+            event_id = self._append(db, actor, logged_action, {"rule": rule}, decision, before, after,
                                     elapsed_ms=(time.perf_counter() - started) * 1000)
             db.commit()
         result = {"event_id": event_id, "decision": decision, "reason": rule}
@@ -288,9 +336,51 @@ class Substrate:
                     elapsed_ms=(time.perf_counter() - started) * 1000,
                 )
                 db.commit()
+        if decision == "allow" and action["kind"] in ("filesystem.read", "filesystem.write"):
+            try:
+                if action["kind"] == "filesystem.read":
+                    response = read_text(self.workspace_root, action["path"])
+                    result["content"] = response["content"]
+                else:
+                    response = write_text(self.workspace_root, action["path"], action["content"])
+                outcome = {key: response[key] for key in ("bytes", "sha256")}
+                result["outcome"] = "succeeded"
+            except (OSError, ValueError, UnicodeError) as exc:
+                outcome = {"error": type(exc).__name__, "detail": str(exc)[:200]}
+                result["outcome"] = "failed"
+                result["error"] = outcome["detail"]
+            with self._db() as db:
+                db.execute("BEGIN IMMEDIATE")
+                current = self._snapshot(db)
+                expected_current = after
+                if result["outcome"] == "succeeded" and action["kind"] == "filesystem.write":
+                    entries = [entry for entry in after["workspace"]["entries"]
+                               if entry["path"] != action["path"]]
+                    entries.append({"path": action["path"], "kind": "file",
+                                    "sha256": outcome["sha256"], "size": outcome["bytes"]})
+                    expected_current = {**after, "workspace": {
+                        **after["workspace"],
+                        "entries": sorted(entries, key=lambda entry: entry["path"]),
+                    }}
+                if result["outcome"] == "succeeded" and current != expected_current:
+                    outcome = {"error": "state_integrity"}
+                    result["outcome"] = "failed"
+                    result["error"] = "state_integrity"
+                    result.pop("content", None)
+                result["outcome_event_id"] = self._append(
+                    db, actor, {"kind": "filesystem.result", "request_event_id": event_id,
+                                "path": action["path"], **outcome},
+                    {"rule": "adapter_result"}, result["outcome"], after, current,
+                    elapsed_ms=(time.perf_counter() - started) * 1000,
+                )
+                db.commit()
         return result
 
     def override(self, event_id: int, reason: str) -> dict[str, Any]:
+        with self._execution_lock:
+            return self._override(event_id, reason)
+
+    def _override(self, event_id: int, reason: str) -> dict[str, Any]:
         started = time.perf_counter()
         with self._db() as db:
             db.execute("BEGIN IMMEDIATE")
@@ -341,6 +431,10 @@ class Substrate:
         return {"event_id": override_id, "decision": "override", "override_of": event_id}
 
     def audit(self) -> list[dict[str, Any]]:
+        with self._execution_lock:
+            return self._audit()
+
+    def _audit(self) -> list[dict[str, Any]]:
         with self._db() as db:
             self._verify(db)
             return [{**dict(row), "action": json.loads(row["action"]),
@@ -350,6 +444,10 @@ class Substrate:
                     for row in db.execute("SELECT * FROM events ORDER BY id")]
 
     def health(self) -> dict[str, Any]:
+        with self._execution_lock:
+            return self._health()
+
+    def _health(self) -> dict[str, Any]:
         with self._db() as db:
             try:
                 expected = self._verify(db)
@@ -454,7 +552,8 @@ def create_app(substrate: Substrate) -> FastAPI:
 
 def app_from_env() -> FastAPI:
     registry = load_registry(os.environ.get("GOV_SUBSTRATE_REGISTRY", "registry.example.yaml"))
-    return create_app(Substrate(os.environ.get("GOV_SUBSTRATE_DB", "substrate.db"), registry))
+    return create_app(Substrate(os.environ.get("GOV_SUBSTRATE_DB", "substrate.db"), registry,
+                                os.environ.get("GOV_SUBSTRATE_WORKSPACE")))
 
 
 app = app_from_env() if os.environ.get("GOV_SUBSTRATE_AUTOSTART") == "1" else FastAPI()

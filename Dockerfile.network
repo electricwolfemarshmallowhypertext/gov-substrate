@@ -1,8 +1,10 @@
 FROM python:3.12-slim
 
 WORKDIR /app
-COPY pyproject.toml substrate.py network_adapter.py ./
+COPY pyproject.toml substrate.py network_adapter.py filesystem_adapter.py ./
 RUN pip install --no-cache-dir .
 COPY tests/network_probe.py /app/network_probe.py
+COPY tests/filesystem_probe.py /app/filesystem_probe.py
+COPY tests/filesystem_tool.py /app/filesystem_tool.py
 
 ENV PYTHONDONTWRITEBYTECODE=1

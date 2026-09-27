@@ -19,7 +19,8 @@ def test_agent_network_isolation_and_registry_restart(tmp_path):
     registry = tmp_path / "network_registry.yaml"
     registry.write_text(FIXTURE_REGISTRY.read_text(encoding="utf-8"), encoding="utf-8")
     project = "govsubstratem2" + uuid.uuid4().hex[:10]
-    env = {**os.environ, "LAB_REGISTRY_PATH": str(registry), "LAB_IMAGE_TAG": project}
+    env = {key: value for key, value in os.environ.items() if not key.endswith("_API_KEY")}
+    env.update(LAB_REGISTRY_PATH=str(registry), LAB_IMAGE_TAG=project)
     prefix = ["docker", "compose", "-p", project, "-f", str(COMPOSE)]
 
     def compose(*args):
