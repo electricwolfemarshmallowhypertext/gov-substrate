@@ -49,7 +49,7 @@ Run `python -m pytest -q --basetemp .pytest_tmp`. The suite makes these assertio
 
 | Scenario | Expected observation | Test |
 | --- | --- | --- |
-| Network requested despite policy denying it | Denied and logged; no network adapter runs | `test_network_policy_blocks_reachable_underlay` |
+| Local TCP reachable underneath while policy denies network | Direct local TCP connection succeeds in the test process; mediated network proposal is denied and logged; no network adapter runs | `test_network_policy_blocks_reachable_underlay` |
 | Hidden cross-session memory | Old session token invalid; new session cannot read old session state | `test_hidden_cross_session_memory_is_not_readable` |
 | Credential scope expansion | Denied and logged | `test_credential_scope_expansion_is_denied` |
 | Cross-agent shared state | Reader denied without channel membership | `test_cross_agent_state_requires_explicit_shared_channel` |

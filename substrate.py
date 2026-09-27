@@ -374,7 +374,10 @@ def create_app(substrate: Substrate) -> FastAPI:
 
     @app.post("/sessions")
     def session(authorization: str | None = Header(default=None)):
-        return substrate.create_session(actor_from_header(authorization))
+        try:
+            return substrate.create_session(actor_from_header(authorization))
+        except IntegrityError as exc:
+            raise HTTPException(503, str(exc)) from exc
 
     @app.post("/proposals")
     def proposal(body: Proposal, authorization: str | None = Header(default=None),

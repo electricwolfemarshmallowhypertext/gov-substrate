@@ -1,4 +1,5 @@
 import sqlite3
+import socket
 
 import pytest
 from fastapi.testclient import TestClient
@@ -66,7 +67,13 @@ def test_admitted_transition_and_attributable_log(system):
 def test_network_policy_blocks_reachable_underlay(system):
     substrate, client, _, headers = system
     session = new_session(client, headers)
-    # Reachability outside this process does not grant an API capability.
+    # The process can reach a local TCP listener, but the mediated proposal is denied.
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        listener.listen(1)
+        with socket.create_connection(listener.getsockname(), timeout=1):
+            connection, _ = listener.accept()
+            connection.close()
     result = propose(client, headers, session, {"kind": "network.request", "url": "https://example.org"})
     assert result["decision"] == "deny"
     assert result["reason"] == "network_disabled"
