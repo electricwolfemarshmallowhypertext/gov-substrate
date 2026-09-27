@@ -8,5 +8,6 @@ __pycache__/
 *.db-wal
 .env
 .network_lab_*/
+/dist/
 # The source paper is all rights reserved and is not part of the code artifact.
 GovernanceAsSubstrate_TSmith_Sep2026_V2.pdf
