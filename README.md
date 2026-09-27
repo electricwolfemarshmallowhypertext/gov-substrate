@@ -92,7 +92,7 @@ Set `RUN_LIVE_NETWORK_TESTS=1` as well to exercise an explicitly allowed `https:
 
 ### Optional OpenAI smoke check
 
-After the deterministic suite passes, a trusted host-side driver can make three bounded `gpt-6-luna` tool-call requests for permitted read, permitted write, and protected write. This check is opt-in and incurs API usage. Install `python -m pip install -e '.[llm]'`, then run `python tests/openai_filesystem_smoke.py` in an interactive terminal. The driver prompts for the API key without echo and removes any inherited `OPENAI_API_KEY` value. It does not pass the key to Docker; the agent container receives only its substrate actor token and the substrate socket. The script prints decision and token usage for each case. Keep the key out of repository files and shell command arguments.
+After the deterministic suite passes, a trusted host-side driver can make three bounded `gpt-6-luna` tool-call requests for permitted read, permitted write, and protected write. This check is opt-in and incurs API usage. Install `python -m pip install -e '.[llm]'`, then run `python tests/openai_filesystem_smoke.py` in an interactive terminal. At the hidden prompt, paste only the raw key value, without a PowerShell assignment or quotes. The driver removes any inherited `OPENAI_API_KEY` value and does not pass the key to Docker; the agent container receives only its substrate actor token and the substrate socket. The script prints decision and token usage for each case. Keep the key out of repository files and shell command arguments.
 
 ### Scope and limits
 

@@ -36,9 +36,11 @@ CASES = [
 
 def main():
     os.environ.pop("OPENAI_API_KEY", None)
-    key = getpass.getpass("OpenAI API key (input hidden): ")
+    key = getpass.getpass("OpenAI API key value only (input hidden): ").strip()
     if not key:
         raise SystemExit("An OpenAI API key is required for this opt-in run.")
+    if not key.startswith("sk-") or "=" in key or any(character.isspace() for character in key):
+        raise SystemExit("Paste only the raw API key value, without a shell command or quotes.")
     from openai import OpenAI
 
     project = "govsubstratellm" + uuid.uuid4().hex[:10]
