@@ -1,0 +1,9 @@
+.git
+.pytest_cache
+.pytest_tmp*
+.network_lab_*
+__pycache__
+*.db
+*.db-*
+.env
+GovernanceAsSubstrate_TSmith_Sep2026_V2.pdf

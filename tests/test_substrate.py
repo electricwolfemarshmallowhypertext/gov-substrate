@@ -80,6 +80,33 @@ def test_network_policy_blocks_reachable_underlay(system):
     assert substrate.audit()[-1]["state_before"] == substrate.audit()[-1]["state_after"]
 
 
+def test_admitted_network_failure_has_outcome_event(tmp_path):
+    network = {"allowed": True, "destinations": ["http://127.0.0.1:9"]}
+    actor = {"network": network, "filesystem": {"read": False, "write": False},
+             "tools": {"shell": False, "external_api": False},
+             "persistence": {"session": True, "cross_session": False},
+             "shared_channels": []}
+    substrate = Substrate(tmp_path / "network.db", {
+        "actors": {"agent-a": actor}, "tokens": {"agent-a-secret": "agent-a"},
+        "operator_token": "human-secret"})
+    client = TestClient(create_app(substrate))
+    headers = {"Authorization": "Bearer agent-a-secret"}
+    session = client.post("/sessions", headers=headers).json()["session_token"]
+    headers["X-Session-Token"] = session
+    result = client.post("/proposals", headers=headers, json={"action": {
+        "kind": "network.request", "url": "http://127.0.0.1:9/"}}).json()
+    assert result["decision"] == "allow"
+    assert result["outcome"] == "failed"
+    audit = substrate.audit()
+    assert audit[-1]["id"] == result["outcome_event_id"]
+    assert audit[-1]["decision"] == "failed"
+    assert audit[-1]["action"]["request_event_id"] == result["event_id"]
+    denied = client.post("/proposals", headers=headers, json={"action": {
+        "kind": "network.request", "url": "http://127.0.0.1:10/"}}).json()
+    assert denied["reason"] == "destination_not_allowed"
+    assert "outcome_event_id" not in denied
+
+
 def test_hidden_cross_session_memory_is_not_readable(system):
     _, client, _, headers = system
     old_session = new_session(client, headers)

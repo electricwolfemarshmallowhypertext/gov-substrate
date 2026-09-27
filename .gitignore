@@ -1,11 +1,12 @@
 __pycache__/
 .pytest_cache/
-.pytest_tmp/
+.pytest_tmp*/
 *.egg-info/
 .venv/
 *.db
 *.db-shm
 *.db-wal
 .env
+.network_lab_*/
 # The source paper is all rights reserved and is not part of the code artifact.
 GovernanceAsSubstrate_TSmith_Sep2026_V2.pdf

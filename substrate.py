@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import http.client
 import json
 import os
 import secrets
@@ -16,6 +17,8 @@ from typing import Any
 import yaml
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel
+
+from network_adapter import fetch, origin_and_target
 
 
 def canonical(value: Any) -> str:
@@ -210,8 +213,18 @@ class Substrate:
                 return "deny", "invalid_scope", None
             return "allow", "capability_granted", namespace
         if kind == "network.request":
-            rule = "network_disabled" if not caps["network"]["allowed"] else "network_adapter_absent"
-            return "deny", rule, None
+            network = caps["network"]
+            if not network["allowed"]:
+                return "deny", "network_disabled", None
+            try:
+                origin = origin_and_target(action.get("url"))[0]
+                destinations = {origin_and_target(item)[0]
+                                for item in network.get("destinations", [])}
+            except (TypeError, ValueError):
+                return "deny", "invalid_destination", None
+            if origin not in destinations:
+                return "deny", "destination_not_allowed", None
+            return "allow", "destination_granted", None
         if kind == "filesystem.write":
             rule = "filesystem_write_disabled" if caps["filesystem"]["write"] is False else "filesystem_adapter_absent"
             return "deny", rule, None
@@ -254,6 +267,27 @@ class Substrate:
         result = {"event_id": event_id, "decision": decision, "reason": rule}
         if decision == "allow" and action["kind"] == "state.read":
             result["value"] = value
+        if decision == "allow" and action["kind"] == "network.request":
+            try:
+                response = fetch(action["url"], self.actors[actor]["network"]["destinations"])
+                outcome = {key: response[key] for key in
+                           ("status", "bytes", "body_sha256", "origin", "resolved_ip")}
+                result["response"] = {"status": response["status"], "body": response["body"]}
+                result["outcome"] = "succeeded"
+            except (OSError, ValueError, http.client.HTTPException) as exc:
+                outcome = {"error": type(exc).__name__, "detail": str(exc)[:200]}
+                result["outcome"] = "failed"
+                result["error"] = outcome["detail"]
+            with self._db() as db:
+                db.execute("BEGIN IMMEDIATE")
+                snapshot = self._snapshot(db)
+                result["outcome_event_id"] = self._append(
+                    db, actor, {"kind": "network.result", "request_event_id": event_id,
+                                "url": action["url"], **outcome},
+                    {"rule": "adapter_result"}, result["outcome"], snapshot, snapshot,
+                    elapsed_ms=(time.perf_counter() - started) * 1000,
+                )
+                db.commit()
         return result
 
     def override(self, event_id: int, reason: str) -> dict[str, Any]:

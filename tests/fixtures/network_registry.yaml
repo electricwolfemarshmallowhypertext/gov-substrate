@@ -2,13 +2,15 @@ actors:
   - id: research-agent-01
     token_env: RESEARCH_AGENT_TOKEN
     network:
-      allowed: false
-      destinations: []
+      allowed: true
+      destinations:
+        - http://fixture:8000
+        - https://example.com
     filesystem:
-      read: true
-      write: workspace_only
+      read: false
+      write: false
     tools:
-      shell: true
+      shell: false
       external_api: false
     persistence:
       session: true

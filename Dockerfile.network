@@ -1,0 +1,8 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+COPY pyproject.toml substrate.py network_adapter.py ./
+RUN pip install --no-cache-dir .
+COPY tests/network_probe.py /app/network_probe.py
+
+ENV PYTHONDONTWRITEBYTECODE=1
