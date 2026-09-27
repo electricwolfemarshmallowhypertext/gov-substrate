@@ -1,5 +1,6 @@
 """Optional, bounded model smoke check; OpenAI credentials stay on this host."""
 
+import getpass
 import json
 import os
 import subprocess
@@ -34,9 +35,10 @@ CASES = [
 
 
 def main():
-    key = os.environ.get("OPENAI_API_KEY")
+    os.environ.pop("OPENAI_API_KEY", None)
+    key = getpass.getpass("OpenAI API key (input hidden): ")
     if not key:
-        raise SystemExit("Set OPENAI_API_KEY in the trusted host process before this opt-in run.")
+        raise SystemExit("An OpenAI API key is required for this opt-in run.")
     from openai import OpenAI
 
     project = "govsubstratellm" + uuid.uuid4().hex[:10]
