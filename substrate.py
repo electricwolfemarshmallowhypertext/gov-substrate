@@ -14,6 +14,7 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qsl
 
 import yaml
 from fastapi import FastAPI, Header, HTTPException
@@ -70,6 +71,9 @@ class Substrate:
             raise ValueError("all actors must use the same filesystem authority model")
         self.scoped_filesystem = all(scoped)
         for actor in self.actors.values():
+            sensitive_access = actor.get("data", {}).get("sensitive_access")
+            if sensitive_access is not None and type(sensitive_access) is not bool:
+                raise ValueError("sensitive_access must be a boolean")
             if self.scoped_filesystem:
                 scopes = actor["filesystem"]["scopes"]
                 if not isinstance(scopes, dict):
@@ -86,6 +90,10 @@ class Substrate:
                         len(channels) != len(set(channels))):
                     raise ValueError("invalid shared file channels")
             network = actor["network"]
+            if sensitive_access is True and not self.scoped_filesystem:
+                raise ValueError("sensitive actors require scoped filesystem authority")
+            if sensitive_access is True and "services" not in network:
+                raise ValueError("sensitive actors require classified network services")
             if "services" in network:
                 if network.get("destinations"):
                     raise ValueError("service policy cannot mix broad destinations")
@@ -104,12 +112,18 @@ class Substrate:
                         raise ValueError("service origins must be unique and path-free")
                     seen.add(origin)
                     mode = service.get("mode")
-                    if mode == "terminal":
+                    if mode in ("terminal", "publication"):
                         paths = service.get("paths")
                         if (not isinstance(paths, list) or not paths or
                                 any(not isinstance(path, str) or not path.startswith("/")
                                     for path in paths) or len(paths) != len(set(paths))):
-                            raise ValueError("terminal services require exact paths")
+                            raise ValueError("terminal and publication services require exact paths")
+                        if mode == "publication" and sensitive_access is None:
+                            raise ValueError("publication requires explicit sensitive_access classification")
+                        if service.get("egress", "external") not in ("internal", "external"):
+                            raise ValueError("invalid service egress classification")
+                        if mode == "publication" and service.get("egress", "external") != "external":
+                            raise ValueError("publication service must be external")
                     elif mode != "delegated":
                         raise ValueError("unknown service mode")
         registry_material = {
@@ -285,6 +299,8 @@ class Substrate:
                 channel = action.get("channel")
                 if not isinstance(channel, str) or channel not in caps.get("shared_channels", []):
                     return "deny", "shared_channel_disabled", None
+                if kind == "state.write" and caps.get("data", {}).get("sensitive_access") is True:
+                    return "deny", "sensitive_shared_write_disabled", None
                 namespace = f"shared:{channel}"
             else:
                 return "deny", "invalid_scope", None
@@ -320,10 +336,26 @@ class Substrate:
                 if len(matched) != 1:
                     return "deny", "invalid_service_policy", None
                 service = matched[0]
+                if (caps.get("data", {}).get("sensitive_access") is True and
+                        service.get("egress", "external") != "internal"):
+                    return "deny", "sensitive_external_egress_disabled", None
                 if service.get("mode") == "terminal":
                     if target not in service.get("paths", []):
                         return "deny", "service_route_not_allowed", None
                     return "allow", "terminal_service_granted", None
+                if service.get("mode") == "publication":
+                    path, separator, query = target.partition("?")
+                    try:
+                        parameters = parse_qsl(query, keep_blank_values=False, strict_parsing=True)
+                    except ValueError:
+                        return "deny", "invalid_publication_request", None
+                    if (path not in service["paths"] or not separator or
+                            len(parameters) != 1 or parameters[0][0] != "data" or
+                            not parameters[0][1]):
+                        return "deny", "invalid_publication_request", None
+                    if network.get("publication") is not True:
+                        return "deny", "publication_disabled", None
+                    return "allow", "publication_granted", None
                 if service.get("mode") == "delegated":
                     return "deny", "delegated_service_unmediated", None
                 return "deny", "invalid_service_policy", None
@@ -340,6 +372,9 @@ class Substrate:
                     channel = action.get("channel")
                     if not isinstance(channel, str) or channel not in grant.get("channels", []):
                         return "deny", "shared_channel_disabled", None
+                    if (kind == "filesystem.write" and
+                            caps.get("data", {}).get("sensitive_access") is True):
+                        return "deny", "sensitive_shared_write_disabled", None
                 else:
                     channel = None
                 operation = "read" if kind == "filesystem.read" else "write"
@@ -411,6 +446,19 @@ class Substrate:
                 value = json.loads(found[0]) if found else None
             after = self._snapshot(db)
             logged_action = action
+            if action.get("kind") == "network.request" and "services" in self.actors[actor]["network"]:
+                url = action.get("url")
+                try:
+                    logged_origin = origin_and_target(url)[0]
+                except (TypeError, ValueError):
+                    logged_origin = None
+                logged_action = {"kind": "network.request", "origin": logged_origin,
+                                 "url_sha256": digest(url)}
+            if (action.get("kind") == "state.write" and action.get("scope") == "shared" and
+                    self.actors[actor].get("data", {}).get("sensitive_access") is True):
+                logged_action = {"kind": "state.write", "scope": "shared",
+                                 "channel": action.get("channel"), "key": action.get("key"),
+                                 "value_sha256": digest(action.get("value"))}
             if action.get("kind") == "filesystem.write" and isinstance(action.get("content"), str):
                 content = action["content"].encode("utf-8")
                 logged_action = {"kind": "filesystem.write", "path": action.get("path"),
@@ -430,7 +478,7 @@ class Substrate:
                 network = self.actors[actor]["network"]
                 destinations = list(network.get("destinations", []))
                 destinations.extend(service["origin"] for service in network.get("services", [])
-                                    if service.get("mode") == "terminal")
+                                    if service.get("mode") in ("terminal", "publication"))
                 response = fetch(action["url"], destinations)
                 outcome = {key: response[key] for key in
                            ("status", "bytes", "body_sha256", "origin", "resolved_ip")}
@@ -445,7 +493,9 @@ class Substrate:
                 snapshot = self._snapshot(db)
                 result["outcome_event_id"] = self._append(
                     db, actor, {"kind": "network.result", "request_event_id": event_id,
-                                "url": action["url"], **outcome},
+                                **({"url_sha256": digest(action["url"])}
+                                   if "services" in self.actors[actor]["network"]
+                                   else {"url": action["url"]}), **outcome},
                     {"rule": "adapter_result"}, result["outcome"], snapshot, snapshot,
                     elapsed_ms=(time.perf_counter() - started) * 1000,
                 )

@@ -32,10 +32,13 @@ The frozen `v0.3.0` baseline passed 12 deterministic tests: ten local state/API 
 
 The [baseline containment evaluation](docs/Containment-Evaluation.md) exposed three gaps through allowed shared surfaces. The [scoped-authority replay](docs/Scoped-Authority-Evaluation.md) checks actor-specific files, file lifetimes, and fail-closed treatment of a delegated relay. No paid model was used for the replay.
 
+The [sensitive-data egress evaluation](docs/Sensitive-Data-Egress-Evaluation.md) tests whether an actor with private-data access can publish through an otherwise allowed service. The local publisher receives only public-actor data.
+
 ## Read more
 
 - [Substrate Reference Architecture](docs/Substrate-Reference-Architecture.md) — implementation, test protocol, and limitations.
 - [Scoped Authority Evaluation](docs/Scoped-Authority-Evaluation.md) — baseline comparison, replay, and limits.
+- [Sensitive-Data Egress Evaluation](docs/Sensitive-Data-Egress-Evaluation.md) — publication authority and local-model replay.
 - [Governance as Substrate: Engineering Patterns for Resilient Collective Systems, V2](https://doi.org/10.5281/zenodo.23002435) — research framework.
 
 ## License
