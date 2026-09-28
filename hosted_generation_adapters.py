@@ -25,9 +25,11 @@ class OpenAITextAdapter:
     model: str
     max_output_tokens: int
     max_context_bytes: int = 32_768
+    service_id: str = "openai"
 
     def __post_init__(self):
-        if not self.model or self.max_output_tokens <= 0 or self.max_context_bytes <= 0:
+        if (not self.model or self.max_output_tokens <= 0 or
+                self.max_context_bytes <= 0 or not self.service_id):
             raise ValueError("Model and positive request limits are required")
 
     def generate(self, inputs: tuple[SealedInput, ...]) -> str:
@@ -61,9 +63,11 @@ class AnthropicTextAdapter:
     model: str
     max_output_tokens: int
     max_context_bytes: int = 32_768
+    service_id: str = "anthropic"
 
     def __post_init__(self):
-        if not self.model or self.max_output_tokens <= 0 or self.max_context_bytes <= 0:
+        if (not self.model or self.max_output_tokens <= 0 or
+                self.max_context_bytes <= 0 or not self.service_id):
             raise ValueError("Model and positive request limits are required")
 
     def generate(self, inputs: tuple[SealedInput, ...]) -> str:

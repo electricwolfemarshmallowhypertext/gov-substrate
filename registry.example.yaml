@@ -18,3 +18,6 @@ actors:
       cross_session: false
     shared_channels: []
 operator_token_env: GOV_SUBSTRATE_OPERATOR_TOKEN
+# Hosted generation defaults to deny. An audited registry migration is required
+# before adding a grant, for example: openai: {max_classification: public}.
+providers: {}

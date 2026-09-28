@@ -2,8 +2,9 @@
 
 Free-form text generation now uses a sealed, one-use context manifest. An
 authenticated actor proposes `generation.prepare` with an ordered, nonempty
-list of governed input object IDs. The request accepts no prompt, history,
-output text, classification, or parent fields. Task instructions must be
+list of governed input object IDs and, for hosted generation, a provider ID.
+The request accepts no prompt, history, output text, classification, or parent
+fields. Task instructions must be
 imported as governed objects and included in that input list.
 
 The substrate checks that the actor may read every input, resolves immutable

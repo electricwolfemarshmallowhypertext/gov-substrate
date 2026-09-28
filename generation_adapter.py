@@ -17,16 +17,23 @@ class SealedInput:
 
 
 class GenerationAdapter(Protocol):
+    service_id: str | None
     def generate(self, inputs: tuple[SealedInput, ...]) -> str: ...
 
 
 def claim_sealed_inputs(client, generation_id: str,
-                        operator_token: str) -> tuple[SealedInput, ...]:
+                        operator_token: str,
+                        service_id: str | None = None) -> tuple[SealedInput, ...]:
     headers = {"Authorization": f"Bearer {operator_token}"}
+    request = {"generation_id": generation_id}
+    if service_id is not None:
+        request["provider"] = service_id
     claim = client.post("/generations/claim", headers=headers,
-                        json={"generation_id": generation_id})
+                        json=request)
     if claim.status_code != 200 or claim.json().get("decision") != "allow":
         raise RuntimeError("Sealed generation context could not be claimed")
+    if claim.json().get("provider") != service_id:
+        raise RuntimeError("Sealed generation provider mismatch")
 
     inputs: list[SealedInput] = []
     for source in claim.json()["inputs"]:
@@ -51,12 +58,16 @@ def complete_generated_text(client, generation_id: str,
 
 def run_with_adapter(client, generation_id: str, operator_token: str,
                      adapter: GenerationAdapter) -> dict:
-    inputs = claim_sealed_inputs(client, generation_id, operator_token)
+    if not hasattr(adapter, "service_id"):
+        raise RuntimeError("Generation adapter must declare its service")
+    inputs = claim_sealed_inputs(client, generation_id, operator_token,
+                                 adapter.service_id)
     return complete_generated_text(client, generation_id, operator_token,
                                    adapter.generate(inputs))
 
 
 class SubprocessGenerationAdapter:
+    service_id = None
     def __init__(self, worker_command: list[str], worker_environment=None):
         self.worker_command = worker_command
         self.worker_environment = worker_environment

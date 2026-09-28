@@ -52,7 +52,9 @@ def boundary(tmp_path):
              "shared_channels": []}
     substrate = Substrate(tmp_path / "hosted-generation.db", {
         "actors": {"agent-a": actor}, "tokens": {"agent-token": "agent-a"},
-        "operator_token": "operator-token"})
+        "operator_token": "operator-token", "providers": {
+            "openai": {"max_classification": "private"},
+            "anthropic": {"max_classification": "private"}}})
     client = TestClient(create_app(substrate))
     operator = {"Authorization": "Bearer operator-token"}
     agent = {"Authorization": "Bearer agent-token"}
@@ -66,10 +68,12 @@ def boundary(tmp_path):
         assert response.status_code == 200
         return response.json()["object_id"]
 
-    def prepare(input_ids):
+    def prepare(input_ids, provider=None):
+        action = {"kind": "generation.prepare", "input_ids": input_ids}
+        if provider is not None:
+            action["provider"] = provider
         response = client.post("/proposals", headers=agent,
-                               json={"action": {"kind": "generation.prepare",
-                                                "input_ids": input_ids}}).json()
+                               json={"action": action}).json()
         assert response["decision"] == "allow", response
         return response["generation_id"]
 
@@ -86,11 +90,11 @@ def test_hosted_provider_inherits_sealed_classification_and_exact_parents(bounda
     adapter = (OpenAITextAdapter(sdk, "explicit-openai-model", 128) if provider == "openai"
                else AnthropicTextAdapter(sdk, "explicit-anthropic-model", 128))
 
-    private_output = run_with_adapter(client, prepare([prompt, private]),
+    private_output = run_with_adapter(client, prepare([prompt, private], provider),
                                       "operator-token", adapter)
     assert private_output["classification"] == "private"
     assert private_output["parents"] == [prompt, private]
-    public_output = run_with_adapter(client, prepare([prompt, public]),
+    public_output = run_with_adapter(client, prepare([prompt, public], provider),
                                      "operator-token", adapter)
     assert public_output["classification"] == "public"
     assert public_output["parents"] == [prompt, public]
@@ -121,7 +125,7 @@ def test_unsupported_input_fails_before_provider_call(boundary, provider):
     adapter = (OpenAITextAdapter(sdk, "model", 128) if provider == "openai"
                else AnthropicTextAdapter(sdk, "model", 128))
     with pytest.raises(RuntimeError, match="governed text only"):
-        run_with_adapter(client, prepare([image]), "operator-token", adapter)
+        run_with_adapter(client, prepare([image], provider), "operator-token", adapter)
     assert sdk.calls == []
 
 
@@ -133,7 +137,7 @@ def test_unexpected_provider_action_never_completes(boundary):
         status="completed", output_text="untrusted text",
         output=[SimpleNamespace(type="function_call")])
     with pytest.raises(RuntimeError, match="unexpected action"):
-        run_with_adapter(client, prepare([prompt]), "operator-token",
+        run_with_adapter(client, prepare([prompt], "openai"), "operator-token",
                          OpenAITextAdapter(sdk, "model", 128))
 
 
@@ -170,6 +174,8 @@ def test_future_provider_uses_same_sealed_input_interface(boundary):
     prompt = imported("internal", b"One governed input.")
 
     class CustomProvider:
+        service_id = None
+
         def generate(self, inputs):
             assert inputs == (SealedInput("text/plain", b"One governed input."),)
             return "A generated answer."

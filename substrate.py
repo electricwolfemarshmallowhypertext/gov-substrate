@@ -12,6 +12,7 @@ import sqlite3
 import threading
 import time
 import base64
+import copy
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
@@ -54,7 +55,8 @@ def load_registry(path: str | Path) -> dict[str, Any]:
     operator_token = os.environ[data["operator_token_env"]]
     if not operator_token or operator_token in tokens:
         raise ValueError("operator token must be unique and nonempty")
-    return {"actors": actors, "tokens": tokens, "operator_token": operator_token}
+    return {"actors": actors, "tokens": tokens, "operator_token": operator_token,
+            "providers": data.get("providers", {})}
 
 
 class Substrate:
@@ -65,6 +67,14 @@ class Substrate:
         self.actors = registry["actors"]
         self.tokens = registry["tokens"]
         self.operator_token = registry["operator_token"]
+        self.providers = copy.deepcopy(registry.get("providers", {}))
+        if not isinstance(self.providers, dict):
+            raise ValueError("provider registry must be a mapping")
+        for name, grant in self.providers.items():
+            if (not isinstance(name, str) or not 1 <= len(name) <= 64 or
+                    not isinstance(grant, dict) or set(grant) != {"max_classification"} or
+                    grant["max_classification"] not in CLASSIFICATIONS):
+                raise ValueError("invalid provider transfer grant")
         self.workspace_root = Path(workspace_root).resolve(strict=True) if workspace_root else None
         if self.workspace_root is not None and not self.workspace_root.is_dir():
             raise ValueError("workspace root must be a directory")
@@ -134,6 +144,8 @@ class Substrate:
                                    for token, actor in self.tokens.items()},
             "operator_token_hash": hashlib.sha256(self.operator_token.encode()).hexdigest(),
         }
+        if self.providers:
+            registry_material["providers"] = self.providers
         if self.workspace_root is not None:
             registry_material["workspace_root"] = str(self.workspace_root)
         self.registry_hash = digest(registry_material)
@@ -158,6 +170,9 @@ class Substrate:
                     input_ids TEXT NOT NULL, input_hashes TEXT NOT NULL,
                     classification TEXT NOT NULL, status TEXT NOT NULL,
                     output_id TEXT
+                );
+                CREATE TABLE IF NOT EXISTS generation_providers (
+                    generation_id TEXT PRIMARY KEY, provider TEXT NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS events (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -204,11 +219,15 @@ class Substrate:
                     "bytes": len(row["payload"])}
                    for row in db.execute("SELECT * FROM objects ORDER BY id")]
         generations = [dict(row) for row in db.execute("SELECT * FROM generations ORDER BY id")]
+        generation_providers = [dict(row) for row in db.execute(
+            "SELECT * FROM generation_providers ORDER BY generation_id")]
         snapshot = {"state": state, "sessions": sessions}
         if objects:
             snapshot["objects"] = objects
         if generations:
             snapshot["generations"] = generations
+        if generation_providers:
+            snapshot["generation_providers"] = generation_providers
         if self.workspace_root is not None:
             snapshot["workspace"] = workspace_snapshot(self.workspace_root)
         return snapshot
@@ -414,12 +433,16 @@ class Substrate:
             return None
         return sources
 
-    def claim_generation(self, generation_id: str) -> dict[str, Any]:
+    def claim_generation(self, generation_id: str,
+                         provider: str | None = None) -> dict[str, Any]:
         with self._execution_lock, self._db() as db:
             db.execute("BEGIN IMMEDIATE")
             expected = self._verify(db)
             before = self._snapshot(db)
             run = db.execute("SELECT * FROM generations WHERE id=?", (generation_id,)).fetchone()
+            provider_row = db.execute("SELECT provider FROM generation_providers WHERE generation_id=?",
+                                      (generation_id,)).fetchone()
+            sealed_provider = provider_row["provider"] if provider_row else None
             sources = self._generation_sources(db, run) if run and before == expected else None
             if before != expected:
                 rule = "state_integrity"
@@ -427,11 +450,14 @@ class Substrate:
                 rule = "generation_not_found"
             elif run["status"] != "prepared":
                 rule = "generation_already_claimed"
+            elif provider != sealed_provider:
+                rule = "generation_provider_mismatch"
             elif sources is None:
                 rule = "generation_manifest_invalid"
             else:
                 rule = None
-            action = {"kind": "generation.claim", "generation_id": generation_id}
+            action = {"kind": "generation.claim", "generation_id": generation_id,
+                      "provider": provider}
             if rule:
                 event_id = self._append(db, "trusted-generation-adapter", action,
                                         {"rule": rule}, "deny", before, before)
@@ -448,7 +474,7 @@ class Substrate:
                        "content_base64": base64.b64encode(source["payload"]).decode("ascii")}
                       for source in sources]
         return {"event_id": event_id, "decision": "allow", "generation_id": generation_id,
-                "inputs": inputs}
+                "provider": sealed_provider, "inputs": inputs}
 
     def complete_generation(self, generation_id: str, text: str) -> dict[str, Any]:
         try:
@@ -502,8 +528,13 @@ class Substrate:
         scope = action.get("scope")
         key = action.get("key")
         if kind == "generation.prepare":
-            if set(action) != {"kind", "input_ids"}:
+            if set(action) not in ({"kind", "input_ids"},
+                                   {"kind", "input_ids", "provider"}):
                 return "deny", "generation_fields_forbidden", None
+            provider = action.get("provider")
+            if "provider" in action and (
+                    not isinstance(provider, str) or not 1 <= len(provider) <= 64):
+                return "deny", "invalid_generation_provider", None
             input_ids = action["input_ids"]
             if (type(input_ids) is not list or not 1 <= len(input_ids) <= 16 or
                     any(not isinstance(item, str) or len(item) != 32 for item in input_ids) or
@@ -517,7 +548,15 @@ class Substrate:
             hashes = [hashlib.sha256(source["payload"]).hexdigest() for source in sources]
             classification = max((source["classification"] for source in sources),
                                  key=CLASSIFICATIONS.index)
-            return "allow", "generation_context_sealed", (input_ids, hashes, classification)
+            context = (input_ids, hashes, classification, provider)
+            if provider is not None:
+                grant = self.providers.get(provider)
+                if grant is None:
+                    return "deny", "provider_unregistered", context
+                if CLASSIFICATIONS.index(classification) > CLASSIFICATIONS.index(
+                        grant["max_classification"]):
+                    return "deny", "provider_classification_denied", context
+            return "allow", "generation_context_sealed", context
         if kind in ("object.read", "object.transform", "object.publish"):
             object_id = action.get("object_id")
             if not isinstance(object_id, str) or len(object_id) != 32:
@@ -726,11 +765,14 @@ class Substrate:
                                             json.loads(parent["readers"]), [parent["id"]],
                                             action["operation"], transformed)
             elif decision == "allow" and action["kind"] == "generation.prepare":
-                input_ids, hashes, classification = namespace
+                input_ids, hashes, classification, provider = namespace
                 value = secrets.token_hex(16)
                 db.execute("INSERT INTO generations VALUES (?,?,?,?,?,?,?)",
                            (value, actor, canonical(input_ids), canonical(hashes),
                             classification, "prepared", None))
+                if provider is not None:
+                    db.execute("INSERT INTO generation_providers VALUES (?,?)",
+                               (value, provider))
             after = self._snapshot(db)
             logged_action = action
             if isinstance(action.get("kind"), str) and action["kind"].startswith("object."):
@@ -747,10 +789,14 @@ class Substrate:
                     except UnicodeError:
                         logged_action["content_sha256"] = "invalid_utf8"
             if action.get("kind") == "generation.prepare":
-                logged_action = {"kind": "generation.prepare"}
+                logged_action = {"kind": "generation.prepare",
+                                 "provider": action.get("provider")}
+                if namespace is not None:
+                    logged_action.update(input_ids=namespace[0],
+                                         input_hashes=namespace[1],
+                                         classification=namespace[2])
                 if decision == "allow":
-                    logged_action.update(generation_id=value, input_ids=namespace[0],
-                                         input_hashes=namespace[1], classification=namespace[2])
+                    logged_action["generation_id"] = value
             if action.get("kind") == "network.request" and "services" in self.actors[actor]["network"]:
                 url = action.get("url")
                 try:
@@ -786,7 +832,8 @@ class Substrate:
             result.update(object_id=value, classification=namespace[0]["classification"],
                           media_type=namespace[2], parents=[namespace[0]["id"]])
         if decision == "allow" and action["kind"] == "generation.prepare":
-            result.update(generation_id=value, classification=namespace[2], input_ids=namespace[0])
+            result.update(generation_id=value, classification=namespace[2],
+                          input_ids=namespace[0], provider=namespace[3])
         if decision == "allow" and action["kind"] == "object.publish":
             parent, url, origin = namespace
             try:
@@ -1009,6 +1056,7 @@ class ObjectDeclassificationRequest(BaseModel):
 
 class GenerationClaimRequest(BaseModel):
     generation_id: str
+    provider: str | None = None
 
     class Config:
         extra = "forbid"
@@ -1094,7 +1142,7 @@ def create_app(substrate: Substrate) -> FastAPI:
         if not substrate.is_operator(token):
             raise HTTPException(401, "invalid trusted adapter token")
         try:
-            return substrate.claim_generation(body.generation_id)
+            return substrate.claim_generation(body.generation_id, body.provider)
         except IntegrityError as exc:
             raise HTTPException(503, str(exc)) from exc
 
