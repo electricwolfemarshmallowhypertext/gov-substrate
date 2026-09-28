@@ -5,6 +5,12 @@
 Governance Substrate is a small working reference architecture for enforcing AI agent capabilities at the system boundary. The environment determines which actions can execute, even when an agent asks for something else.
 
 > **Technical architecture:** [Substrate Reference Architecture](docs/Substrate-Reference-Architecture.md)
+>
+> ## Research paper
+
+**Governance as Substrate: Engineering Patterns for Resilient Collective Systems — V2, September 2026 Revision**
+
+[Read the paper on ResearchGate →](https://www.researchgate.net/publication/403770865_Engineering_Patterns_for_Resilient_Collective_Systems_V2_-_September_2026_Revision)
 
 ## What it demonstrates
 
