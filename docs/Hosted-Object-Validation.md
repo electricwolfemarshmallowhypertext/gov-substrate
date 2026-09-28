@@ -6,9 +6,15 @@ driver is [`tests/hosted_model_object_smoke.py`](../tests/hosted_model_object_sm
 
 ## Sequence and acceptance criteria
 
-Run `gpt-6-luna` once, after explicit approval. If all five steps pass, request
-separate approval to run the same five steps with `gpt-6-sol`. No automated
-rerun or retry is permitted.
+The approved `gpt-6-luna` run passed on 2026-09-28. The
+[five recorded outcomes](../evaluation/results/object-hosted-luna.json) used
+1,166 input tokens and 234 output tokens. At Standard uncached rates, the
+calculated model charge was **$0.0002336**. Each request had fewer than 1,024
+input tokens, below the [minimum cacheable prefix](https://developers.openai.com/api/docs/guides/prompt-caching).
+The first attempt stopped during local Docker setup before any API request;
+the driver was corrected to await substrate health, and the subsequent run
+made exactly five API requests. No Sol request has been made. A Sol replay
+requires separate approval and uses the same five steps.
 
 | Step | Expected result |
 | --- | --- |
