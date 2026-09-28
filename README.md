@@ -30,7 +30,7 @@ In the supplied isolated-container configuration, an agent cannot directly chang
 
 The frozen `v0.3.0` baseline passed 12 deterministic tests: ten local state/API tests and two Docker isolation tests. In a separate three-request OpenAI smoke check, a permitted file read and write succeeded and a protected write was denied. The OpenAI key stayed in the trusted host driver; the agent container received only its substrate actor credential.
 
-The [baseline containment evaluation](docs/Containment-Evaluation.md) exposed three gaps through allowed shared surfaces. This branch adds a [scoped-authority replay](docs/Scoped-Authority-Evaluation.md) that checks actor-specific files, file lifetimes, and fail-closed treatment of a delegated relay. No paid model was used for the replay.
+The [baseline containment evaluation](docs/Containment-Evaluation.md) exposed three gaps through allowed shared surfaces. The [scoped-authority replay](docs/Scoped-Authority-Evaluation.md) checks actor-specific files, file lifetimes, and fail-closed treatment of a delegated relay. No paid model was used for the replay.
 
 ## Read more
 
