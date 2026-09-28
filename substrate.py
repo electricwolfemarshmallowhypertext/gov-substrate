@@ -395,6 +395,33 @@ class Substrate:
         caps = self.actors[actor]
         scope = action.get("scope")
         key = action.get("key")
+        if kind == "object.generate":
+            if set(action) != {"kind", "content"}:
+                return "deny", "generated_output_fields_forbidden", None
+            content = action["content"]
+            if not isinstance(content, str) or not content:
+                return "deny", "invalid_content", None
+            try:
+                payload = content.encode("utf-8")
+            except UnicodeError:
+                return "deny", "invalid_content", None
+            if len(payload) > MAX_CONTENT:
+                return "deny", "invalid_content", None
+            sources = []
+            for event in db.execute("SELECT action FROM events WHERE actor=? AND decision='allow' ORDER BY id",
+                                    (actor,)):
+                prior = json.loads(event["action"])
+                if prior.get("kind") in ("object.read", "object.transform"):
+                    object_id = prior.get("object_id")
+                    if object_id not in sources:
+                        sources.append(object_id)
+            if not sources:
+                return "deny", "generation_context_required", None
+            parents = [db.execute("SELECT * FROM objects WHERE id=?", (object_id,)).fetchone()
+                       for object_id in sources]
+            classification = max((parent["classification"] for parent in parents),
+                                 key=CLASSIFICATIONS.index)
+            return "allow", "generation_provenance_inherited", (sources, classification, payload)
         if kind in ("object.read", "object.transform", "object.publish"):
             object_id = action.get("object_id")
             if not isinstance(object_id, str) or len(object_id) != 32:
@@ -602,6 +629,10 @@ class Substrate:
                 value = self._insert_object(db, parent["classification"], media_type,
                                             json.loads(parent["readers"]), [parent["id"]],
                                             action["operation"], transformed)
+            elif decision == "allow" and action["kind"] == "object.generate":
+                sources, classification, content = namespace
+                value = self._insert_object(db, classification, "text/plain", [actor],
+                                            sources, "generate", content)
             after = self._snapshot(db)
             logged_action = action
             if isinstance(action.get("kind"), str) and action["kind"].startswith("object."):
@@ -613,7 +644,12 @@ class Substrate:
                 if "destination" in action:
                     logged_action["destination_sha256"] = digest(action["destination"])
                 if "content" in action:
-                    logged_action["content_sha256"] = digest(action["content"])
+                    try:
+                        logged_action["content_sha256"] = digest(action["content"])
+                    except UnicodeError:
+                        logged_action["content_sha256"] = "invalid_utf8"
+                if decision == "allow" and action["kind"] == "object.generate":
+                    logged_action["parents"] = namespace[0]
             if action.get("kind") == "network.request" and "services" in self.actors[actor]["network"]:
                 url = action.get("url")
                 try:
@@ -648,6 +684,8 @@ class Substrate:
         if decision == "allow" and action["kind"] == "object.transform":
             result.update(object_id=value, classification=namespace[0]["classification"],
                           media_type=namespace[2], parents=[namespace[0]["id"]])
+        if decision == "allow" and action["kind"] == "object.generate":
+            result.update(object_id=value, classification=namespace[1], parents=namespace[0])
         if decision == "allow" and action["kind"] == "object.publish":
             parent, url, origin = namespace
             try:

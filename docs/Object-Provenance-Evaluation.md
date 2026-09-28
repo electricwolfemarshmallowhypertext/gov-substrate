@@ -84,14 +84,13 @@ python tests/local_model_object_smoke.py --models qwen3.5:4b llama3.1:8b --outpu
 
 ## Limits
 
-Provenance is enforced for bytes held in the substrate object store and for
-the fixed transforms above. An LLM's arbitrary prose is not automatically
-classified: a model that has seen a private object could include it in text
-it writes. The implementation therefore has no agent-controlled `object.create`
-route for public data, and the existing actor-level rule continues to deny
-raw external publication. A trusted clean-context generation service or a
-different verified information-flow mechanism would be needed to classify
-free-form model output as public.
+This evaluation covered bytes held in the substrate object store and the
+fixed transforms above. The later [free-form output provenance
+evaluation](Free-Form-Output-Provenance.md) adds an `object.generate` path that
+inherits classification from the actor's audited governed-object exposures.
+It does not classify context that reaches a model outside that path. The
+existing actor-level rule continues to deny raw external publication by a
+sensitive-capable actor.
 
 The operator's initial classification and declassification judgment are
 trusted inputs. The local fixtures demonstrate the supplied container
