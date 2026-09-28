@@ -10,7 +10,7 @@ services:
         source: ./tests/fixtures/site
         target: /srv
         read_only: true
-    networks: [egress]
+    networks: [terminal]
 
   substrate:
     image: gov-substrate-network-lab:${LAB_IMAGE_TAG:-local}
@@ -38,7 +38,7 @@ services:
         source: ${LAB_REGISTRY_PATH}
         target: /app/registry.yaml
         read_only: true
-    networks: [egress]
+    networks: [egress, terminal]
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
 
@@ -60,6 +60,8 @@ services:
 
 networks:
   egress: {}
+  terminal:
+    internal: true
 
 volumes:
   ipc: {}

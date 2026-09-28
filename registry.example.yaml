@@ -3,10 +3,13 @@ actors:
     token_env: RESEARCH_AGENT_TOKEN
     network:
       allowed: false
-      destinations: []
+      services: []
     filesystem:
-      read: true
-      write: workspace_only
+      scopes:
+        session: {read: true, write: true}
+        actor: {read: false, write: false}
+        shared: {read: false, write: false, channels: []}
+      protected: []
     tools:
       shell: true
       external_api: false
