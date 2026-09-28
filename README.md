@@ -2,7 +2,7 @@
 
 **Governance beneath the agent, not inside the prompt.**
 
-Governance Substrate is a small working reference architecture for enforcing AI agent capabilities at the system boundary. The environment determines which actions can execute, even when an agent asks for something else.
+Governance Substrate is a reference architecture for enforcing AI agent capabilities at the system boundary. The environment determines which actions can execute, even when an agent asks for something else.
 
 > **Technical architecture:** [Substrate Reference Architecture](docs/Substrate-Reference-Architecture.md)
 
