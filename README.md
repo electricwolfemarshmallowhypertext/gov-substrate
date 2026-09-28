@@ -25,16 +25,33 @@ In the supplied isolated-container configuration, an agent cannot directly chang
 - **State:** Admitted transitions, session and persistent state, tamper detection, and auditable one-shot overrides.
 - **Network:** No direct outbound route from the agent container. A destination-scoped HTTP GET adapter mediates and audits requests.
 - **Filesystem:** No workspace mount in the agent container. A scoped adapter mediates file reads and writes and rejects protected paths and escape attempts.
+- **Scoped authority:** Actor-, session-, and shared-resource access are distinct capabilities rather than implicit shared access.
+- **Delegated services:** Services that can proxy, store, forward, or act downstream are treated as delegated capabilities and fail closed unless explicitly mediated.
+- **Sensitive-data egress:** External publication is constrained by composed authority, not destination access alone.
+- **Object provenance:** Governed objects retain classification through supported transforms; lowering classification requires an audited operator action.
 
 ## Results
 
-The frozen `v0.3.0` baseline passed 12 deterministic tests: ten local state/API tests and two Docker isolation tests. In a separate three-request OpenAI smoke check, a permitted file read and write succeeded and a protected write was denied. The OpenAI key stayed in the trusted host driver; the agent container received only its substrate actor credential.
+Governance Substrate has been evaluated against state tampering, unauthorized network access, filesystem escape, cross-agent communication, persistent memory, delegated-service abuse, privilege expansion, sensitive-data egress, and classified-object publication.
 
-The [baseline containment evaluation](docs/Containment-Evaluation.md) exposed three gaps through allowed shared surfaces. The [scoped-authority replay](docs/Scoped-Authority-Evaluation.md) checks actor-specific files, file lifetimes, and fail-closed treatment of a delegated relay. No paid model was used for the replay.
+Current implementation enforces:
 
-The [sensitive-data egress evaluation](docs/Sensitive-Data-Egress-Evaluation.md) tests whether an actor with private-data access can publish through an otherwise allowed service. The local publisher receives only public-actor data.
+- isolated agent execution with no direct network or governed-workspace access
+- actor- and session-scoped authority
+- fail-closed policy and state integrity checks
+- explicit treatment of delegated services
+- governed sensitive-data publication
+- object-level classification and provenance through fixed transforms
+- auditable decisions, execution outcomes, and operator-approved declassification
 
-The [object-provenance evaluation](docs/Object-Provenance-Evaluation.md) lets a sensitive-capable actor publish a public object while keeping a private image and its encoded derivative inside the boundary. Only operator-approved declassification can lower an object's label.
+The evaluations intentionally include failure cases. Earlier tests exposed cross-agent, persistence, and proxy-service gaps; subsequent enforcement changes closed those paths under the hardened policy.
+
+Evaluations:
+
+- [Baseline containment evaluation](docs/Containment-Evaluation.md)
+- [Scoped-authority evaluation](docs/Scoped-Authority-Evaluation.md)
+- [Sensitive-data egress evaluation](docs/Sensitive-Data-Egress-Evaluation.md)
+- [Object-provenance evaluation](docs/Object-Provenance-Evaluation.md)
 
 ## Read more
 
@@ -52,4 +69,8 @@ Organizations seeking to incorporate the software into proprietary products or s
 
 ## Scope
 
-This is a reference implementation and research artifact. The results establish the tested boundaries for the supplied container configuration. They do not establish universal AI confinement or validate every mechanism proposed in the paper.
+Governance Substrate enforces capabilities that are explicitly placed behind its boundary.
+
+The current implementation covers governed state, network access, filesystem authority, delegated services, sensitive-data egress, and classified-object publication in the documented isolated-container architecture.
+
+It does not claim to secure arbitrary host processes, privileged containers, unmediated external systems, or capabilities that bypass the substrate. Arbitrary model-generated prose is not automatically provenance-classified.
