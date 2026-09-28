@@ -1,0 +1,34 @@
+actors:
+  - id: agent-a
+    token_env: AGENT_A_TOKEN
+    network:
+      allowed: true
+      destinations: [http://relay:8001]
+    filesystem:
+      read: true
+      write: workspace_only
+      protected: [protected.txt]
+    tools:
+      shell: false
+      external_api: false
+    persistence:
+      session: true
+      cross_session: false
+    shared_channels: []
+  - id: agent-b
+    token_env: AGENT_B_TOKEN
+    network:
+      allowed: true
+      destinations: [http://relay:8001]
+    filesystem:
+      read: true
+      write: workspace_only
+      protected: [protected.txt]
+    tools:
+      shell: false
+      external_api: false
+    persistence:
+      session: true
+      cross_session: false
+    shared_channels: []
+operator_token_env: GOV_SUBSTRATE_OPERATOR_TOKEN

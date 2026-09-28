@@ -65,6 +65,53 @@ class Substrate:
         self.workspace_root = Path(workspace_root).resolve(strict=True) if workspace_root else None
         if self.workspace_root is not None and not self.workspace_root.is_dir():
             raise ValueError("workspace root must be a directory")
+        scoped = ["scopes" in actor.get("filesystem", {}) for actor in self.actors.values()]
+        if any(scoped) and not all(scoped):
+            raise ValueError("all actors must use the same filesystem authority model")
+        self.scoped_filesystem = all(scoped)
+        for actor in self.actors.values():
+            if self.scoped_filesystem:
+                scopes = actor["filesystem"]["scopes"]
+                if not isinstance(scopes, dict):
+                    raise ValueError("filesystem scopes must be a mapping")
+                for name in ("session", "actor", "shared"):
+                    grant = scopes.get(name, {})
+                    if not isinstance(grant, dict) or any(
+                            type(grant.get(operation, False)) is not bool
+                            for operation in ("read", "write")):
+                        raise ValueError("invalid filesystem scope grant")
+                channels = scopes.get("shared", {}).get("channels", [])
+                if (not isinstance(channels, list) or
+                        any(not isinstance(channel, str) or not channel for channel in channels) or
+                        len(channels) != len(set(channels))):
+                    raise ValueError("invalid shared file channels")
+            network = actor["network"]
+            if "services" in network:
+                if network.get("destinations"):
+                    raise ValueError("service policy cannot mix broad destinations")
+                services = network["services"]
+                if not isinstance(services, list):
+                    raise ValueError("network services must be a list")
+                seen = set()
+                for service in services:
+                    if not isinstance(service, dict):
+                        raise ValueError("invalid network service")
+                    try:
+                        origin, _, _, _, target = origin_and_target(service["origin"])
+                    except (KeyError, TypeError, ValueError) as exc:
+                        raise ValueError("invalid service origin") from exc
+                    if target != "/" or origin in seen:
+                        raise ValueError("service origins must be unique and path-free")
+                    seen.add(origin)
+                    mode = service.get("mode")
+                    if mode == "terminal":
+                        paths = service.get("paths")
+                        if (not isinstance(paths, list) or not paths or
+                                any(not isinstance(path, str) or not path.startswith("/")
+                                    for path in paths) or len(paths) != len(set(paths))):
+                            raise ValueError("terminal services require exact paths")
+                    elif mode != "delegated":
+                        raise ValueError("unknown service mode")
         registry_material = {
             "actors": self.actors,
             "actor_token_hashes": {actor: hashlib.sha256(token.encode()).hexdigest()
@@ -191,6 +238,11 @@ class Substrate:
             db.execute("UPDATE sessions SET active=0 WHERE actor=?", (actor,))
             db.execute("INSERT INTO sessions VALUES (?,?,?,1)",
                        (session_id, actor, hashlib.sha256(token.encode()).hexdigest()))
+            if self.scoped_filesystem and self.workspace_root is not None:
+                self._scoped_root("session", actor, session_id, None).mkdir(parents=True)
+                self._scoped_root("actor", actor, session_id, None).mkdir(parents=True, exist_ok=True)
+                for channel in self.actors[actor]["filesystem"]["scopes"].get("shared", {}).get("channels", []):
+                    self._scoped_root("shared", actor, session_id, channel).mkdir(parents=True, exist_ok=True)
             after = self._snapshot(db)
             event_id = self._append(db, actor, {"kind": "session.create", "session_id": session_id},
                                     {"rule": "authenticated_actor"}, "allow", before, after)
@@ -203,6 +255,15 @@ class Substrate:
         token_hash = hashlib.sha256(session_token.encode()).hexdigest()
         return db.execute("SELECT 1 FROM sessions WHERE actor=? AND token_hash=? AND active=1",
                           (actor, token_hash)).fetchone() is not None
+
+    def _scoped_root(self, scope: str, actor: str, session_id: str,
+                     channel: str | None) -> Path:
+        assert self.workspace_root is not None
+        namespace = {"session": session_id, "actor": actor,
+                     "shared": channel}[scope]
+        assert namespace is not None
+        label = hashlib.sha256(namespace.encode()).hexdigest()
+        return self.workspace_root / ".substrate-scoped" / scope / label
 
     def _decide(self, actor: str, action: dict[str, Any], session_id: str):
         kind = action.get("kind")
@@ -233,20 +294,63 @@ class Substrate:
             if not network["allowed"]:
                 return "deny", "network_disabled", None
             try:
-                origin = origin_and_target(action.get("url"))[0]
+                origin, _, _, _, target = origin_and_target(action.get("url"))
                 destinations = {origin_and_target(item)[0]
                                 for item in network.get("destinations", [])}
             except (TypeError, ValueError):
                 return "deny", "invalid_destination", None
+            services = network.get("services")
+            if services is not None and destinations:
+                return "deny", "mixed_service_policy", None
             if origin not in destinations:
-                return "deny", "destination_not_allowed", None
+                if services is None:
+                    return "deny", "destination_not_allowed", None
+                if not isinstance(services, list):
+                    return "deny", "invalid_service_policy", None
+                matched = []
+                for service in services:
+                    try:
+                        service_origin = origin_and_target(service["origin"])[0]
+                    except (KeyError, TypeError, ValueError):
+                        return "deny", "invalid_service_policy", None
+                    if origin == service_origin:
+                        matched.append(service)
+                if not matched:
+                    return "deny", "destination_not_allowed", None
+                if len(matched) != 1:
+                    return "deny", "invalid_service_policy", None
+                service = matched[0]
+                if service.get("mode") == "terminal":
+                    if target not in service.get("paths", []):
+                        return "deny", "service_route_not_allowed", None
+                    return "allow", "terminal_service_granted", None
+                if service.get("mode") == "delegated":
+                    return "deny", "delegated_service_unmediated", None
+                return "deny", "invalid_service_policy", None
             return "allow", "destination_granted", None
         if kind in ("filesystem.read", "filesystem.write"):
             capability = caps["filesystem"]
-            if kind == "filesystem.read" and not capability["read"]:
-                return "deny", "filesystem_read_disabled", None
-            if kind == "filesystem.write" and capability["write"] != "workspace_only":
-                return "deny", "filesystem_write_disabled", None
+            if self.scoped_filesystem:
+                scope = action.get("scope", "session")
+                scopes = capability["scopes"]
+                if scope not in ("session", "actor", "shared"):
+                    return "deny", "invalid_scope", None
+                grant = scopes.get(scope, {})
+                if scope == "shared":
+                    channel = action.get("channel")
+                    if not isinstance(channel, str) or channel not in grant.get("channels", []):
+                        return "deny", "shared_channel_disabled", None
+                else:
+                    channel = None
+                operation = "read" if kind == "filesystem.read" else "write"
+                if grant.get(operation) is not True:
+                    return "deny", f"filesystem_{scope}_{operation}_disabled", None
+            else:
+                scope, channel = None, None
+                if kind == "filesystem.read" and not capability["read"]:
+                    return "deny", "filesystem_read_disabled", None
+                if kind == "filesystem.write" and capability["write"] != "workspace_only":
+                    return "deny", "filesystem_write_disabled", None
             if self.workspace_root is None:
                 return "deny", "filesystem_adapter_absent", None
             path = action.get("path")
@@ -263,10 +367,12 @@ class Substrate:
                 if not isinstance(content, str) or len(content.encode("utf-8")) > MAX_CONTENT:
                     return "deny", "invalid_content", None
             try:
-                check_target(self.workspace_root, path)
+                root = (self._scoped_root(scope, actor, session_id, channel)
+                        if self.scoped_filesystem else self.workspace_root)
+                check_target(root, path)
             except ValueError:
                 return "deny", "path_escape", None
-            return "allow", "workspace_scope_granted", None
+            return "allow", "workspace_scope_granted", root
         if kind == "tool.invoke":
             tool = action.get("tool")
             enabled = isinstance(tool, str) and caps["tools"].get(tool) is True
@@ -309,6 +415,10 @@ class Substrate:
                 content = action["content"].encode("utf-8")
                 logged_action = {"kind": "filesystem.write", "path": action.get("path"),
                                  "bytes": len(content), "content_sha256": hashlib.sha256(content).hexdigest()}
+                if self.scoped_filesystem:
+                    logged_action["scope"] = action.get("scope", "session")
+                    if "channel" in action:
+                        logged_action["channel"] = action["channel"]
             event_id = self._append(db, actor, logged_action, {"rule": rule}, decision, before, after,
                                     elapsed_ms=(time.perf_counter() - started) * 1000)
             db.commit()
@@ -317,7 +427,11 @@ class Substrate:
             result["value"] = value
         if decision == "allow" and action["kind"] == "network.request":
             try:
-                response = fetch(action["url"], self.actors[actor]["network"]["destinations"])
+                network = self.actors[actor]["network"]
+                destinations = list(network.get("destinations", []))
+                destinations.extend(service["origin"] for service in network.get("services", [])
+                                    if service.get("mode") == "terminal")
+                response = fetch(action["url"], destinations)
                 outcome = {key: response[key] for key in
                            ("status", "bytes", "body_sha256", "origin", "resolved_ip")}
                 result["response"] = {"status": response["status"], "body": response["body"]}
@@ -339,10 +453,10 @@ class Substrate:
         if decision == "allow" and action["kind"] in ("filesystem.read", "filesystem.write"):
             try:
                 if action["kind"] == "filesystem.read":
-                    response = read_text(self.workspace_root, action["path"])
+                    response = read_text(namespace, action["path"])
                     result["content"] = response["content"]
                 else:
-                    response = write_text(self.workspace_root, action["path"], action["content"])
+                    response = write_text(namespace, action["path"], action["content"])
                 outcome = {key: response[key] for key in ("bytes", "sha256")}
                 result["outcome"] = "succeeded"
             except (OSError, ValueError, UnicodeError) as exc:
@@ -354,9 +468,10 @@ class Substrate:
                 current = self._snapshot(db)
                 expected_current = after
                 if result["outcome"] == "succeeded" and action["kind"] == "filesystem.write":
+                    logged_path = (namespace.relative_to(self.workspace_root) / action["path"]).as_posix()
                     entries = [entry for entry in after["workspace"]["entries"]
-                               if entry["path"] != action["path"]]
-                    entries.append({"path": action["path"], "kind": "file",
+                               if entry["path"] != logged_path]
+                    entries.append({"path": logged_path, "kind": "file",
                                     "sha256": outcome["sha256"], "size": outcome["bytes"]})
                     expected_current = {**after, "workspace": {
                         **after["workspace"],

@@ -1,0 +1,48 @@
+actors:
+  - id: agent-a
+    token_env: AGENT_A_TOKEN
+    network:
+      allowed: true
+      services:
+        - origin: http://fixture:8000
+          mode: terminal
+          paths: [/]
+        - origin: http://relay:8001
+          mode: delegated
+    filesystem:
+      scopes:
+        session: {read: true, write: true}
+        actor: {read: true, write: true}
+        shared: {read: true, write: true, channels: [approved]}
+      protected: [protected.txt]
+    tools:
+      shell: false
+      external_api: false
+    persistence:
+      session: true
+      cross_session: false
+    shared_channels: []
+  - id: agent-b
+    token_env: AGENT_B_TOKEN
+    network:
+      allowed: true
+      services:
+        - origin: http://fixture:8000
+          mode: terminal
+          paths: [/]
+        - origin: http://relay:8001
+          mode: delegated
+    filesystem:
+      scopes:
+        session: {read: true, write: true}
+        actor: {read: true, write: true}
+        shared: {read: true, write: true, channels: [approved]}
+      protected: [protected.txt]
+    tools:
+      shell: false
+      external_api: false
+    persistence:
+      session: true
+      cross_session: false
+    shared_channels: []
+operator_token_env: GOV_SUBSTRATE_OPERATOR_TOKEN
