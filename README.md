@@ -22,7 +22,9 @@ In the supplied isolated-container configuration, an agent cannot directly chang
 
 ## Results
 
-The deterministic adversarial suite passed all 12 tests: ten local state/API tests and two Docker isolation tests. In a separate three-request OpenAI smoke check, a permitted file read and write succeeded and a protected write was denied. The OpenAI key stayed in the trusted host driver; the agent container received only its substrate actor credential.
+The frozen `v0.3.0` baseline passed 12 deterministic tests: ten local state/API tests and two Docker isolation tests. In a separate three-request OpenAI smoke check, a permitted file read and write succeeded and a protected write was denied. The OpenAI key stayed in the trusted host driver; the agent container received only its substrate actor credential.
+
+This evaluation branch adds [five containment scenario results](docs/Containment-Evaluation.md) and no-charge smoke checks with two local models. The results include observed side channels through allowed shared surfaces.
 
 ## Read more
 

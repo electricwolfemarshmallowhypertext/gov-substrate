@@ -6,5 +6,7 @@ RUN pip install --no-cache-dir .
 COPY tests/network_probe.py /app/network_probe.py
 COPY tests/filesystem_probe.py /app/filesystem_probe.py
 COPY tests/filesystem_tool.py /app/filesystem_tool.py
+COPY tests/containment_probe.py /app/containment_probe.py
+COPY tests/containment_tool.py /app/containment_tool.py
 
 ENV PYTHONDONTWRITEBYTECODE=1
