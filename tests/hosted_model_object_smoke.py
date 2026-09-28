@@ -147,7 +147,10 @@ def run_hosted(model):
                                 capture_output=True, text=True, encoding="utf-8",
                                 errors="replace", timeout=240)
         if result.returncode:
-            raise RuntimeError("Local Docker lab command failed")
+            detail = (result.stdout + result.stderr)[-1200:]
+            for secret in ("lab-operator-token", "lab-agent-a-token"):
+                detail = detail.replace(secret, "[redacted]")
+            raise RuntimeError(f"Local Docker lab command failed: {detail}")
         return result.stdout
 
     def compose(*command, input_text=None):
@@ -178,6 +181,18 @@ def run_hosted(model):
                 time.sleep(0.2)
             else:
                 raise RuntimeError("Local publisher unavailable")
+            for _ in range(60):
+                check = subprocess.run([*prefix, "exec", "-T", "substrate",
+                    "python", "-c",
+                    "from network_probe import request; "
+                    "status,_=request('GET','/health','lab-agent-a-token'); "
+                    "assert status==200"],
+                    cwd=ROOT, env=docker_env, capture_output=True, timeout=10)
+                if check.returncode == 0:
+                    break
+                time.sleep(0.25)
+            else:
+                raise RuntimeError("Local substrate unavailable")
 
             cases = [
                 {"classification": "private", "media_type": "image/png",
