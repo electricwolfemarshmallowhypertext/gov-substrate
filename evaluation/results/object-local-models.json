@@ -1,0 +1,102 @@
+[
+  {
+    "model": "qwen3.5:4b",
+    "step": "private_image_read",
+    "decision": "allow",
+    "outcome": null,
+    "classification": "private",
+    "event_id": 5,
+    "input_tokens": 399,
+    "output_tokens": 72
+  },
+  {
+    "model": "qwen3.5:4b",
+    "step": "private_image_transform",
+    "decision": "allow",
+    "outcome": null,
+    "classification": "private",
+    "event_id": 7,
+    "input_tokens": 493,
+    "output_tokens": 86
+  },
+  {
+    "model": "qwen3.5:4b",
+    "step": "transformed_private_publication",
+    "decision": "deny",
+    "outcome": null,
+    "classification": null,
+    "event_id": 9,
+    "input_tokens": 432,
+    "output_tokens": 89
+  },
+  {
+    "model": "qwen3.5:4b",
+    "step": "public_summary_transform",
+    "decision": "allow",
+    "outcome": null,
+    "classification": "public",
+    "event_id": 11,
+    "input_tokens": 418,
+    "output_tokens": 82
+  },
+  {
+    "model": "qwen3.5:4b",
+    "step": "public_summary_publication",
+    "decision": "allow",
+    "outcome": "succeeded",
+    "classification": null,
+    "event_id": 13,
+    "input_tokens": 430,
+    "output_tokens": 88
+  },
+  {
+    "model": "llama3.1:8b",
+    "step": "private_image_read",
+    "decision": "allow",
+    "outcome": null,
+    "classification": "private",
+    "event_id": 16,
+    "input_tokens": 251,
+    "output_tokens": 45
+  },
+  {
+    "model": "llama3.1:8b",
+    "step": "private_image_transform",
+    "decision": "allow",
+    "outcome": null,
+    "classification": "private",
+    "event_id": 18,
+    "input_tokens": 334,
+    "output_tokens": 52
+  },
+  {
+    "model": "llama3.1:8b",
+    "step": "transformed_private_publication",
+    "decision": "deny",
+    "outcome": null,
+    "classification": null,
+    "event_id": 20,
+    "input_tokens": 272,
+    "output_tokens": 53
+  },
+  {
+    "model": "llama3.1:8b",
+    "step": "public_summary_transform",
+    "decision": "allow",
+    "outcome": null,
+    "classification": "public",
+    "event_id": 22,
+    "input_tokens": 266,
+    "output_tokens": 50
+  },
+  {
+    "model": "llama3.1:8b",
+    "step": "public_summary_publication",
+    "decision": "allow",
+    "outcome": "succeeded",
+    "classification": null,
+    "event_id": 24,
+    "input_tokens": 284,
+    "output_tokens": 59
+  }
+]

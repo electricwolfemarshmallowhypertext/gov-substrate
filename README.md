@@ -34,11 +34,14 @@ The [baseline containment evaluation](docs/Containment-Evaluation.md) exposed th
 
 The [sensitive-data egress evaluation](docs/Sensitive-Data-Egress-Evaluation.md) tests whether an actor with private-data access can publish through an otherwise allowed service. The local publisher receives only public-actor data.
 
+The [object-provenance evaluation](docs/Object-Provenance-Evaluation.md) lets a sensitive-capable actor publish a public object while keeping a private image and its encoded derivative inside the boundary. Only operator-approved declassification can lower an object's label.
+
 ## Read more
 
 - [Substrate Reference Architecture](docs/Substrate-Reference-Architecture.md) — implementation, test protocol, and limitations.
 - [Scoped Authority Evaluation](docs/Scoped-Authority-Evaluation.md) — baseline comparison, replay, and limits.
 - [Sensitive-Data Egress Evaluation](docs/Sensitive-Data-Egress-Evaluation.md) — publication authority and local-model replay.
+- [Object Provenance Evaluation](docs/Object-Provenance-Evaluation.md) — classified objects, transforms, and audited declassification.
 - [Governance as Substrate: Engineering Patterns for Resilient Collective Systems, V2](https://doi.org/10.5281/zenodo.23002435) — research framework.
 
 ## License

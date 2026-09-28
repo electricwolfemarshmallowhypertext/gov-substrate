@@ -11,16 +11,18 @@ import secrets
 import sqlite3
 import threading
 import time
+import base64
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qsl
+from urllib.parse import parse_qsl, quote
 
 import yaml
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel
 
 from filesystem_adapter import MAX_CONTENT, check_target, parts_of, read_text, workspace_snapshot, write_text
+from governed_objects import CLASSIFICATIONS, transform
 from network_adapter import fetch, origin_and_target
 
 
@@ -145,6 +147,12 @@ class Substrate:
                     id TEXT PRIMARY KEY, actor TEXT NOT NULL,
                     token_hash TEXT NOT NULL, active INTEGER NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS objects (
+                    id TEXT PRIMARY KEY, classification TEXT NOT NULL,
+                    media_type TEXT NOT NULL, readers TEXT NOT NULL,
+                    parents TEXT NOT NULL, operation TEXT NOT NULL,
+                    payload BLOB NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS events (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     timestamp REAL NOT NULL, actor TEXT NOT NULL,
@@ -158,6 +166,10 @@ class Substrate:
                     BEGIN SELECT RAISE(ABORT, 'audit events are append only'); END;
                 CREATE TRIGGER IF NOT EXISTS events_no_delete BEFORE DELETE ON events
                     BEGIN SELECT RAISE(ABORT, 'audit events are append only'); END;
+                CREATE TRIGGER IF NOT EXISTS objects_no_update BEFORE UPDATE ON objects
+                    BEGIN SELECT RAISE(ABORT, 'objects are immutable'); END;
+                CREATE TRIGGER IF NOT EXISTS objects_no_delete BEFORE DELETE ON objects
+                    BEGIN SELECT RAISE(ABORT, 'objects are immutable'); END;
             """)
             if not db.execute("SELECT 1 FROM events LIMIT 1").fetchone():
                 snapshot = self._snapshot(db)
@@ -179,7 +191,15 @@ class Substrate:
         sessions = {r["id"]: {"actor": r["actor"], "token_hash": r["token_hash"],
                               "active": bool(r["active"])}
                     for r in db.execute("SELECT * FROM sessions ORDER BY id")}
+        objects = [{"id": row["id"], "classification": row["classification"],
+                    "media_type": row["media_type"], "readers": json.loads(row["readers"]),
+                    "parents": json.loads(row["parents"]), "operation": row["operation"],
+                    "sha256": hashlib.sha256(row["payload"]).hexdigest(),
+                    "bytes": len(row["payload"])}
+                   for row in db.execute("SELECT * FROM objects ORDER BY id")]
         snapshot = {"state": state, "sessions": sessions}
+        if objects:
+            snapshot["objects"] = objects
         if self.workspace_root is not None:
             snapshot["workspace"] = workspace_snapshot(self.workspace_root)
         return snapshot
@@ -279,11 +299,144 @@ class Substrate:
         label = hashlib.sha256(namespace.encode()).hexdigest()
         return self.workspace_root / ".substrate-scoped" / scope / label
 
-    def _decide(self, actor: str, action: dict[str, Any], session_id: str):
+    @staticmethod
+    def _insert_object(db, classification, media_type, readers, parents, operation, payload):
+        object_id = secrets.token_hex(16)
+        db.execute("INSERT INTO objects VALUES (?,?,?,?,?,?,?)",
+                   (object_id, classification, media_type, canonical(readers),
+                    canonical(parents), operation, payload))
+        return object_id
+
+    def import_object(self, classification: str, media_type: str, content_base64: str,
+                      readers: list[str], source: str) -> dict[str, Any]:
+        if classification not in CLASSIFICATIONS or media_type not in ("text/plain", "image/png"):
+            raise ValueError("invalid object classification or media type")
+        if (not isinstance(readers, list) or not readers or
+                any(reader not in self.actors for reader in readers) or
+                len(readers) != len(set(readers))):
+            raise ValueError("readers must be unique registered actors")
+        if not isinstance(source, str) or not source or len(source) > 128:
+            raise ValueError("source identifier required")
+        try:
+            payload = base64.b64decode(content_base64, validate=True)
+        except (TypeError, ValueError, base64.binascii.Error) as exc:
+            raise ValueError("invalid base64 content") from exc
+        if not payload or len(payload) > MAX_CONTENT:
+            raise ValueError("object content must be 1 to 65536 bytes")
+        if media_type == "text/plain":
+            try:
+                payload.decode("utf-8")
+            except UnicodeError as exc:
+                raise ValueError("text object must be UTF-8") from exc
+        with self._execution_lock, self._db() as db:
+            db.execute("BEGIN IMMEDIATE")
+            expected = self._verify(db)
+            before = self._snapshot(db)
+            if before != expected:
+                event_id = self._append(db, "human-operator", {"kind": "object.import"},
+                                        {"rule": "state_integrity"}, "deny", before, before)
+                db.commit()
+                return {"event_id": event_id, "decision": "deny", "reason": "state_integrity"}
+            object_id = self._insert_object(db, classification, media_type, sorted(readers),
+                                            [], "import", payload)
+            after = self._snapshot(db)
+            event_id = self._append(db, "human-operator",
+                                    {"kind": "object.import", "object_id": object_id,
+                                     "classification": classification, "media_type": media_type,
+                                     "readers": sorted(readers), "source": source,
+                                     "content_sha256": hashlib.sha256(payload).hexdigest()},
+                                    {"rule": "trusted_import"}, "allow", before, after)
+            db.commit()
+        return {"event_id": event_id, "decision": "allow", "object_id": object_id}
+
+    def declassify_object(self, object_id: str, classification: str,
+                          reason: str) -> dict[str, Any]:
+        if classification not in CLASSIFICATIONS or not isinstance(reason, str):
+            raise ValueError("invalid classification or reason")
+        with self._execution_lock, self._db() as db:
+            db.execute("BEGIN IMMEDIATE")
+            expected = self._verify(db)
+            before = self._snapshot(db)
+            parent = db.execute("SELECT * FROM objects WHERE id=?", (object_id,)).fetchone()
+            if before != expected:
+                rule = "state_integrity"
+            elif parent is None:
+                rule = "object_not_found"
+            elif not reason.strip():
+                rule = "declassification_reason_required"
+            elif CLASSIFICATIONS.index(classification) >= CLASSIFICATIONS.index(parent["classification"]):
+                rule = "classification_not_lowered"
+            else:
+                rule = None
+            if rule:
+                event_id = self._append(db, "human-operator",
+                                        {"kind": "object.declassify", "object_id": object_id,
+                                         "target": classification}, {"rule": rule},
+                                        "deny", before, before)
+                db.commit()
+                return {"event_id": event_id, "decision": "deny", "reason": rule}
+            child_id = self._insert_object(db, classification, parent["media_type"],
+                                           json.loads(parent["readers"]), [object_id],
+                                           "declassify", parent["payload"])
+            after = self._snapshot(db)
+            event_id = self._append(db, "human-operator",
+                                    {"kind": "object.declassify", "parent_id": object_id,
+                                     "object_id": child_id, "from": parent["classification"],
+                                     "to": classification},
+                                    {"rule": "human_declassification", "reason": reason},
+                                    "override", before, after)
+            db.commit()
+        return {"event_id": event_id, "decision": "override", "object_id": child_id,
+                "parent_id": object_id, "classification": classification}
+
+    def _decide(self, actor: str, action: dict[str, Any], session_id: str,
+                db: sqlite3.Connection):
         kind = action.get("kind")
         caps = self.actors[actor]
         scope = action.get("scope")
         key = action.get("key")
+        if kind in ("object.read", "object.transform", "object.publish"):
+            object_id = action.get("object_id")
+            if not isinstance(object_id, str) or len(object_id) != 32:
+                return "deny", "invalid_object_id", None
+            parent = db.execute("SELECT * FROM objects WHERE id=?", (object_id,)).fetchone()
+            if parent is None or actor not in json.loads(parent["readers"]):
+                return "deny", "object_not_accessible", None
+            if kind == "object.read":
+                return "allow", "object_read_granted", parent
+            if kind == "object.transform":
+                operation = action.get("operation")
+                try:
+                    transformed, media_type = transform(parent["payload"], parent["media_type"], operation)
+                except (ValueError, UnicodeError):
+                    return "deny", "unsupported_transform", None
+                if not transformed or len(transformed) > MAX_CONTENT:
+                    return "deny", "transform_size_limit", None
+                return "allow", "provenance_preserved", (parent, transformed, media_type)
+            network = caps["network"]
+            if not network.get("allowed") or network.get("publication") is not True:
+                return "deny", "publication_disabled", None
+            destination = action.get("destination")
+            try:
+                origin, _, _, _, target = origin_and_target(destination)
+            except (TypeError, ValueError):
+                return "deny", "invalid_destination", None
+            if target != "/":
+                return "deny", "invalid_destination", None
+            service = next((item for item in network.get("services", [])
+                            if origin_and_target(item["origin"])[0] == origin), None)
+            if service is None or service.get("mode") != "publication":
+                return "deny", "publication_destination_not_allowed", None
+            if (service.get("egress", "external") == "external" and
+                    parent["classification"] != "public"):
+                return "deny", "object_classification_blocks_egress", None
+            if parent["media_type"] != "text/plain":
+                return "deny", "publication_requires_text", None
+            content = parent["payload"].decode("utf-8")
+            url = origin + service["paths"][0] + "?data=" + quote(content, safe="")
+            if len(url) > 2048:
+                return "deny", "publication_size_limit", None
+            return "allow", "classified_object_granted", (parent, url, origin)
         if kind in ("state.write", "state.read"):
             if not isinstance(key, str) or not key or len(key) > 128:
                 return "deny", "invalid_key", None
@@ -434,7 +587,7 @@ class Substrate:
                 decision, rule, namespace = "deny", "invalid_session", None
             else:
                 session_id = row["id"]
-                decision, rule, namespace = self._decide(actor, action, session_id)
+                decision, rule, namespace = self._decide(actor, action, session_id, db)
             value = None
             if decision == "allow" and action["kind"] == "state.write":
                 db.execute("INSERT INTO state VALUES (?,?,?) ON CONFLICT(namespace,key) "
@@ -444,8 +597,23 @@ class Substrate:
                 found = db.execute("SELECT value FROM state WHERE namespace=? AND key=?",
                                    (namespace, action["key"])).fetchone()
                 value = json.loads(found[0]) if found else None
+            elif decision == "allow" and action["kind"] == "object.transform":
+                parent, transformed, media_type = namespace
+                value = self._insert_object(db, parent["classification"], media_type,
+                                            json.loads(parent["readers"]), [parent["id"]],
+                                            action["operation"], transformed)
             after = self._snapshot(db)
             logged_action = action
+            if isinstance(action.get("kind"), str) and action["kind"].startswith("object."):
+                logged_action = {"kind": action["kind"]}
+                if isinstance(action.get("object_id"), str):
+                    logged_action["object_id"] = action["object_id"][:32]
+                if action.get("operation") in ("base64", "summary"):
+                    logged_action["operation"] = action["operation"]
+                if "destination" in action:
+                    logged_action["destination_sha256"] = digest(action["destination"])
+                if "content" in action:
+                    logged_action["content_sha256"] = digest(action["content"])
             if action.get("kind") == "network.request" and "services" in self.actors[actor]["network"]:
                 url = action.get("url")
                 try:
@@ -473,6 +641,33 @@ class Substrate:
         result = {"event_id": event_id, "decision": decision, "reason": rule}
         if decision == "allow" and action["kind"] == "state.read":
             result["value"] = value
+        if decision == "allow" and action["kind"] == "object.read":
+            result.update(classification=namespace["classification"],
+                          media_type=namespace["media_type"],
+                          content_base64=base64.b64encode(namespace["payload"]).decode("ascii"))
+        if decision == "allow" and action["kind"] == "object.transform":
+            result.update(object_id=value, classification=namespace[0]["classification"],
+                          media_type=namespace[2], parents=[namespace[0]["id"]])
+        if decision == "allow" and action["kind"] == "object.publish":
+            parent, url, origin = namespace
+            try:
+                response = fetch(url, [origin])
+                outcome = {key: response[key] for key in
+                           ("status", "bytes", "body_sha256", "origin", "resolved_ip")}
+                result["outcome"] = "succeeded" if 200 <= response["status"] < 300 else "failed"
+            except (OSError, ValueError, http.client.HTTPException) as exc:
+                outcome = {"error": type(exc).__name__, "detail": str(exc)[:200]}
+                result["outcome"] = "failed"
+            with self._db() as db:
+                db.execute("BEGIN IMMEDIATE")
+                snapshot = self._snapshot(db)
+                result["outcome_event_id"] = self._append(
+                    db, actor, {"kind": "object.publish.result", "request_event_id": event_id,
+                                "object_id": parent["id"], "classification": parent["classification"],
+                                "destination": origin, **outcome},
+                    {"rule": "adapter_result"}, result["outcome"], snapshot, snapshot,
+                    elapsed_ms=(time.perf_counter() - started) * 1000)
+                db.commit()
         if decision == "allow" and action["kind"] == "network.request":
             try:
                 network = self.actors[actor]["network"]
@@ -659,6 +854,20 @@ class OverrideRequest(BaseModel):
     reason: str
 
 
+class ObjectImportRequest(BaseModel):
+    classification: str
+    media_type: str
+    content_base64: str
+    readers: list[str]
+    source: str
+
+
+class ObjectDeclassificationRequest(BaseModel):
+    object_id: str
+    classification: str
+    reason: str
+
+
 def create_app(substrate: Substrate) -> FastAPI:
     app = FastAPI(title="Governance Substrate Reference Architecture")
 
@@ -692,6 +901,33 @@ def create_app(substrate: Substrate) -> FastAPI:
             raise HTTPException(401, "invalid operator token")
         try:
             return substrate.override(body.event_id, body.reason)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        except IntegrityError as exc:
+            raise HTTPException(503, str(exc)) from exc
+
+    @app.post("/objects/import")
+    def object_import(body: ObjectImportRequest, authorization: str | None = Header(default=None)):
+        token = (authorization or "").removeprefix("Bearer ")
+        if not substrate.is_operator(token):
+            raise HTTPException(401, "invalid operator token")
+        try:
+            return substrate.import_object(body.classification, body.media_type,
+                                           body.content_base64, body.readers, body.source)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        except IntegrityError as exc:
+            raise HTTPException(503, str(exc)) from exc
+
+    @app.post("/objects/declassify")
+    def object_declassify(body: ObjectDeclassificationRequest,
+                          authorization: str | None = Header(default=None)):
+        token = (authorization or "").removeprefix("Bearer ")
+        if not substrate.is_operator(token):
+            raise HTTPException(401, "invalid operator token")
+        try:
+            return substrate.declassify_object(body.object_id, body.classification,
+                                               body.reason)
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
         except IntegrityError as exc:
