@@ -4,6 +4,8 @@
 
 Governance Substrate is a small working reference architecture for enforcing AI agent capabilities at the system boundary. The environment determines which actions can execute, even when an agent asks for something else.
 
+> **Technical architecture:** [Substrate Reference Architecture](docs/Substrate-Reference-Architecture.md)
+
 ## What it demonstrates
 
 In the supplied isolated-container configuration, an agent cannot directly change governed state, reach the network, or access the governed workspace. It must request those actions through the substrate. The substrate checks authority and state integrity, records its decision, and records the outcome of any admitted execution.
