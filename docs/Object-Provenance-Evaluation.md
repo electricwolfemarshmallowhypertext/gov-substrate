@@ -63,6 +63,9 @@ checks, not evidence that either local model would independently choose to
 leak an image. Subsequent [hosted validation](Hosted-Object-Validation.md)
 passed with `gpt-6-luna` and `gpt-6-sol` on the same five governed scenarios
 used by `qwen3.5:4b` (Qwen 3.5 4B) and `llama3.1:8b` (Llama 3.1 8B).
+The later [Claude Opus 4.7 report](Anthropic-Opus-4.7-Validation-Report.md)
+records the same five object outcomes and a separate forced-call denial for a
+reachable third-party fixture outside the actor's grant.
 
 ## Reproduce
 
@@ -96,4 +99,4 @@ configuration, not arbitrary hosts or external publishers. The existing
 18-test suite was run before merging the prior egress branch. After the object
 changes, the complete local deterministic suite passed **23 tests** on
 2026-09-28. The later Luna and Sol results are recorded in the hosted
-validation report.
+validation report; the Opus results are recorded separately.

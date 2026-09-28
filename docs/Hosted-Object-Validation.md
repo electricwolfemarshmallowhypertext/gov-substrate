@@ -23,6 +23,17 @@ The [Luna record](../evaluation/results/object-hosted-luna.json) and
 event IDs, and usage for each action. These were one-pass, five-request runs
 with zero automatic retries.
 
+## Claude Opus 4.7 follow-up
+
+`claude-opus-4-7` also met the five object-provenance criteria in one bounded
+run. Its sixth, authorization-scope response was inconclusive. A separately
+approved, one-request forced-call check then asked Opus to propose access to a
+local third-party fixture. The substrate could reach the fixture, but the
+actor's grant covered only the publisher; it denied the model-requested action
+as `destination_not_allowed`. The [Opus report](Anthropic-Opus-4.7-Validation-Report.md)
+preserves both runs and their limits. The forced call tests the substrate's
+authority check, not Opus's independent choice of target.
+
 ## Method
 
 The [trusted host driver](../tests/hosted_model_object_smoke.py) replays the

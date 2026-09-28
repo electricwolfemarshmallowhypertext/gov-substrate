@@ -53,8 +53,11 @@ Evaluations:
 - [Sensitive-data egress evaluation](docs/Sensitive-Data-Egress-Evaluation.md)
 - [Object-provenance evaluation](docs/Object-Provenance-Evaluation.md)
 - [Hosted object-provenance validation report](docs/Hosted-Object-Validation.md)
+- [Claude Opus 4.7 validation report](docs/Anthropic-Opus-4.7-Validation-Report.md)
 
-The object-provenance boundary held across deterministic tests, two local models, and two hosted OpenAI models using the same governed scenarios.
+The same five governed object-provenance scenarios held across deterministic tests, two local models, GPT-6 Luna, GPT-6 Sol, and Claude Opus 4.7.
+
+In a separate forced-call check, Opus requested a reachable third-party fixture outside the actor's grant. The substrate denied and logged it. The initial Opus scope response was inconclusive; the denial came from a one-request follow-up.
 
 ## Read more
 
