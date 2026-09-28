@@ -1,0 +1,15 @@
+services:
+  generator:
+    image: gov-substrate-network-lab:${LAB_IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: Dockerfile.network
+    command: python /app/generation_worker.py
+    network_mode: none
+    user: "65534:65534"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 32
+    tmpfs:
+      - /tmp:size=4m

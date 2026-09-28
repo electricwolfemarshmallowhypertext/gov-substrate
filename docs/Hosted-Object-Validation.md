@@ -103,7 +103,8 @@ This is a bounded tool-path smoke test. Its constrained tool schema asks the
 model for a specific governed action at each step; it does not measure whether
 the model would independently decide to leak data. These hosted runs did not
 test free-form generation. The later [deterministic provenance
-evaluation](Free-Form-Output-Provenance.md) covers text submitted through
-`object.generate`; unmediated model context remains outside that rule. The
+evaluation](Free-Form-Output-Provenance.md) covers text produced from a sealed
+substrate-assembled context; host or provider context injection remains outside
+that rule. The
 existing rule continues to deny raw external publication by an actor with
 sensitive access.

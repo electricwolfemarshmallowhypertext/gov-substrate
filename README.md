@@ -28,7 +28,7 @@ In the supplied isolated-container configuration, an agent cannot directly chang
 - **Scoped authority:** Actor-, session-, and shared-resource access are distinct capabilities rather than implicit shared access.
 - **Delegated services:** Services that can proxy, store, forward, or act downstream are treated as delegated capabilities and fail closed unless explicitly mediated.
 - **Sensitive-data egress:** External publication is constrained by composed authority, not destination access alone.
-- **Object provenance:** Governed objects retain classification through supported transforms and audited actor-context generation; lowering classification requires an audited operator action.
+- **Object provenance:** Governed objects retain classification through supported transforms and sealed generation contexts; lowering classification requires an audited operator action.
 
 ## Results
 
@@ -41,7 +41,7 @@ Current implementation enforces:
 - fail-closed policy and state integrity checks
 - explicit treatment of delegated services
 - governed sensitive-data publication
-- object-level classification and provenance through fixed transforms and governed free-form generation
+- object-level classification and exact parent provenance through fixed transforms and sealed free-form generation
 - auditable decisions, execution outcomes, and operator-approved declassification
 
 The evaluations intentionally include failure cases. Earlier tests exposed cross-agent, persistence, and proxy-service gaps; subsequent enforcement changes closed those paths under the hardened policy.
@@ -80,4 +80,4 @@ Governance Substrate enforces capabilities that are explicitly placed behind its
 
 The current implementation covers governed state, network access, filesystem authority, delegated services, sensitive-data egress, and classified-object publication in the documented isolated-container architecture.
 
-It does not claim to secure arbitrary host processes, privileged containers, unmediated external systems, or capabilities that bypass the substrate. Generated prose is classified when submitted through `object.generate` using the actor's audited governed-object context; inputs supplied outside that boundary remain unverified.
+It does not claim to secure arbitrary host processes, privileged containers, unmediated external systems, or capabilities that bypass the substrate. Generated prose is classified from the exact governed objects supplied to a sealed generation. A compromised host or provider that injects extra context remains outside that boundary.

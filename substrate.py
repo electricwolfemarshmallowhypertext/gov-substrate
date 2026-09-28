@@ -153,6 +153,12 @@ class Substrate:
                     parents TEXT NOT NULL, operation TEXT NOT NULL,
                     payload BLOB NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS generations (
+                    id TEXT PRIMARY KEY, actor TEXT NOT NULL,
+                    input_ids TEXT NOT NULL, input_hashes TEXT NOT NULL,
+                    classification TEXT NOT NULL, status TEXT NOT NULL,
+                    output_id TEXT
+                );
                 CREATE TABLE IF NOT EXISTS events (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     timestamp REAL NOT NULL, actor TEXT NOT NULL,
@@ -197,9 +203,12 @@ class Substrate:
                     "sha256": hashlib.sha256(row["payload"]).hexdigest(),
                     "bytes": len(row["payload"])}
                    for row in db.execute("SELECT * FROM objects ORDER BY id")]
+        generations = [dict(row) for row in db.execute("SELECT * FROM generations ORDER BY id")]
         snapshot = {"state": state, "sessions": sessions}
         if objects:
             snapshot["objects"] = objects
+        if generations:
+            snapshot["generations"] = generations
         if self.workspace_root is not None:
             snapshot["workspace"] = workspace_snapshot(self.workspace_root)
         return snapshot
@@ -389,39 +398,126 @@ class Substrate:
         return {"event_id": event_id, "decision": "override", "object_id": child_id,
                 "parent_id": object_id, "classification": classification}
 
+    @staticmethod
+    def _generation_sources(db: sqlite3.Connection, run: sqlite3.Row):
+        input_ids = json.loads(run["input_ids"])
+        hashes = json.loads(run["input_hashes"])
+        if not input_ids or len(input_ids) != len(hashes):
+            return None
+        sources = [db.execute("SELECT * FROM objects WHERE id=?", (item,)).fetchone()
+                   for item in input_ids]
+        if any(source is None or hashlib.sha256(source["payload"]).hexdigest() != expected
+               for source, expected in zip(sources, hashes)):
+            return None
+        if max((source["classification"] for source in sources),
+               key=CLASSIFICATIONS.index) != run["classification"]:
+            return None
+        return sources
+
+    def claim_generation(self, generation_id: str) -> dict[str, Any]:
+        with self._execution_lock, self._db() as db:
+            db.execute("BEGIN IMMEDIATE")
+            expected = self._verify(db)
+            before = self._snapshot(db)
+            run = db.execute("SELECT * FROM generations WHERE id=?", (generation_id,)).fetchone()
+            sources = self._generation_sources(db, run) if run and before == expected else None
+            if before != expected:
+                rule = "state_integrity"
+            elif run is None:
+                rule = "generation_not_found"
+            elif run["status"] != "prepared":
+                rule = "generation_already_claimed"
+            elif sources is None:
+                rule = "generation_manifest_invalid"
+            else:
+                rule = None
+            action = {"kind": "generation.claim", "generation_id": generation_id}
+            if rule:
+                event_id = self._append(db, "trusted-generation-adapter", action,
+                                        {"rule": rule}, "deny", before, before)
+                db.commit()
+                return {"event_id": event_id, "decision": "deny", "reason": rule}
+            db.execute("UPDATE generations SET status='claimed' WHERE id=?", (generation_id,))
+            after = self._snapshot(db)
+            event_id = self._append(db, "trusted-generation-adapter", action,
+                                    {"rule": "sealed_context_claimed", "subject_actor": run["actor"]},
+                                    "allow", before, after)
+            db.commit()
+            inputs = [{"id": source["id"], "sha256": hashlib.sha256(source["payload"]).hexdigest(),
+                       "media_type": source["media_type"],
+                       "content_base64": base64.b64encode(source["payload"]).decode("ascii")}
+                      for source in sources]
+        return {"event_id": event_id, "decision": "allow", "generation_id": generation_id,
+                "inputs": inputs}
+
+    def complete_generation(self, generation_id: str, text: str) -> dict[str, Any]:
+        try:
+            payload = text.encode("utf-8") if isinstance(text, str) else b""
+        except UnicodeError:
+            payload = b""
+        with self._execution_lock, self._db() as db:
+            db.execute("BEGIN IMMEDIATE")
+            expected = self._verify(db)
+            before = self._snapshot(db)
+            run = db.execute("SELECT * FROM generations WHERE id=?", (generation_id,)).fetchone()
+            sources = self._generation_sources(db, run) if run and before == expected else None
+            if before != expected:
+                rule = "state_integrity"
+            elif run is None:
+                rule = "generation_not_found"
+            elif run["status"] != "claimed":
+                rule = "generation_already_consumed" if run["status"] == "completed" else "generation_not_claimed"
+            elif sources is None:
+                rule = "generation_manifest_invalid"
+            elif not payload or len(payload) > MAX_CONTENT:
+                rule = "invalid_generation_output"
+            else:
+                rule = None
+            action = {"kind": "generation.complete", "generation_id": generation_id}
+            if rule:
+                event_id = self._append(db, "trusted-generation-adapter", action,
+                                        {"rule": rule}, "deny", before, before)
+                db.commit()
+                return {"event_id": event_id, "decision": "deny", "reason": rule}
+            input_ids = json.loads(run["input_ids"])
+            object_id = self._insert_object(db, run["classification"], "text/plain",
+                                            [run["actor"]], input_ids, "generate", payload)
+            db.execute("UPDATE generations SET status='completed', output_id=? WHERE id=?",
+                       (object_id, generation_id))
+            after = self._snapshot(db)
+            action.update(object_id=object_id, parents=input_ids,
+                          classification=run["classification"],
+                          content_sha256=hashlib.sha256(payload).hexdigest())
+            event_id = self._append(db, "trusted-generation-adapter", action,
+                                    {"rule": "sealed_generation_completed", "subject_actor": run["actor"]},
+                                    "succeeded", before, after)
+            db.commit()
+        return {"event_id": event_id, "decision": "succeeded", "object_id": object_id,
+                "classification": run["classification"], "parents": input_ids}
+
     def _decide(self, actor: str, action: dict[str, Any], session_id: str,
                 db: sqlite3.Connection):
         kind = action.get("kind")
         caps = self.actors[actor]
         scope = action.get("scope")
         key = action.get("key")
-        if kind == "object.generate":
-            if set(action) != {"kind", "content"}:
-                return "deny", "generated_output_fields_forbidden", None
-            content = action["content"]
-            if not isinstance(content, str) or not content:
-                return "deny", "invalid_content", None
-            try:
-                payload = content.encode("utf-8")
-            except UnicodeError:
-                return "deny", "invalid_content", None
-            if len(payload) > MAX_CONTENT:
-                return "deny", "invalid_content", None
-            sources = []
-            for event in db.execute("SELECT action FROM events WHERE actor=? AND decision='allow' ORDER BY id",
-                                    (actor,)):
-                prior = json.loads(event["action"])
-                if prior.get("kind") in ("object.read", "object.transform"):
-                    object_id = prior.get("object_id")
-                    if object_id not in sources:
-                        sources.append(object_id)
-            if not sources:
-                return "deny", "generation_context_required", None
-            parents = [db.execute("SELECT * FROM objects WHERE id=?", (object_id,)).fetchone()
-                       for object_id in sources]
-            classification = max((parent["classification"] for parent in parents),
+        if kind == "generation.prepare":
+            if set(action) != {"kind", "input_ids"}:
+                return "deny", "generation_fields_forbidden", None
+            input_ids = action["input_ids"]
+            if (type(input_ids) is not list or not 1 <= len(input_ids) <= 16 or
+                    any(not isinstance(item, str) or len(item) != 32 for item in input_ids) or
+                    len(input_ids) != len(set(input_ids))):
+                return "deny", "invalid_generation_inputs", None
+            sources = [db.execute("SELECT * FROM objects WHERE id=?", (item,)).fetchone()
+                       for item in input_ids]
+            if any(source is None or actor not in json.loads(source["readers"])
+                   for source in sources):
+                return "deny", "object_not_accessible", None
+            hashes = [hashlib.sha256(source["payload"]).hexdigest() for source in sources]
+            classification = max((source["classification"] for source in sources),
                                  key=CLASSIFICATIONS.index)
-            return "allow", "generation_provenance_inherited", (sources, classification, payload)
+            return "allow", "generation_context_sealed", (input_ids, hashes, classification)
         if kind in ("object.read", "object.transform", "object.publish"):
             object_id = action.get("object_id")
             if not isinstance(object_id, str) or len(object_id) != 32:
@@ -629,10 +725,12 @@ class Substrate:
                 value = self._insert_object(db, parent["classification"], media_type,
                                             json.loads(parent["readers"]), [parent["id"]],
                                             action["operation"], transformed)
-            elif decision == "allow" and action["kind"] == "object.generate":
-                sources, classification, content = namespace
-                value = self._insert_object(db, classification, "text/plain", [actor],
-                                            sources, "generate", content)
+            elif decision == "allow" and action["kind"] == "generation.prepare":
+                input_ids, hashes, classification = namespace
+                value = secrets.token_hex(16)
+                db.execute("INSERT INTO generations VALUES (?,?,?,?,?,?,?)",
+                           (value, actor, canonical(input_ids), canonical(hashes),
+                            classification, "prepared", None))
             after = self._snapshot(db)
             logged_action = action
             if isinstance(action.get("kind"), str) and action["kind"].startswith("object."):
@@ -648,8 +746,11 @@ class Substrate:
                         logged_action["content_sha256"] = digest(action["content"])
                     except UnicodeError:
                         logged_action["content_sha256"] = "invalid_utf8"
-                if decision == "allow" and action["kind"] == "object.generate":
-                    logged_action["parents"] = namespace[0]
+            if action.get("kind") == "generation.prepare":
+                logged_action = {"kind": "generation.prepare"}
+                if decision == "allow":
+                    logged_action.update(generation_id=value, input_ids=namespace[0],
+                                         input_hashes=namespace[1], classification=namespace[2])
             if action.get("kind") == "network.request" and "services" in self.actors[actor]["network"]:
                 url = action.get("url")
                 try:
@@ -684,8 +785,8 @@ class Substrate:
         if decision == "allow" and action["kind"] == "object.transform":
             result.update(object_id=value, classification=namespace[0]["classification"],
                           media_type=namespace[2], parents=[namespace[0]["id"]])
-        if decision == "allow" and action["kind"] == "object.generate":
-            result.update(object_id=value, classification=namespace[1], parents=namespace[0])
+        if decision == "allow" and action["kind"] == "generation.prepare":
+            result.update(generation_id=value, classification=namespace[2], input_ids=namespace[0])
         if decision == "allow" and action["kind"] == "object.publish":
             parent, url, origin = namespace
             try:
@@ -906,6 +1007,21 @@ class ObjectDeclassificationRequest(BaseModel):
     reason: str
 
 
+class GenerationClaimRequest(BaseModel):
+    generation_id: str
+
+    class Config:
+        extra = "forbid"
+
+
+class GenerationCompleteRequest(BaseModel):
+    generation_id: str
+    text: str
+
+    class Config:
+        extra = "forbid"
+
+
 def create_app(substrate: Substrate) -> FastAPI:
     app = FastAPI(title="Governance Substrate Reference Architecture")
 
@@ -968,6 +1084,28 @@ def create_app(substrate: Substrate) -> FastAPI:
                                                body.reason)
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
+        except IntegrityError as exc:
+            raise HTTPException(503, str(exc)) from exc
+
+    @app.post("/generations/claim")
+    def generation_claim(body: GenerationClaimRequest,
+                         authorization: str | None = Header(default=None)):
+        token = (authorization or "").removeprefix("Bearer ")
+        if not substrate.is_operator(token):
+            raise HTTPException(401, "invalid trusted adapter token")
+        try:
+            return substrate.claim_generation(body.generation_id)
+        except IntegrityError as exc:
+            raise HTTPException(503, str(exc)) from exc
+
+    @app.post("/generations/complete")
+    def generation_complete(body: GenerationCompleteRequest,
+                            authorization: str | None = Header(default=None)):
+        token = (authorization or "").removeprefix("Bearer ")
+        if not substrate.is_operator(token):
+            raise HTTPException(401, "invalid trusted adapter token")
+        try:
+            return substrate.complete_generation(body.generation_id, body.text)
         except IntegrityError as exc:
             raise HTTPException(503, str(exc)) from exc
 

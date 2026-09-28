@@ -1,58 +1,66 @@
-# Free-form output provenance: deterministic evaluation
+# Generation-scoped output provenance
 
-This branch adds an `object.generate` proposal for model-written UTF-8 text.
-The actor supplies only `kind` and `content`. The substrate assigns the
-classification and stores the text as an immutable governed object before it
-can be published. The generated content is excluded from the audit log; its
-hash, parent IDs, assigned classification, and decision remain attributable.
+Free-form text generation now uses a sealed, one-use context manifest. An
+authenticated actor proposes `generation.prepare` with an ordered, nonempty
+list of governed input object IDs. The request accepts no prompt, history,
+output text, classification, or parent fields. Task instructions must be
+imported as governed objects and included in that input list.
 
-## Provenance rule
-
-For actor A, the substrate reads A's append-only audit history. The source set
-is every distinct object ID in A's **allowed** `object.read` or
-`object.transform` actions, in first-exposure order, across all sessions.
-Generation without a source is denied. The generated object's parents are
-exactly that source set, and its classification is the highest parent label:
+The substrate checks that the actor may read every input, resolves immutable
+bytes, records the exact IDs and SHA-256 hashes, and assigns the highest input
+classification:
 
 `public < internal < private < restricted`
 
-The actor cannot supply a label or parent list. Extra proposal fields are
-rejected. This conservative rule includes earlier governed context even if a
-particular generation did not use it. Resetting a session cannot erase that
-history. An actor with only public governed exposure can generate a public
-object; a clean actor identity and isolated execution context are required
-after another actor has seen sensitive data.
+This manifest is stored in integrity-checked state and audited before any
+generation starts. A trusted host adapter claims it once using the existing
+host-only operator credential. The adapter verifies input hashes and passes
+only media types and substrate-supplied bytes to a fresh worker. The worker
+has no network, workspace, substrate socket, API credential, persistent
+volume, or prior conversation. It returns only text; output fields that try
+to supply provenance are rejected. The substrate accepts a completion only
+for the claimed manifest, stores an immutable text object with exactly the
+sealed parents and inherited label, and audits the completed outcome. A
+second claim or completion is denied. A failed worker leaves a claimed run
+without an output object and cannot be replayed.
 
-The existing `object.publish` gate still admits only governed public text to
-an external publication service. A generated private or restricted object can
-be lowered only through the existing operator-only `/objects/declassify`
-route, which records a reason and creates a new child without modifying the
-original.
+The worker's deterministic fixture concatenates text inputs and renders an
+image input by its hash. It does not classify content. The same actor can
+complete a private generation and then a separate public-only generation:
+the latter remains public because the fresh worker receives only its sealed
+public inputs. Encoded, paraphrased, summarized, or rewritten text inherits
+the manifest's classification regardless of its wording. The existing
+`object.publish` gate still accepts only governed public text for external
+publication. Lowering a generated object's label still requires the
+operator-only audited declassification path, which creates a new child and
+does not change the original.
 
 ## Deterministic checks
 
-`tests/test_free_form_output_provenance.py` uses fixed text as the generation
-fixture and a local publication-adapter stub. It covers public, internal,
-private, mixed public/private, and restricted inputs; paraphrasing, encoding,
-summarizing, and rewriting; session reset; attempted model-assigned labels;
-operator declassification; and publication from a public-only actor context.
+`tests/test_free_form_output_provenance.py` covers exact parents, all four
+labels, mixed inputs, transformed inputs, session reset, public-only reuse by
+the same actor, rejected model-provided fields, missing or inaccessible
+inputs, tampered manifests, replay, publication, and declassification.
+`tests/test_generation_worker_docker.py` runs two one-shot workers with the
+same actor, confirms private then public lineage, and checks the worker has
+no network, governed mounts, or credential variables. It also checks the
+Compose isolation settings.
 
-Run without model APIs:
+Run the combined deterministic and Docker suite with Docker Desktop running:
 
 ```powershell
-python -m pytest -q tests/test_free_form_output_provenance.py --basetemp .pytest_tmp_free_form
+$env:RUN_DOCKER_TESTS = '1'
+python -m pytest -q --basetemp .pytest_tmp_generation
 ```
 
-On 2026-09-28, this focused suite passed **13 tests**. The complete local
-suite passed **30 tests** with **6 Docker-gated tests skipped**; the Docker
-tests were not run for this change.
+On 2026-09-28, the combined suite passed **42 tests with none skipped**.
+Pydantic emitted two class-based configuration deprecation warnings; they did
+not affect the result. No hosted model was called.
 
-## Boundary and remaining gap
+## Trust boundary
 
-The rule covers governed objects observed through the substrate under the
-same actor identity. It cannot establish which data a model saw through an
-unmediated prompt, host process, external tool, another actor, or retained
-model/runtime memory. A production generation driver must keep all model
-inputs on this governed path and isolate a clean public-only context from
-previous sensitive context. This deterministic fixture does not validate a
-hosted model or a new runtime. No content scanning is used as authority.
+The substrate governs only the context it assembles and supplies. The host
+adapter is trusted to invoke the worker with that exact context. A compromised
+host or provider that secretly injects additional context is outside this
+boundary. The deterministic worker is evidence for the supplied isolated
+container configuration; no hosted model was called for this change.

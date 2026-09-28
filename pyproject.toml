@@ -15,7 +15,7 @@ llm = ["openai>=2,<3"]
 anthropic = ["anthropic>=0.111,<1"]
 
 [tool.setuptools]
-py-modules = ["substrate", "network_adapter", "filesystem_adapter", "governed_objects"]
+py-modules = ["substrate", "network_adapter", "filesystem_adapter", "governed_objects", "generation_adapter"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

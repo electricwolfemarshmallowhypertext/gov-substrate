@@ -86,9 +86,9 @@ python tests/local_model_object_smoke.py --models qwen3.5:4b llama3.1:8b --outpu
 
 This evaluation covered bytes held in the substrate object store and the
 fixed transforms above. The later [free-form output provenance
-evaluation](Free-Form-Output-Provenance.md) adds an `object.generate` path that
-inherits classification from the actor's audited governed-object exposures.
-It does not classify context that reaches a model outside that path. The
+evaluation](Free-Form-Output-Provenance.md) adds a sealed generation path that
+inherits classification from the exact governed inputs supplied to a fresh
+worker. It does not classify context injected outside that path. The
 existing actor-level rule continues to deny raw external publication by a
 sensitive-capable actor.
 
