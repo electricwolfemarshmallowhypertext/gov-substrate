@@ -13,8 +13,11 @@ calculated model charge was **$0.0002336**. Each request had fewer than 1,024
 input tokens, below the [minimum cacheable prefix](https://developers.openai.com/api/docs/guides/prompt-caching).
 The first attempt stopped during local Docker setup before any API request;
 the driver was corrected to await substrate health, and the subsequent run
-made exactly five API requests. No Sol request has been made. A Sol replay
-requires separate approval and uses the same five steps.
+made exactly five API requests. The separately approved `gpt-6-sol` run then
+passed the [same five steps](../evaluation/results/object-hosted-sol.json) on
+2026-09-28: 1,162 input tokens, 232 output tokens, and a calculated
+Standard-rate model charge of **$0.004644**. It made five requests with no
+retries. No other model run or substrate change followed.
 
 | Step | Expected result |
 | --- | --- |
