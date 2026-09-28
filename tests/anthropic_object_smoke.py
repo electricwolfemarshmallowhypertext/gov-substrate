@@ -187,7 +187,7 @@ def run_hosted():
     def governed_network(action):
         return governed_with("containment_tool.py", action)
 
-    with tempfile.TemporaryDirectory(prefix="gov-substrate-opus47-") as temp:
+    with tempfile.TemporaryDirectory(prefix=".pytest_tmp_opus47-", dir=ROOT) as temp:
         registry = Path(temp) / "registry.yaml"
         registry.write_text(REGISTRY.read_text(encoding="utf-8"), encoding="utf-8")
         docker_env["LAB_REGISTRY_PATH"] = str(registry)
