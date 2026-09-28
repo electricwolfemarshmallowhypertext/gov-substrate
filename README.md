@@ -31,6 +31,8 @@ In the supplied isolated-container configuration, an agent cannot directly chang
 - **Object provenance:** Governed objects retain classification through supported transforms and sealed generation contexts; lowering classification requires an audited operator action.
 - **Local generation:** A one-shot CPU model worker receives only substrate-assembled text inputs. It has no outbound network, governed workspace, secret environment, or conversation store.
 
+Generation is model- and provider-agnostic. The local worker is optional; a trusted host can use the same sealed-input handoff with OpenAI, Anthropic, or another adapter while the substrate assigns output provenance and classification.
+
 ## Results
 
 Governance Substrate has been evaluated against state tampering, unauthorized network access, filesystem escape, cross-agent communication, persistent memory, delegated-service abuse, privilege expansion, sensitive-data egress, and classified-object publication.
@@ -54,6 +56,7 @@ Evaluations:
 - [Sensitive-data egress evaluation](docs/Sensitive-Data-Egress-Evaluation.md)
 - [Object-provenance evaluation](docs/Object-Provenance-Evaluation.md)
 - [Free-form output provenance evaluation](docs/Free-Form-Output-Provenance.md)
+- [Generation adapter integration](docs/Generation-Adapters.md)
 - [Hosted object-provenance validation report](docs/Hosted-Object-Validation.md)
 - [Claude Opus 4.7 validation report](docs/Anthropic-Opus-4.7-Validation-Report.md)
 
