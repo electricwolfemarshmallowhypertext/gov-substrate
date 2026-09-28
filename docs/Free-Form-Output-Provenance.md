@@ -35,6 +35,48 @@ publication. Lowering a generated object's label still requires the
 operator-only audited declassification path, which creates a new child and
 does not change the original.
 
+## Real local generation runtime
+
+`compose.local-generation.yaml` runs `local_generation_worker.py` with a
+locally installed GGUF model through `llama-cpp-python`. The trusted host
+adapter's `run_local_generation` uses a fixed Docker command. The only bind
+mount is the selected GGUF file, read-only at `/model/model.gguf`; no model
+weights are committed to the repository. The container is read-only, runs as
+an unprivileged user, drops capabilities, has no network, and starts with an
+empty environment apart from fixed runtime values. Each request starts a new
+container and model instance. The worker accepts only the ordered governed
+text inputs returned by the sealed claim, rejects extra prompt/history/file
+fields, and never accepts a caller-provided classification. It rejects input
+that would exceed the model's context window rather than silently truncating
+the claimed context. Image objects are not supported by this local text worker.
+
+The Docker test uses local `tinyllama:1.1b` GGUF blob SHA-256
+`2af3b81862c6be03c769683af18efdadb2c33f60ff32ab6f83e42c043d6c7816`
+with `llama-cpp-python==0.3.35`, a 512-token context window, and at most 32
+generated tokens per run. It exercises private
+then public generations by the same actor and checks the resulting immutable
+objects retain the exact sealed parents and labels. Separate probes reject
+extra prompt and prior-conversation fields, confirm injected Docker environment
+data is stripped before Python starts, and confirm hidden host/workspace files
+are not mounted. These probes test the supplied container configuration and
+the adapter path; they do not inspect a model's internal representations.
+
+With Docker Desktop running and `tinyllama:1.1b` already installed locally:
+
+```powershell
+$env:GENERATION_MODEL_BLOB = ((ollama show tinyllama:1.1b --modelfile |
+  Select-String '^FROM ' | Select-Object -First 1).ToString() -replace '^FROM ', '')
+$env:RUN_LOCAL_MODEL_TESTS = '1'
+python -m pytest -q tests/test_local_generation_worker.py tests/test_local_generation_worker_docker.py
+```
+
+This uses only the local model. It does not call OpenAI, Anthropic, or another
+hosted provider.
+
+On 2026-09-28, the full deterministic and Docker suite, including this local
+model replay, passed **50 tests with none skipped**. Two existing Pydantic
+class-based configuration deprecation warnings remain.
+
 ## Deterministic checks
 
 `tests/test_free_form_output_provenance.py` covers exact parents, all four
@@ -62,5 +104,6 @@ not affect the result. No hosted model was called.
 The substrate governs only the context it assembles and supplies. The host
 adapter is trusted to invoke the worker with that exact context. A compromised
 host or provider that secretly injects additional context is outside this
-boundary. The deterministic worker is evidence for the supplied isolated
-container configuration; no hosted model was called for this change.
+boundary. The deterministic and local-model workers are evidence for the
+supplied isolated-container configurations; no hosted model was called for
+this change.

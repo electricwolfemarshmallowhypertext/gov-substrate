@@ -3,6 +3,7 @@
 .pytest_tmp*
 .network_lab_*
 dist/
+paper/
 __pycache__
 *.db
 *.db-*

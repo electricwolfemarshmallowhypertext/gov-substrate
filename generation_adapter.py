@@ -5,10 +5,11 @@ import hashlib
 import json
 import os
 import subprocess
+from pathlib import Path
 
 
 def run_generation(client, generation_id: str, operator_token: str,
-                   worker_command: list[str]) -> dict:
+                   worker_command: list[str], worker_environment=None) -> dict:
     headers = {"Authorization": f"Bearer {operator_token}"}
     claim = client.post("/generations/claim", headers=headers,
                         json={"generation_id": generation_id})
@@ -23,7 +24,8 @@ def run_generation(client, generation_id: str, operator_token: str,
         inputs.append({"media_type": source["media_type"],
                        "content_base64": source["content_base64"]})
 
-    worker_env = {name: value for name, value in os.environ.items()
+    source_environment = os.environ if worker_environment is None else worker_environment
+    worker_env = {name: value for name, value in source_environment.items()
                   if not any(word in name.upper() for word in
                              ("API_KEY", "TOKEN", "SECRET", "PASSWORD"))
                   and not name.startswith(("OPENAI_", "ANTHROPIC_", "OPENROUTER_"))}
@@ -44,3 +46,24 @@ def run_generation(client, generation_id: str, operator_token: str,
     if completion.status_code != 200 or completion.json().get("decision") != "succeeded":
         raise RuntimeError("Sealed generation completion was denied")
     return completion.json()
+
+
+def run_local_generation(client, generation_id: str, operator_token: str,
+                         model_blob: str | Path, project: str | None = None) -> dict:
+    """Run one claimed manifest through the fixed, networkless local worker."""
+    model_path = Path(model_blob).resolve(strict=True)
+    if not model_path.is_file():
+        raise ValueError("local model artifact must be one file")
+    with model_path.open("rb") as model_file:
+        if model_file.read(4) != b"GGUF":
+            raise ValueError("local model artifact must be GGUF")
+
+    compose_file = Path(__file__).with_name("compose.local-generation.yaml")
+    command = ["docker", "compose", "-f", str(compose_file)]
+    if project is not None:
+        command.extend(["-p", project])
+    command.extend(["run", "--rm", "-T", "--no-deps", "generator"])
+    worker_environment = dict(os.environ)
+    worker_environment["GENERATION_MODEL_BLOB"] = str(model_path)
+    return run_generation(client, generation_id, operator_token, command,
+                          worker_environment=worker_environment)

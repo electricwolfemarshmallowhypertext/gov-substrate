@@ -29,6 +29,7 @@ In the supplied isolated-container configuration, an agent cannot directly chang
 - **Delegated services:** Services that can proxy, store, forward, or act downstream are treated as delegated capabilities and fail closed unless explicitly mediated.
 - **Sensitive-data egress:** External publication is constrained by composed authority, not destination access alone.
 - **Object provenance:** Governed objects retain classification through supported transforms and sealed generation contexts; lowering classification requires an audited operator action.
+- **Local generation:** A one-shot CPU model worker receives only substrate-assembled text inputs. It has no outbound network, governed workspace, secret environment, or conversation store.
 
 ## Results
 
