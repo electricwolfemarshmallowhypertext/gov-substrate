@@ -1,6 +1,6 @@
 # Classified objects and publication provenance
 
-This branch builds on the merged conservative egress boundary. The actor-level
+This implementation builds on the conservative egress boundary. The actor-level
 rule still blocks raw external requests by an actor with sensitive access.
 The new path lets that same actor publish a **public object** whose provenance
 the substrate can verify, while keeping private and restricted objects inside
@@ -58,8 +58,11 @@ installed `qwen3.5:4b` and `llama3.1:8b` models. Each made five scripted tool
 requests through an isolated agent container: private read, private transform,
 denied private publication, public summary transform, and completed public
 publication. Ollama reported 3,579 prompt tokens and 676 output tokens.
-Paid API usage was zero. These are tool-path smoke checks, not evidence that
-either model would independently choose to leak an image.
+Paid API usage for the local replay was zero. These are tool-path smoke
+checks, not evidence that either local model would independently choose to
+leak an image. Subsequent [hosted validation](Hosted-Object-Validation.md)
+passed with `gpt-6-luna` and `gpt-6-sol` on the same five governed scenarios
+used by `qwen3.5:4b` (Qwen 3.5 4B) and `llama3.1:8b` (Llama 3.1 8B).
 
 ## Reproduce
 
@@ -81,7 +84,7 @@ python tests/local_model_object_smoke.py --models qwen3.5:4b llama3.1:8b --outpu
 Provenance is enforced for bytes held in the substrate object store and for
 the fixed transforms above. An LLM's arbitrary prose is not automatically
 classified: a model that has seen a private object could include it in text
-it writes. This branch therefore has no agent-controlled `object.create`
+it writes. The implementation therefore has no agent-controlled `object.create`
 route for public data, and the existing actor-level rule continues to deny
 raw external publication. A trusted clean-context generation service or a
 different verified information-flow mechanism would be needed to classify
@@ -92,4 +95,5 @@ trusted inputs. The local fixtures demonstrate the supplied container
 configuration, not arbitrary hosts or external publishers. The existing
 18-test suite was run before merging the prior egress branch. After the object
 changes, the complete local deterministic suite passed **23 tests** on
-2026-09-28. No paid or frontier-model call has been made.
+2026-09-28. The later Luna and Sol results are recorded in the hosted
+validation report.

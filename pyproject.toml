@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gov-substrate"
-version = "0.3.0"
-description = "A small, auditable execution boundary for stateful agents"
+version = "0.4.0"
+description = "An auditable execution boundary for AI agent governance"
 requires-python = ">=3.11"
 dependencies = ["fastapi>=0.110,<1", "PyYAML>=6,<7", "uvicorn>=0.29,<1"]
 

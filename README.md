@@ -52,6 +52,9 @@ Evaluations:
 - [Scoped-authority evaluation](docs/Scoped-Authority-Evaluation.md)
 - [Sensitive-data egress evaluation](docs/Sensitive-Data-Egress-Evaluation.md)
 - [Object-provenance evaluation](docs/Object-Provenance-Evaluation.md)
+- [Hosted object-provenance validation report](docs/Hosted-Object-Validation.md)
+
+The object-provenance boundary held across deterministic tests, two local models, and two hosted OpenAI models using the same governed scenarios.
 
 ## Read more
 
