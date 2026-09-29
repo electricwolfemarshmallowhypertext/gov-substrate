@@ -77,7 +77,7 @@ In a separate forced-call check, Opus requested a reachable third-party fixture 
 
 The GitHub Actions `unit-tests` and `acceptance-qwen` jobs run on pushes and pull requests. Qwen uses the official historical Q8_0 revision and a checked SHA-256. The `acceptance-phi` job runs only when manually requested with `workflow_dispatch` and `run_phi=true`; it downloads official Microsoft weights, verifies their hashes, converts them with a pinned official `llama.cpp` commit, then runs the same acceptance command. CI makes no paid model calls. Fake-client tests remain unit evidence, separate from real Docker acceptance.
 
-Local verification on September 29, 2026: Qwen acceptance **4 passed**; Phi acceptance **4 passed**; separate environment probes **5 passed**; normal unit suite **76 passed, 10 opt-in skips**. GitHub Actions results for this matrix have not yet been observed.
+Local verification on September 29, 2026: Qwen acceptance **4 passed**; Phi acceptance **4 passed**; separate environment probes **5 passed**; normal unit suite **76 passed, 10 opt-in skips**. The [automatic Linux CI run](https://github.com/electricwolfemarshmallowhypertext/gov-substrate/actions/runs/36613632007) passed Qwen acceptance, environment probes, and unit tests. The manual Phi CI job has not run.
 
 ## Read more
 
