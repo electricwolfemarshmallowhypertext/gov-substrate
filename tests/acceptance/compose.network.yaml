@@ -1,0 +1,13 @@
+services:
+  thirdparty:
+    image: python:3.12-slim
+    command: python -m http.server 8002 --bind 0.0.0.0
+    working_dir: /srv
+    read_only: true
+    user: "65534:65534"
+    volumes:
+      - type: bind
+        source: ./tests/fixtures/thirdparty
+        target: /srv
+        read_only: true
+    networks: [egress]

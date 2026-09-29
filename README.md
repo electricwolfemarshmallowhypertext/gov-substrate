@@ -60,10 +60,20 @@ Evaluations:
 - [Generation adapter integration](docs/Generation-Adapters.md)
 - [Hosted object-provenance validation report](docs/Hosted-Object-Validation.md)
 - [Claude Opus 4.7 validation report](docs/Anthropic-Opus-4.7-Validation-Report.md)
+- [Environment skeleton evaluation](docs/Environment-Skeleton-Evaluation.md)
 
 The same five governed object-provenance scenarios held across deterministic tests, two local models, GPT-6 Luna, GPT-6 Sol, and Claude Opus 4.7.
 
 In a separate forced-call check, Opus requested a reachable third-party fixture outside the actor's grant. The substrate denied and logged it. The initial Opus scope response was inconclusive; the denial came from a one-request follow-up.
+
+## Testing
+
+- **Unit tests — policy and control logic:** `python -m pytest -q tests --ignore=tests/acceptance`. Fake provider and Docker clients are used where appropriate; opt-in Docker tests in the normal suite are skipped unless separately enabled. These results establish decision logic, not runtime enforcement.
+- **Acceptance tests — real Docker and runtime enforcement:** Set `GENERATION_MODEL_BLOB` to the official [Qwen/Qwen3-0.6B-GGUF](https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/blob/main/Qwen3-0.6B-Q8_0.gguf) file `Qwen3-0.6B-Q8_0.gguf`, then set `RUN_ACCEPTANCE_TESTS=1` and run `python -m pytest -q tests/acceptance`. The suite verifies SHA-256 `9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031` before building the worker. It runs local inference through the real substrate, Docker worker, and runtime supervisor; verifies inherited object classification and provenance; stops/removes a running worker through the circuit breaker; reconciles an orphan on supervisor restart; and denies an agent access to a service that is reachable by the substrate.
+
+The GitHub Actions `unit-tests` job runs on pushes and pull requests. The separate `acceptance-tests` job is manual (`workflow_dispatch`) because it downloads the pinned 639 MB official model and builds a CPU inference image. The download is from the official Qwen repository at a fixed commit and is SHA-256 checked before tests. CI makes no paid model calls. The acceptance tests require a real Docker daemon and fail if prerequisites are missing; they are not replaced by fake-client results.
+
+Local verification on September 29, 2026: **76 passed, 10 opt-in skips** in the normal suite; **4 passed, 0 skipped** in the real Docker acceptance suite using the SHA-256 verified Qwen Q8_0 file. The acceptance suite has not yet been run in GitHub Actions.
 
 ## Read more
 

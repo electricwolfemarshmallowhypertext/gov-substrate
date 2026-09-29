@@ -1,0 +1,42 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -e '.[test]'
+      - name: Policy and control logic (Docker tests remain opt-in)
+        run: python -m pytest -q tests --ignore=tests/acceptance
+
+  acceptance-tests:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -e '.[test]'
+      - name: Fetch official Qwen Q8_0 artifact and verify SHA-256
+        shell: bash
+        run: |
+          model="$RUNNER_TEMP/Qwen3-0.6B-Q8_0.gguf"
+          curl --fail --location --silent --show-error \
+            'https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/resolve/1eaf4d9657fe65ad10a51eab76a8db5b363bddaa/Qwen3-0.6B-Q8_0.gguf' \
+            --output "$model"
+          echo '9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031  '"$model" | sha256sum --check --status
+          echo "GENERATION_MODEL_BLOB=$model" >> "$GITHUB_ENV"
+      - name: Real Docker, substrate, supervisor, worker, and local inference
+        env:
+          RUN_ACCEPTANCE_TESTS: '1'
+        run: python -m pytest -q tests/acceptance
