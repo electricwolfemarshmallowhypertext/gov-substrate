@@ -1,6 +1,10 @@
 __pycache__/
 .pytest_cache/
 .pytest_tmp*/
+*.gguf
+*.safetensors
+/.models/
+/.model-cache/
 *.egg-info/
 .venv/
 *.db

@@ -62,7 +62,10 @@ the pinned official Microsoft weights and converter before running the same
 acceptance command. Each job reports its result separately. The [automatic CI
 run for `8a57af8`](https://github.com/electricwolfemarshmallowhypertext/gov-substrate/actions/runs/36613632007)
 passed the Qwen acceptance, environment-probe, and unit jobs on Linux. The
-manual Phi CI job has not been run; its result above is from local real Docker.
+[manual CI run for `3ffbb5d`](https://github.com/electricwolfemarshmallowhypertext/gov-substrate/actions/runs/36617457396)
+passed the same acceptance tests with Qwen (4/4) and Phi (4/4), the separate
+environment probes (5/5), and the unit suite (76 passed, 10 opt-in skips).
+Phi's local real-Docker result above is independent of the CI result.
 
 The originally proposed `meta-llama/Llama-3.2-3B-Instruct` leg was blocked by
 an HTTP 403 on an official weight shard. It was not a failed governance or
