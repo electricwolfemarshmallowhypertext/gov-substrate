@@ -1,4 +1,4 @@
-"""End-to-end checks against Docker, the local Qwen worker, and the real substrate."""
+"""End-to-end checks against Docker, one pinned local model, and the real substrate."""
 
 import base64
 import json
@@ -70,6 +70,9 @@ def launch_waiting_worker(prepared, project, env):
     assert info["HostConfig"]["NetworkMode"] == "none"
     assert info["HostConfig"]["ReadonlyRootfs"] is True
     assert info["Config"]["Entrypoint"][:2] == ["/usr/bin/env", "-i"]
+    assert len(info["Mounts"]) == 1
+    assert info["Mounts"][0]["Destination"] == "/model/model.gguf"
+    assert info["Mounts"][0]["RW"] is False
     return name, container_id
 
 

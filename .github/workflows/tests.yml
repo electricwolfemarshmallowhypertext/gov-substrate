@@ -4,6 +4,11 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+    inputs:
+      run_phi:
+        description: Run the manual official Phi-4 Mini local acceptance leg
+        type: boolean
+        default: false
 
 jobs:
   unit-tests:
@@ -17,8 +22,7 @@ jobs:
       - name: Policy and control logic (Docker tests remain opt-in)
         run: python -m pytest -q tests --ignore=tests/acceptance
 
-  acceptance-tests:
-    if: github.event_name == 'workflow_dispatch'
+  acceptance-qwen:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
@@ -27,16 +31,76 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m pip install -e '.[test]'
-      - name: Fetch official Qwen Q8_0 artifact and verify SHA-256
+      - name: Fetch pinned official Qwen Q8_0 artifact and verify SHA-256
         shell: bash
         run: |
           model="$RUNNER_TEMP/Qwen3-0.6B-Q8_0.gguf"
           curl --fail --location --silent --show-error \
-            'https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/resolve/1eaf4d9657fe65ad10a51eab76a8db5b363bddaa/Qwen3-0.6B-Q8_0.gguf' \
+            'https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/resolve/ef4088322893040952513f532f736ddeab518403/Qwen3-0.6B-Q8_0.gguf' \
             --output "$model"
-          echo '9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031  '"$model" | sha256sum --check --status
+          echo '12fae8b8f78f0360b498d04c8db7d33aff29ab7d8080231f93a17c18119e6735  '"$model" | sha256sum --check --status
           echo "GENERATION_MODEL_BLOB=$model" >> "$GITHUB_ENV"
-      - name: Real Docker, substrate, supervisor, worker, and local inference
+      - name: Qwen local-model acceptance (real Docker and substrate)
         env:
           RUN_ACCEPTANCE_TESTS: '1'
-        run: python -m pytest -q tests/acceptance
+        run: python -m pytest -q tests/acceptance --ignore=tests/acceptance/environment
+      - name: Environment isolation probes (separate runtime evidence)
+        env:
+          RUN_ACCEPTANCE_TESTS: '1'
+        run: python -m pytest -q tests/acceptance/environment
+
+  acceptance-phi:
+    if: github.event_name == 'workflow_dispatch' && inputs.run_phi
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --no-cache-dir -e '.[test]'
+      - name: Fetch pinned official llama.cpp converter and requirements
+        shell: bash
+        run: |
+          set -euo pipefail
+          commit=4df29be4f4c3673f428170fda944a5b19f743bb8
+          curl --fail --location --retry 3 --silent --show-error \
+            "https://codeload.github.com/ggml-org/llama.cpp/zip/$commit" \
+            --output "$RUNNER_TEMP/llama.cpp.zip"
+          unzip -q "$RUNNER_TEMP/llama.cpp.zip" -d "$RUNNER_TEMP"
+          python -m pip install --no-cache-dir \
+            -r "$RUNNER_TEMP/llama.cpp-$commit/requirements/requirements-convert_hf_to_gguf.txt"
+      - name: Fetch and verify official Microsoft Phi-4 Mini weights
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_dir="$RUNNER_TEMP/.pytest_tmp_phi4mini"
+          mkdir -p "$source_dir"
+          base=https://huggingface.co/microsoft/Phi-4-mini-instruct/resolve/cfbefacb99257ffa30c83adab238a50856ac3083
+          for file in LICENSE README.md config.json generation_config.json \
+            added_tokens.json special_tokens_map.json tokenizer_config.json \
+            tokenizer.json merges.txt vocab.json model.safetensors.index.json \
+            model-00001-of-00002.safetensors model-00002-of-00002.safetensors; do
+            curl --fail --location --retry 3 --retry-all-errors --silent --show-error \
+              "$base/$file" --output "$source_dir/$file"
+          done
+          printf '%s  %s\n' \
+            bc703090b63eda16f639fa4de7ac54635c23105ab1da2f6ec4d3403151d38ee6 "$source_dir/model-00001-of-00002.safetensors" \
+            7ff79b9d2d31076bac2663393451f6530f4fc8ca49b09002116c92c373dba983 "$source_dir/model-00002-of-00002.safetensors" \
+            382cc235b56c725945e149cc25f191da667c836655efd0857b004320e90e91ea "$source_dir/tokenizer.json" \
+            | sha256sum --check --status
+          echo "PHI_SOURCE_DIR=$source_dir" >> "$GITHUB_ENV"
+      - name: Convert official Phi weights to Q8_0 GGUF
+        shell: bash
+        run: |
+          set -euo pipefail
+          model="$RUNNER_TEMP/Phi-4-mini-instruct-Q8_0.gguf"
+          python "$RUNNER_TEMP/llama.cpp-4df29be4f4c3673f428170fda944a5b19f743bb8/convert_hf_to_gguf.py" \
+            "$PHI_SOURCE_DIR" --outtype q8_0 --outfile "$model"
+          echo '3e81a3ad900b6d67df011d42ef14bad63354a3516fbd229b9bf29755363b25ee  '"$model" | sha256sum --check --status
+          echo "GENERATION_MODEL_BLOB=$model" >> "$GITHUB_ENV"
+          rm "$PHI_SOURCE_DIR/model-00001-of-00002.safetensors" "$PHI_SOURCE_DIR/model-00002-of-00002.safetensors"
+      - name: Phi local-model acceptance (same real Docker tests)
+        env:
+          RUN_ACCEPTANCE_TESTS: '1'
+        run: python -m pytest -q tests/acceptance --ignore=tests/acceptance/environment

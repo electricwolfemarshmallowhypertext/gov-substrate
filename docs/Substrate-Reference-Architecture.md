@@ -113,8 +113,12 @@ Separate host processes need a trusted supervisor service to share that
 control; an agent never receives Docker access or the control credential.
 Already sent hosted-provider requests cannot be recalled.
 
-WASI/Wasm is a portable backend candidate, not implemented. It would implement
-the same supervisor contract without changing the substrate API.
+Governance Substrate defines the boundary. Docker/OCI is the current reference
+enforcement backend, not a product requirement. WASI/Wasm is the next portable
+constrained backend candidate; a native desktop supervisor is a future local
+agent backend; and a Kubernetes/OCI supervisor is a future server backend.
+None is implemented here. Each would implement the same supervisor contract
+without adding runtime-specific concepts to the substrate API.
 
 ## Measured properties
 

@@ -11,7 +11,12 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 LOCAL_COMPOSE = ROOT / "compose.local-generation.yaml"
-QWEN_Q8_SHA256 = "9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031"
+MODEL_ARTIFACTS = {
+    "Qwen3-0.6B-Q8_0.gguf": (
+        804753088, "12fae8b8f78f0360b498d04c8db7d33aff29ab7d8080231f93a17c18119e6735"),
+    "Phi-4-mini-instruct-Q8_0.gguf": (
+        4084611392, "3e81a3ad900b6d67df011d42ef14bad63354a3516fbd229b9bf29755363b25ee"),
+}
 
 
 def docker_environment():
@@ -40,16 +45,19 @@ def acceptance_enabled():
 @pytest.fixture(scope="session")
 def local_model_blob(acceptance_enabled):
     configured = os.getenv("GENERATION_MODEL_BLOB")
-    assert configured, "GENERATION_MODEL_BLOB must name the official Qwen3-0.6B-Q8_0.gguf"
+    assert configured, "GENERATION_MODEL_BLOB must name a pinned local acceptance model"
     path = Path(configured).resolve(strict=True)
     assert path.is_file()
+    assert path.name in MODEL_ARTIFACTS, "unrecognized local acceptance model"
+    expected_size, expected_sha256 = MODEL_ARTIFACTS[path.name]
+    assert path.stat().st_size == expected_size, "local model size mismatch"
     digest = hashlib.sha256()
     with path.open("rb") as model:
         assert model.read(4) == b"GGUF"
         model.seek(0)
         for chunk in iter(lambda: model.read(1024 * 1024), b""):
             digest.update(chunk)
-    assert digest.hexdigest() == QWEN_Q8_SHA256, "official Qwen Q8_0 SHA-256 mismatch"
+    assert digest.hexdigest() == expected_sha256, "local model SHA-256 mismatch"
     return path
 
 

@@ -34,6 +34,8 @@ In the supplied isolated-container configuration, an agent cannot directly chang
 
 Generation is model- and provider-agnostic. The local worker is optional; a trusted host can use the same sealed-input handoff with OpenAI, Anthropic, or another adapter while the substrate assigns output provenance and classification. Hosted transfer is denied until the provider is registered with an explicit classification grant.
 
+Governance Substrate defines the boundary. Docker/OCI is the current reference enforcement backend, not a product requirement.
+
 ## Results
 
 Governance Substrate has been evaluated against state tampering, unauthorized network access, filesystem escape, cross-agent communication, persistent memory, delegated-service abuse, privilege expansion, sensitive-data egress, and classified-object publication.
@@ -61,6 +63,7 @@ Evaluations:
 - [Hosted object-provenance validation report](docs/Hosted-Object-Validation.md)
 - [Claude Opus 4.7 validation report](docs/Anthropic-Opus-4.7-Validation-Report.md)
 - [Environment skeleton evaluation](docs/Environment-Skeleton-Evaluation.md)
+- [Local-model runtime matrix](docs/Local-Model-Matrix-Evaluation.md)
 
 The same five governed object-provenance scenarios held across deterministic tests, two local models, GPT-6 Luna, GPT-6 Sol, and Claude Opus 4.7.
 
@@ -69,11 +72,12 @@ In a separate forced-call check, Opus requested a reachable third-party fixture 
 ## Testing
 
 - **Unit tests — policy and control logic:** `python -m pytest -q tests --ignore=tests/acceptance`. Fake provider and Docker clients are used where appropriate; opt-in Docker tests in the normal suite are skipped unless separately enabled. These results establish decision logic, not runtime enforcement.
-- **Acceptance tests — real Docker and runtime enforcement:** Set `GENERATION_MODEL_BLOB` to the official [Qwen/Qwen3-0.6B-GGUF](https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/blob/main/Qwen3-0.6B-Q8_0.gguf) file `Qwen3-0.6B-Q8_0.gguf`, then set `RUN_ACCEPTANCE_TESTS=1` and run `python -m pytest -q tests/acceptance`. The suite verifies SHA-256 `9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031` before building the worker. It runs local inference through the real substrate, Docker worker, and runtime supervisor; verifies inherited object classification and provenance; stops/removes a running worker through the circuit breaker; reconciles an orphan on supervisor restart; and denies an agent access to a service that is reachable by the substrate.
+- **Acceptance tests — real Docker and runtime enforcement:** Set `GENERATION_MODEL_BLOB` to either pinned artifact in the [local-model matrix](docs/Local-Model-Matrix-Evaluation.md), set `RUN_ACCEPTANCE_TESTS=1`, and run `python -m pytest -q tests/acceptance --ignore=tests/acceptance/environment`. The same tests run real local inference through the substrate, Docker worker, and runtime supervisor; verify output classification and provenance; stop and remove a running worker; reject late completion; reconcile an orphan; and deny an agent access to a substrate-reachable unauthorized service. The model file is verified by size and SHA-256 before the worker is built.
+- **Environment probes — physical isolation:** Run `python -m pytest -q tests/acceptance/environment` separately with a pinned model file. These direct OS and Docker probes establish the reported isolation properties for the tested configuration; repeating them with different weights would not add network or filesystem isolation evidence.
 
-The GitHub Actions `unit-tests` job runs on pushes and pull requests. The separate `acceptance-tests` job is manual (`workflow_dispatch`) because it downloads the pinned 639 MB official model and builds a CPU inference image. The download is from the official Qwen repository at a fixed commit and is SHA-256 checked before tests. CI makes no paid model calls. The acceptance tests require a real Docker daemon and fail if prerequisites are missing; they are not replaced by fake-client results.
+The GitHub Actions `unit-tests` and `acceptance-qwen` jobs run on pushes and pull requests. Qwen uses the official historical Q8_0 revision and a checked SHA-256. The `acceptance-phi` job runs only when manually requested with `workflow_dispatch` and `run_phi=true`; it downloads official Microsoft weights, verifies their hashes, converts them with a pinned official `llama.cpp` commit, then runs the same acceptance command. CI makes no paid model calls. Fake-client tests remain unit evidence, separate from real Docker acceptance.
 
-Local verification on September 29, 2026: **76 passed, 10 opt-in skips** in the normal suite; **4 passed, 0 skipped** in the real Docker acceptance suite using the SHA-256 verified Qwen Q8_0 file. The acceptance suite has not yet been run in GitHub Actions.
+Local verification on September 29, 2026: Qwen acceptance **4 passed**; Phi acceptance **4 passed**; separate environment probes **5 passed**; normal unit suite **76 passed, 10 opt-in skips**. GitHub Actions results for this matrix have not yet been observed.
 
 ## Read more
 
