@@ -53,8 +53,25 @@ provider = AnthropicTextAdapter(
     service_id="anthropic")
 ```
 
-The application supplies already configured official SDK clients. Install
-`.[llm]` or `.[anthropic]` only for the provider it uses. Models are selected
+For Google's direct Gemini Developer API, register `google-gemini` and use:
+
+```python
+import os
+from hosted_generation_adapters import GeminiDeveloperClient, GeminiTextAdapter
+
+provider = GeminiTextAdapter(
+    client=GeminiDeveloperClient(os.environ["GEMINI_API_KEY"]),
+    model="gemini-3.8-flash", max_output_tokens=256)
+```
+
+The Gemini client makes one HTTPS request to Google's API with no router,
+redirect following, automatic retry, built-in tools, system instruction, or
+conversation history. It accepts only the sealed text parts. Keep the key in
+the trusted host process; do not pass it to an agent or container.
+
+The application supplies already configured OpenAI or Anthropic SDK clients;
+the Gemini adapter uses the standard library for Google's direct REST API.
+Install `.[llm]` or `.[anthropic]` only for the SDK provider it uses. Models are selected
 by the host application; the substrate does not substitute one. Any new
 provider can implement `generate(inputs) -> str`, declare its registered
 `service_id`, and use the same `run_with_adapter` function. The optional local
@@ -101,8 +118,10 @@ or non-text output. The OpenAI adapter uses one stateless Responses request
 with `store=False` and truncation disabled. The Anthropic adapter uses one
 Messages request with a single user turn. Both pass separate text blocks in
 the sealed order, add no system instruction or previous conversation, and
-disable SDK retries for that request. Every API request can incur charges;
-the repository tests use fake clients and make no provider calls.
+disable SDK retries for that request. Gemini uses a single ordered user turn
+and rejects non-text parts or a non-normal finish. Every API request can incur
+charges. Unit tests use fake clients; the direct Google smoke driver is an
+explicit, two-request opt-in run.
 
 ## Boundary
 
@@ -125,5 +144,6 @@ records. It cannot attest to a hosted provider's internal runtime, retention,
 or any context that provider might add internally. The optional local worker
 provides a stronger runtime boundary in the documented container setup.
 
-API request shapes follow the official [OpenAI Responses API](https://developers.openai.com/api/docs/guides/text)
-and [Anthropic Messages API](https://platform.claude.com/docs/en/api/python/messages/create).
+API request shapes follow the official [OpenAI Responses API](https://developers.openai.com/api/docs/guides/text),
+[Anthropic Messages API](https://platform.claude.com/docs/en/api/python/messages/create),
+and [Gemini generateContent API](https://ai.google.dev/api/generate-content).

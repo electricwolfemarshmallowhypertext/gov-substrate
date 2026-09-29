@@ -62,12 +62,15 @@ Evaluations:
 - [Generation adapter integration](docs/Generation-Adapters.md)
 - [Hosted object-provenance validation report](docs/Hosted-Object-Validation.md)
 - [Claude Opus 4.7 validation report](docs/Anthropic-Opus-4.7-Validation-Report.md)
+- [Direct Gemini Flash validation report](docs/Gemini-Direct-Validation.md)
 - [Environment skeleton evaluation](docs/Environment-Skeleton-Evaluation.md)
 - [Local-model runtime matrix](docs/Local-Model-Matrix-Evaluation.md)
 
 The same five governed object-provenance scenarios held across deterministic tests, two local models, GPT-6 Luna, GPT-6 Sol, and Claude Opus 4.7.
 
 In a separate forced-call check, Opus requested a reachable third-party fixture outside the actor's grant. The substrate denied and logged it. The initial Opus scope response was inconclusive; the denial came from a one-request follow-up.
+
+A separate direct `gemini-3.8-flash` run confirmed provider-transfer denial before an API call, private generated-output publication denial, and clean public generated-output publication.
 
 ## Testing
 

@@ -7,7 +7,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from generation_adapter import SealedInput, run_with_adapter
-from hosted_generation_adapters import AnthropicTextAdapter, OpenAITextAdapter
+from hosted_generation_adapters import (AnthropicTextAdapter, GeminiTextAdapter,
+                                        OpenAITextAdapter)
 from substrate import Substrate, create_app
 
 
@@ -44,6 +45,18 @@ class FakeAnthropic:
             SimpleNamespace(type="text", text="The model says public.")])
 
 
+class FakeGemini:
+    def __init__(self):
+        self.calls = []
+
+    def generate_content(self, **request):
+        self.calls.append(request)
+        return {"candidates": [{"finishReason": "STOP", "content": {
+            "parts": [{"text": "The model says public."}]}}],
+            "usageMetadata": {"promptTokenCount": 30, "candidatesTokenCount": 8,
+                              "totalTokenCount": 38}}
+
+
 @pytest.fixture
 def boundary(tmp_path):
     actor = {"network": {"allowed": False},
@@ -54,7 +67,8 @@ def boundary(tmp_path):
         "actors": {"agent-a": actor}, "tokens": {"agent-token": "agent-a"},
         "operator_token": "operator-token", "providers": {
             "openai": {"max_classification": "private"},
-            "anthropic": {"max_classification": "private"}}})
+            "anthropic": {"max_classification": "private"},
+            "google-gemini": {"max_classification": "private"}}})
     client = TestClient(create_app(substrate))
     operator = {"Authorization": "Bearer operator-token"}
     agent = {"Authorization": "Bearer agent-token"}
@@ -80,15 +94,17 @@ def boundary(tmp_path):
     return client, imported, prepare
 
 
-@pytest.mark.parametrize("provider", ["openai", "anthropic"])
+@pytest.mark.parametrize("provider", ["openai", "anthropic", "google-gemini"])
 def test_hosted_provider_inherits_sealed_classification_and_exact_parents(boundary, provider):
     client, imported, prepare = boundary
     prompt = imported("public", b"Answer using only these governed inputs.")
     private = imported("private", b"Private project detail.")
     public = imported("public", b"Public project detail.")
-    sdk = FakeOpenAI() if provider == "openai" else FakeAnthropic()
-    adapter = (OpenAITextAdapter(sdk, "explicit-openai-model", 128) if provider == "openai"
-               else AnthropicTextAdapter(sdk, "explicit-anthropic-model", 128))
+    sdk = {"openai": FakeOpenAI, "anthropic": FakeAnthropic,
+           "google-gemini": FakeGemini}[provider]()
+    adapter = {"openai": OpenAITextAdapter,
+               "anthropic": AnthropicTextAdapter,
+               "google-gemini": GeminiTextAdapter}[provider](sdk, "explicit-model", 128)
 
     private_run = prepare([prompt, private], provider)
     private_output = run_with_adapter(client, private_run["generation_id"],
@@ -100,32 +116,43 @@ def test_hosted_provider_inherits_sealed_classification_and_exact_parents(bounda
                                      "operator-token", adapter, public_run["execution_token"])
     assert public_output["classification"] == "public"
     assert public_output["parents"] == [prompt, public]
-    assert sdk.options == [{"max_retries": 0}, {"max_retries": 0}]
+    if provider != "google-gemini":
+        assert sdk.options == [{"max_retries": 0}, {"max_retries": 0}]
     assert len(sdk.calls) == 2
 
     first = sdk.calls[0]
     if provider == "openai":
         assert first == {
-            "model": "explicit-openai-model",
+            "model": "explicit-model",
             "input": [{"role": "user", "content": [
                 {"type": "input_text", "text": "Answer using only these governed inputs."},
                 {"type": "input_text", "text": "Private project detail."}]}],
             "max_output_tokens": 128, "truncation": "disabled", "store": False}
-    else:
+    elif provider == "anthropic":
         assert first == {
-            "model": "explicit-anthropic-model", "max_tokens": 128,
+            "model": "explicit-model", "max_tokens": 128,
             "messages": [{"role": "user", "content": [
                 {"type": "text", "text": "Answer using only these governed inputs."},
                 {"type": "text", "text": "Private project detail."}]}]}
+    else:
+        assert first == {
+            "model": "explicit-model",
+            "contents": [{"role": "user", "parts": [
+                {"text": "Answer using only these governed inputs."},
+                {"text": "Private project detail."}]}],
+            "config": {"candidateCount": 1, "maxOutputTokens": 128,
+                       "thinkingConfig": {"thinkingLevel": "low"}}}
 
 
-@pytest.mark.parametrize("provider", ["openai", "anthropic"])
+@pytest.mark.parametrize("provider", ["openai", "anthropic", "google-gemini"])
 def test_unsupported_input_fails_before_provider_call(boundary, provider):
     client, imported, prepare = boundary
     image = imported("private", b"not an image", "image/png")
-    sdk = FakeOpenAI() if provider == "openai" else FakeAnthropic()
-    adapter = (OpenAITextAdapter(sdk, "model", 128) if provider == "openai"
-               else AnthropicTextAdapter(sdk, "model", 128))
+    sdk = {"openai": FakeOpenAI, "anthropic": FakeAnthropic,
+           "google-gemini": FakeGemini}[provider]()
+    adapter = {"openai": OpenAITextAdapter,
+               "anthropic": AnthropicTextAdapter,
+               "google-gemini": GeminiTextAdapter}[provider](sdk, "model", 128)
     with pytest.raises(RuntimeError, match="governed text only"):
         run = prepare([image], provider)
         run_with_adapter(client, run["generation_id"], "operator-token", adapter,
@@ -163,15 +190,31 @@ def test_incomplete_or_tool_response_is_rejected():
         AnthropicTextAdapter(anthropic, "model", 128).generate(inputs)
 
 
-@pytest.mark.parametrize("provider", ["openai", "anthropic"])
+@pytest.mark.parametrize("provider", ["openai", "anthropic", "google-gemini"])
 def test_context_limit_prevents_provider_call(provider):
-    sdk = FakeOpenAI() if provider == "openai" else FakeAnthropic()
-    adapter = (OpenAITextAdapter(sdk, "model", 128, max_context_bytes=3)
-               if provider == "openai" else
-               AnthropicTextAdapter(sdk, "model", 128, max_context_bytes=3))
+    sdk = {"openai": FakeOpenAI, "anthropic": FakeAnthropic,
+           "google-gemini": FakeGemini}[provider]()
+    adapter = {"openai": OpenAITextAdapter,
+               "anthropic": AnthropicTextAdapter,
+               "google-gemini": GeminiTextAdapter}[provider](
+                   sdk, "model", 128, max_context_bytes=3)
     with pytest.raises(RuntimeError, match="configured limit"):
         adapter.generate((SealedInput("text/plain", b"four"),))
     assert sdk.calls == []
+
+
+@pytest.mark.parametrize("response", [
+    {"candidates": [{"finishReason": "MAX_TOKENS", "content": {
+        "parts": [{"text": "partial"}]}}]},
+    {"candidates": [{"finishReason": "STOP", "content": {
+        "parts": [{"functionCall": {"name": "escape"}}]}}]},
+])
+def test_gemini_rejects_incomplete_or_tool_response(response):
+    sdk = FakeGemini()
+    sdk.generate_content = lambda **request: response
+    with pytest.raises(RuntimeError):
+        GeminiTextAdapter(sdk, "model", 128).generate(
+            (SealedInput("text/plain", b"Governed input."),))
 
 
 def test_future_provider_uses_same_sealed_input_interface(boundary):
