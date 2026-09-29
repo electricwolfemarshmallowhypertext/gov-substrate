@@ -30,6 +30,7 @@ In the supplied isolated-container configuration, an agent cannot directly chang
 - **Sensitive-data egress:** External publication is constrained by composed authority, not destination access alone.
 - **Object provenance:** Governed objects retain classification through supported transforms and sealed generation contexts; lowering classification requires an audited operator action.
 - **Local generation:** A one-shot CPU model worker receives only substrate-assembled text inputs. It has no outbound network, governed workspace, secret environment, or conversation store.
+- **Execution grants and emergency stops:** One-use execution tokens bind approved actions to their actor, session, inputs, policy, and capability. A separate operator control revokes scoped grants and requires verified shutdown from a wired local runtime supervisor.
 
 Generation is model- and provider-agnostic. The local worker is optional; a trusted host can use the same sealed-input handoff with OpenAI, Anthropic, or another adapter while the substrate assigns output provenance and classification. Hosted transfer is denied until the provider is registered with an explicit classification grant.
 

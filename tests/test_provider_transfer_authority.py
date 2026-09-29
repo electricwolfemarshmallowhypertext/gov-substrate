@@ -75,7 +75,7 @@ def test_public_to_approved_openai_is_allowed_and_audited(tmp_path):
     assert event["action"]["classification"] == "public"
     sdk = FakeOpenAI()
     output = run_with_adapter(client, admitted["generation_id"], "operator-token",
-                              OpenAITextAdapter(sdk, "model", 128))
+                              OpenAITextAdapter(sdk, "model", 128), admitted["execution_token"])
     assert len(sdk.calls) == 1
     assert output["classification"] == "public" and output["parents"] == [object_id]
 
@@ -105,7 +105,7 @@ def test_private_to_explicit_private_provider_allowed(tmp_path):
     admitted = prepare([object_id], "openai")
     sdk = FakeOpenAI()
     output = run_with_adapter(client, admitted["generation_id"], "operator-token",
-                              OpenAITextAdapter(sdk, "model", 128))
+                              OpenAITextAdapter(sdk, "model", 128), admitted["execution_token"])
     assert len(sdk.calls) == 1
     assert output["classification"] == "private" and output["parents"] == [object_id]
 
@@ -141,7 +141,7 @@ def test_local_adapter_needs_no_external_transfer_grant(tmp_path):
             return "Local output."
 
     output = run_with_adapter(client, admitted["generation_id"], "operator-token",
-                              LocalAdapter())
+                              LocalAdapter(), admitted["execution_token"])
     assert output["classification"] == "restricted"
 
 
@@ -153,7 +153,7 @@ def test_hosted_adapter_cannot_claim_local_or_other_provider_run(tmp_path):
     sdk = FakeOpenAI()
     with pytest.raises(RuntimeError, match="could not be claimed"):
         run_with_adapter(client, local["generation_id"], "operator-token",
-                         OpenAITextAdapter(sdk, "model", 128))
+                         OpenAITextAdapter(sdk, "model", 128), local["execution_token"])
     assert sdk.calls == []
     assert substrate.audit()[-1]["policy"]["rule"] == "generation_provider_mismatch"
 

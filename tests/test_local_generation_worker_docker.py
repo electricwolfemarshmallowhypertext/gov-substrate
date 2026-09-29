@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from docker_runtime_supervisor import DockerRuntimeSupervisor
 from generation_adapter import run_local_generation
 from substrate import Substrate, create_app
 
@@ -41,9 +42,10 @@ def test_real_model_receives_only_sealed_context(tmp_path, monkeypatch):
              "filesystem": {"read": False, "write": False},
              "tools": {}, "persistence": {"session": True, "cross_session": False},
              "shared_channels": []}
+    runtime = DockerRuntimeSupervisor(COMPOSE, model_blob, project)
     substrate = Substrate(tmp_path / "local-generation.db", {
         "actors": {"agent-a": actor}, "tokens": {"agent-token": "agent-a"},
-        "operator_token": "operator-token"})
+        "operator_token": "operator-token"}, runtime_supervisor=runtime)
     client = TestClient(create_app(substrate))
     operator = {"Authorization": "Bearer operator-token"}
     agent = {"Authorization": "Bearer agent-token"}
@@ -61,7 +63,7 @@ def test_real_model_receives_only_sealed_context(tmp_path, monkeypatch):
             "kind": "generation.prepare", "input_ids": input_ids}}).json()
         assert prepared["decision"] == "allow", prepared
         return run_local_generation(client, prepared["generation_id"],
-                                    "operator-token", model_blob, project)
+                                    "operator-token", prepared["execution_token"], runtime)
 
     try:
         config = json.loads(docker("config", "--format", "json"))["services"]["generator"]

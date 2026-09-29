@@ -6,8 +6,9 @@ import json
 import os
 import subprocess
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Protocol
+
+from runtime_supervisor import RuntimeSupervisor
 
 
 @dataclass(frozen=True)
@@ -22,10 +23,10 @@ class GenerationAdapter(Protocol):
 
 
 def claim_sealed_inputs(client, generation_id: str,
-                        operator_token: str,
+                        operator_token: str, execution_token: str,
                         service_id: str | None = None) -> tuple[SealedInput, ...]:
     headers = {"Authorization": f"Bearer {operator_token}"}
-    request = {"generation_id": generation_id}
+    request = {"generation_id": generation_id, "execution_token": execution_token}
     if service_id is not None:
         request["provider"] = service_id
     claim = client.post("/generations/claim", headers=headers,
@@ -57,10 +58,10 @@ def complete_generated_text(client, generation_id: str,
 
 
 def run_with_adapter(client, generation_id: str, operator_token: str,
-                     adapter: GenerationAdapter) -> dict:
+                     adapter: GenerationAdapter, execution_token: str) -> dict:
     if not hasattr(adapter, "service_id"):
         raise RuntimeError("Generation adapter must declare its service")
-    inputs = claim_sealed_inputs(client, generation_id, operator_token,
+    inputs = claim_sealed_inputs(client, generation_id, operator_token, execution_token,
                                  adapter.service_id)
     return complete_generated_text(client, generation_id, operator_token,
                                    adapter.generate(inputs))
@@ -72,6 +73,19 @@ class SubprocessGenerationAdapter:
         self.worker_command = worker_command
         self.worker_environment = worker_environment
 
+    def _run(self, envelope: str, worker_env: dict) -> tuple[int, str]:
+        process = subprocess.Popen(self.worker_command, stdin=subprocess.PIPE,
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                   text=True, encoding="utf-8", errors="replace",
+                                   env=worker_env)
+        try:
+            stdout, _ = process.communicate(input=envelope, timeout=120)
+            return process.returncode, stdout
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.communicate()
+            raise RuntimeError("Isolated generation worker timed out") from None
+
     def generate(self, inputs: tuple[SealedInput, ...]) -> str:
         source_environment = (os.environ if self.worker_environment is None
                               else self.worker_environment)
@@ -82,13 +96,33 @@ class SubprocessGenerationAdapter:
         envelope = {"inputs": [{"media_type": source.media_type,
                                 "content_base64": base64.b64encode(source.content).decode()}
                                for source in inputs]}
-        process = subprocess.run(self.worker_command, input=json.dumps(envelope),
-                                 text=True, capture_output=True, encoding="utf-8",
-                                 errors="replace", timeout=120, env=worker_env)
-        if process.returncode:
+        returncode, stdout = self._run(json.dumps(envelope), worker_env)
+        if returncode:
             raise RuntimeError("Isolated generation worker failed")
         try:
-            result = json.loads(process.stdout)
+            result = json.loads(stdout)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError("Isolated generation worker returned invalid JSON") from exc
+        if (type(result) is not dict or set(result) != {"text"}
+                or type(result["text"]) is not str):
+            raise RuntimeError("Isolated generation worker returned extra or missing fields")
+        return result["text"]
+
+
+class SupervisedGenerationAdapter:
+    service_id = None
+
+    def __init__(self, generation_id: str, runtime: RuntimeSupervisor):
+        self.generation_id = generation_id
+        self.runtime = runtime
+
+    def generate(self, inputs: tuple[SealedInput, ...]) -> str:
+        envelope = {"inputs": [{"media_type": source.media_type,
+                                "content_base64": base64.b64encode(source.content).decode()}
+                               for source in inputs]}
+        stdout = self.runtime.run(self.generation_id, json.dumps(envelope))
+        try:
+            result = json.loads(stdout)
         except json.JSONDecodeError as exc:
             raise RuntimeError("Isolated generation worker returned invalid JSON") from exc
         if (type(result) is not dict or set(result) != {"text"}
@@ -98,27 +132,18 @@ class SubprocessGenerationAdapter:
 
 
 def run_generation(client, generation_id: str, operator_token: str,
-                   worker_command: list[str], worker_environment=None) -> dict:
+                   worker_command: list[str], execution_token: str,
+                   worker_environment=None) -> dict:
     return run_with_adapter(client, generation_id, operator_token,
-                            SubprocessGenerationAdapter(worker_command, worker_environment))
+                            SubprocessGenerationAdapter(worker_command, worker_environment),
+                            execution_token)
 
 
 def run_local_generation(client, generation_id: str, operator_token: str,
-                         model_blob: str | Path, project: str | None = None) -> dict:
+                         execution_token: str, runtime: RuntimeSupervisor) -> dict:
     """Run one claimed manifest through the fixed, networkless local worker."""
-    model_path = Path(model_blob).resolve(strict=True)
-    if not model_path.is_file():
-        raise ValueError("local model artifact must be one file")
-    with model_path.open("rb") as model_file:
-        if model_file.read(4) != b"GGUF":
-            raise ValueError("local model artifact must be GGUF")
-
-    compose_file = Path(__file__).with_name("compose.local-generation.yaml")
-    command = ["docker", "compose", "-f", str(compose_file)]
-    if project is not None:
-        command.extend(["-p", project])
-    command.extend(["run", "--rm", "-T", "--no-deps", "generator"])
-    worker_environment = dict(os.environ)
-    worker_environment["GENERATION_MODEL_BLOB"] = str(model_path)
-    return run_generation(client, generation_id, operator_token, command,
-                          worker_environment=worker_environment)
+    if runtime is None:
+        raise ValueError("local generation requires a runtime supervisor")
+    return run_with_adapter(client, generation_id, operator_token,
+                            SupervisedGenerationAdapter(generation_id, runtime),
+                            execution_token)

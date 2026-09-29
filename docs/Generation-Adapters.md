@@ -12,7 +12,8 @@ provider, input IDs and hashes, and highest classification. An unregistered
 provider or an input above its grant is denied before any API call. Local
 generation omits `provider` and needs no external-transfer grant.
 
-The trusted host then calls `run_with_adapter`. This claims the manifest once,
+An admitted preparation also returns a one-use `execution_token`. The trusted
+host then calls `run_with_adapter` with the generation ID and token. This claims the manifest once,
 checks the hashes, passes the exact ordered inputs to an adapter, and returns
 the adapter's text to `/generations/complete`. The substrate stores the text as
 a new governed object with the sealed parents and label. The adapter cannot
@@ -27,7 +28,8 @@ point where the agent would otherwise call a model directly, have it propose
 `generation.prepare` with the governed object IDs and hosted provider. For
 example, OpenAI uses
 `{"kind": "generation.prepare", "input_ids": [prompt_id, source_id], "provider": "openai"}`.
-Only an allowed proposal returns a `generation_id`. Pass that ID to the host:
+Only an allowed proposal returns a `generation_id` and `execution_token`. Pass
+both to the host:
 
 ```python
 from generation_adapter import run_with_adapter
@@ -37,7 +39,7 @@ provider = OpenAITextAdapter(
     client=openai_client, model=selected_model, max_output_tokens=256,
     service_id="openai")
 result = run_with_adapter(substrate_client, generation_id,
-                          operator_token, provider)
+                          operator_token, provider, execution_token)
 generated_object_id = result["object_id"]
 ```
 
@@ -58,6 +60,27 @@ provider can implement `generate(inputs) -> str`, declare its registered
 `service_id`, and use the same `run_with_adapter` function. The optional local
 Docker adapter uses this same
 handoff through `run_local_generation`; hosted adapters do not require Docker.
+The local host must wire one `RuntimeSupervisor` instance to both `Substrate`
+and `run_local_generation`; `DockerRuntimeSupervisor` is the current backend.
+Its project ID must be unique to the deployment so restart reconciliation
+cannot select another deployment's containers. The agent sees neither the
+supervisor nor Docker control access.
+
+```python
+from docker_runtime_supervisor import DockerRuntimeSupervisor
+from generation_adapter import run_local_generation
+from substrate import Substrate
+
+runtime = DockerRuntimeSupervisor("compose.local-generation.yaml", model_blob,
+                                  project="my-substrate-instance")
+substrate = Substrate(db_path, registry, runtime_supervisor=runtime)
+result = run_local_generation(substrate_client, generation_id, operator_token,
+                              execution_token, runtime)
+```
+
+Create the supervisor in the trusted host, before admitting local runs. It
+reconciles and stops orphaned containers at substrate startup. A failed stop
+is recorded as unconfirmed; it is not treated as a successful shutdown.
 
 The registry's optional `providers` mapping defines grants. For a new
 deployment, a public-only OpenAI service can be configured as:
@@ -90,6 +113,12 @@ credentials and supplies the exact request fields and governed bytes.
 external disclosure**, so it requires a provider grant at that level. The
 adapter cannot claim a run prepared for a different provider. A claimed
 manifest cannot be replayed if a provider call fails.
+
+The execution token is random and opaque; only its hash is stored. It is bound
+to the actor, active session, generation ID, input IDs and hashes, inherited
+classification, registry hash, provider, and expiry. The claim consumes it and
+records the use. An operator circuit trigger revokes affected unclaimed and
+claimed runs. The host must not make a provider call after a denied claim.
 
 The substrate can verify the context it supplied and the output object it
 records. It cannot attest to a hosted provider's internal runtime, retention,

@@ -40,7 +40,9 @@ does not change the original.
 
 `compose.local-generation.yaml` runs `local_generation_worker.py` with a
 locally installed GGUF model through `llama-cpp-python`. The trusted host
-adapter's `run_local_generation` uses a fixed Docker command. The only bind
+adapter's `run_local_generation` uses a wired runtime supervisor. The current
+Docker backend launches the fixed container configuration and verifies worker
+exit by container ID. The only bind
 mount is the selected GGUF file, read-only at `/model/model.gguf`; no model
 weights are committed to the repository. The container is read-only, runs as
 an unprivileged user, drops capabilities, has no network, and starts with an

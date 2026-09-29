@@ -50,6 +50,7 @@ Requires Python 3.11 or newer. From this directory in PowerShell:
 python -m pip install -e '.[test]'
 $env:RESEARCH_AGENT_TOKEN = [guid]::NewGuid().ToString('N')
 $env:GOV_SUBSTRATE_OPERATOR_TOKEN = [guid]::NewGuid().ToString('N')
+$env:GOV_SUBSTRATE_CIRCUIT_OPERATOR_TOKEN = [guid]::NewGuid().ToString('N')
 $env:GOV_SUBSTRATE_AUTOSTART = '1'
 python -m uvicorn substrate:app --host 127.0.0.1 --port 8000
 ```
@@ -63,6 +64,57 @@ Example flow: `POST /sessions` with `Authorization: Bearer <actor token>`; then 
 ```
 
 Use `scope: "persistent"` to request a cross-session write. The example policy escalates it. An operator can call `POST /overrides` with `Authorization: Bearer <operator token>` and `{"event_id": <escalated event id>, "reason": "..."}`. `GET /audit` requires the operator token; `GET /health` requires an actor token. A second session invalidates the first session token. The example registry denies network; the isolated capability examples use the registries under `tests/fixtures/` and the corresponding Compose files.
+
+## Execution grants and emergency stops
+
+Every admitted proposal issues a cryptographically random execution grant and
+consumes it before applying the action. The existing `/proposals` endpoint does
+this in one request. For a split integration, `/authorizations` returns a
+one-use `execution_token`; `/executions` must present that token with the same
+actor, active session, and exact action. The stored grant binds the action and
+governed input hash, capability, provider, registry hash, and expiry. The audit
+records issuance and each use attempt without recording the token value.
+`generation.prepare` additionally returns a separate execution token for its
+later trusted-adapter claim. An expired, altered, mismatched, or reused token
+cannot execute.
+
+The circuit control is an operator-only Python control method,
+`Substrate.set_circuit(control_token, scope, target, active, reason)`. It is not
+an HTTP agent endpoint. Configure a distinct circuit operator credential via
+`circuit_operator_token_env`; do not supply it to an agent, model, provider
+adapter, or worker. Scopes are `global`, `actor`, `capability`, and `provider`.
+The substrate checks active stops before admission, at grant use or generation
+claim, and immediately before mediated outbound HTTP. A trigger revokes
+matching outstanding grants, sessions, and
+generation claims, then logs the trigger and shutdown action. Reset requires
+the same operator credential and a reason and is audited. Agent responses use
+a generic unavailable decision rather than exposing circuit configuration.
+Local execution uses the runtime-neutral `RuntimeSupervisor` contract:
+`run(generation_id, sealed_context)`, `stop(generation_ids)`, and `reconcile()`.
+The substrate receives a supervisor instance; it never calls Docker itself.
+`stop` returns a per-generation result with runtime identity and a verified
+shutdown flag. The circuit audit records each result. If a worker cannot be
+verified stopped, the circuit remains active and the shutdown event is marked
+`failed`, not reported as a completed stop. Without a wired supervisor, an
+affected local claim is revoked but shutdown remains unconfirmed. Reset is
+blocked while shutdown remains unconfirmed. A trusted supervisor can reconcile
+orphan workers on restart and audit the verified empty runtime before reset.
+
+`DockerRuntimeSupervisor` is the current Docker/OCI backend. The trusted host
+configures a unique project ID per substrate deployment and passes the same
+supervisor instance to `Substrate` and `run_local_generation`. Each run receives
+a stable name and deployment/generation labels. The backend addresses the
+container itself: stop, force kill if needed, wait, inspect its stopped state,
+remove, and verify absence. It leaves the container available for inspection
+until verification; killing the Compose CLI process alone is insufficient.
+At startup, reconciliation stops and audits labeled orphan workers before the
+substrate admits new actions. An unverified reconciliation prevents startup.
+Separate host processes need a trusted supervisor service to share that
+control; an agent never receives Docker access or the control credential.
+Already sent hosted-provider requests cannot be recalled.
+
+WASI/Wasm is a portable backend candidate, not implemented. It would implement
+the same supervisor contract without changing the substrate API.
 
 ## Measured properties
 

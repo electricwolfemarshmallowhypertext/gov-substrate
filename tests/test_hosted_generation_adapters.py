@@ -75,7 +75,7 @@ def boundary(tmp_path):
         response = client.post("/proposals", headers=agent,
                                json={"action": action}).json()
         assert response["decision"] == "allow", response
-        return response["generation_id"]
+        return response
 
     return client, imported, prepare
 
@@ -90,12 +90,14 @@ def test_hosted_provider_inherits_sealed_classification_and_exact_parents(bounda
     adapter = (OpenAITextAdapter(sdk, "explicit-openai-model", 128) if provider == "openai"
                else AnthropicTextAdapter(sdk, "explicit-anthropic-model", 128))
 
-    private_output = run_with_adapter(client, prepare([prompt, private], provider),
-                                      "operator-token", adapter)
+    private_run = prepare([prompt, private], provider)
+    private_output = run_with_adapter(client, private_run["generation_id"],
+                                      "operator-token", adapter, private_run["execution_token"])
     assert private_output["classification"] == "private"
     assert private_output["parents"] == [prompt, private]
-    public_output = run_with_adapter(client, prepare([prompt, public], provider),
-                                     "operator-token", adapter)
+    public_run = prepare([prompt, public], provider)
+    public_output = run_with_adapter(client, public_run["generation_id"],
+                                     "operator-token", adapter, public_run["execution_token"])
     assert public_output["classification"] == "public"
     assert public_output["parents"] == [prompt, public]
     assert sdk.options == [{"max_retries": 0}, {"max_retries": 0}]
@@ -125,7 +127,9 @@ def test_unsupported_input_fails_before_provider_call(boundary, provider):
     adapter = (OpenAITextAdapter(sdk, "model", 128) if provider == "openai"
                else AnthropicTextAdapter(sdk, "model", 128))
     with pytest.raises(RuntimeError, match="governed text only"):
-        run_with_adapter(client, prepare([image], provider), "operator-token", adapter)
+        run = prepare([image], provider)
+        run_with_adapter(client, run["generation_id"], "operator-token", adapter,
+                         run["execution_token"])
     assert sdk.calls == []
 
 
@@ -137,8 +141,9 @@ def test_unexpected_provider_action_never_completes(boundary):
         status="completed", output_text="untrusted text",
         output=[SimpleNamespace(type="function_call")])
     with pytest.raises(RuntimeError, match="unexpected action"):
-        run_with_adapter(client, prepare([prompt], "openai"), "operator-token",
-                         OpenAITextAdapter(sdk, "model", 128))
+        run = prepare([prompt], "openai")
+        run_with_adapter(client, run["generation_id"], "operator-token",
+                         OpenAITextAdapter(sdk, "model", 128), run["execution_token"])
 
 
 def test_incomplete_or_tool_response_is_rejected():
@@ -180,7 +185,8 @@ def test_future_provider_uses_same_sealed_input_interface(boundary):
             assert inputs == (SealedInput("text/plain", b"One governed input."),)
             return "A generated answer."
 
-    output = run_with_adapter(client, prepare([prompt]), "operator-token",
-                              CustomProvider())
+    run = prepare([prompt])
+    output = run_with_adapter(client, run["generation_id"], "operator-token",
+                              CustomProvider(), run["execution_token"])
     assert output["classification"] == "internal"
     assert output["parents"] == [prompt]

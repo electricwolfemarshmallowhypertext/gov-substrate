@@ -4,7 +4,6 @@ import base64
 import copy
 import json
 import sqlite3
-from types import SimpleNamespace
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
@@ -77,7 +76,8 @@ def boundary(tmp_path, monkeypatch):
         prepared = prepare(input_ids, actor_id)
         assert prepared["decision"] == "allow", prepared
         claimed = client.post("/generations/claim", headers=operator,
-                              json={"generation_id": prepared["generation_id"]}).json()
+                              json={"generation_id": prepared["generation_id"],
+                                    "execution_token": prepared["execution_token"]}).json()
         assert claimed["decision"] == "allow", claimed
         assert [source["id"] for source in claimed["inputs"]] == input_ids
         result = client.post("/generations/complete", headers=operator,
@@ -165,9 +165,11 @@ def test_model_cannot_assign_provenance_or_submit_text_directly(boundary):
     prepared = prepare([objects["private"]])
     generation_id = prepared["generation_id"]
     assert client.post("/generations/claim", headers={"Authorization": "Bearer agent-a-token"},
-                       json={"generation_id": generation_id}).status_code == 401
+                       json={"generation_id": generation_id,
+                             "execution_token": prepared["execution_token"]}).status_code == 401
     assert client.post("/generations/claim", headers={"Authorization": "Bearer operator-token"},
-                       json={"generation_id": generation_id}).json()["decision"] == "allow"
+                       json={"generation_id": generation_id,
+                             "execution_token": prepared["execution_token"]}).json()["decision"] == "allow"
     rejected = client.post("/generations/complete",
                            headers={"Authorization": "Bearer operator-token"},
                            json={"generation_id": generation_id, "text": "Answer.",
@@ -223,9 +225,11 @@ def test_extra_prompt_and_history_are_rejected(boundary):
     operator = {"Authorization": "Bearer operator-token"}
     assert client.post("/generations/claim", headers=operator,
                        json={"generation_id": prepared["generation_id"],
+                             "execution_token": prepared["execution_token"],
                              "prompt": "unmediated"}).status_code == 422
     assert client.post("/generations/claim", headers=operator,
-                       json={"generation_id": prepared["generation_id"]}).json()["decision"] == "allow"
+                       json={"generation_id": prepared["generation_id"],
+                             "execution_token": prepared["execution_token"]}).json()["decision"] == "allow"
     assert client.post("/generations/complete", headers=operator,
                        json={"generation_id": prepared["generation_id"], "text": "Answer.",
                              "history": ["private"]}).status_code == 422
@@ -237,7 +241,7 @@ def test_altered_sealed_manifest_is_detected(boundary):
     with sqlite3.connect(db_path) as db:
         db.execute("UPDATE generations SET classification='public' WHERE id=?",
                    (prepared["generation_id"],))
-    denied = substrate.claim_generation(prepared["generation_id"])
+    denied = substrate.claim_generation(prepared["generation_id"], prepared["execution_token"])
     assert denied["decision"] == "deny" and denied["reason"] == "state_integrity"
 
 
@@ -248,8 +252,10 @@ def test_manifest_claim_and_completion_are_one_use(boundary):
     operator = {"Authorization": "Bearer operator-token"}
     def post(path, body):
         return client.post(path, headers=operator, json=body).json()
-    assert post("/generations/claim", {"generation_id": generation_id})["decision"] == "allow"
-    assert post("/generations/claim", {"generation_id": generation_id})["decision"] == "deny"
+    assert post("/generations/claim", {"generation_id": generation_id,
+                                        "execution_token": prepared["execution_token"]})["decision"] == "allow"
+    assert post("/generations/claim", {"generation_id": generation_id,
+                                        "execution_token": prepared["execution_token"]})["decision"] == "deny"
     assert post("/generations/complete", {"generation_id": generation_id,
                                            "text": "Answer."})["decision"] == "succeeded"
     replay = post("/generations/complete", {"generation_id": generation_id,
@@ -260,10 +266,11 @@ def test_manifest_claim_and_completion_are_one_use(boundary):
 def test_adapter_rejects_worker_supplied_provenance(boundary, monkeypatch):
     substrate, client, _, objects, _, _, prepare, _, _ = boundary
     prepared = prepare([objects["private"]])
-    monkeypatch.setattr("generation_adapter.subprocess.run", lambda *args, **kwargs:
-                        SimpleNamespace(returncode=0, stdout=json.dumps({
+    monkeypatch.setattr("generation_adapter.SubprocessGenerationAdapter._run",
+                        lambda *args, **kwargs: (0, json.dumps({
                             "text": "Answer.", "classification": "public"})))
     with pytest.raises(RuntimeError, match="extra or missing fields"):
-        run_generation(client, prepared["generation_id"], "operator-token", ["unused"])
+        run_generation(client, prepared["generation_id"], "operator-token", ["unused"],
+                       prepared["execution_token"])
     assert not any(event["action"]["kind"] == "generation.complete"
                    for event in substrate.audit())

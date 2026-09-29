@@ -25,6 +25,7 @@ from pydantic import BaseModel
 from filesystem_adapter import MAX_CONTENT, check_target, parts_of, read_text, workspace_snapshot, write_text
 from governed_objects import CLASSIFICATIONS, transform
 from network_adapter import fetch, origin_and_target
+from runtime_supervisor import RuntimeSupervisor, StopResult
 
 
 def canonical(value: Any) -> str:
@@ -55,18 +56,32 @@ def load_registry(path: str | Path) -> dict[str, Any]:
     operator_token = os.environ[data["operator_token_env"]]
     if not operator_token or operator_token in tokens:
         raise ValueError("operator token must be unique and nonempty")
+    control_env = data.get("circuit_operator_token_env")
+    control_token = os.environ[control_env] if control_env else None
+    if control_token is not None and (not control_token or control_token in tokens or
+                                      control_token == operator_token):
+        raise ValueError("circuit operator token must be distinct and nonempty")
     return {"actors": actors, "tokens": tokens, "operator_token": operator_token,
-            "providers": data.get("providers", {})}
+            "circuit_operator_token": control_token, "providers": data.get("providers", {})}
 
 
 class Substrate:
     def __init__(self, db_path: str | Path, registry: dict[str, Any],
-                 workspace_root: str | Path | None = None):
+                 workspace_root: str | Path | None = None,
+                 runtime_supervisor: RuntimeSupervisor | None = None):
         self.db_path = str(db_path)
         self._execution_lock = threading.RLock()
-        self.actors = registry["actors"]
-        self.tokens = registry["tokens"]
+        self.actors = copy.deepcopy(registry["actors"])
+        self.tokens = dict(registry["tokens"])
         self.operator_token = registry["operator_token"]
+        self.circuit_operator_token = registry.get("circuit_operator_token")
+        if self.circuit_operator_token is not None and (
+                not isinstance(self.circuit_operator_token, str) or
+                not self.circuit_operator_token or
+                self.circuit_operator_token == self.operator_token or
+                self.circuit_operator_token in self.tokens):
+            raise ValueError("circuit operator token must be distinct and nonempty")
+        self.runtime_supervisor = runtime_supervisor
         self.providers = copy.deepcopy(registry.get("providers", {}))
         if not isinstance(self.providers, dict):
             raise ValueError("provider registry must be a mapping")
@@ -144,6 +159,9 @@ class Substrate:
                                    for token, actor in self.tokens.items()},
             "operator_token_hash": hashlib.sha256(self.operator_token.encode()).hexdigest(),
         }
+        if self.circuit_operator_token is not None:
+            registry_material["circuit_operator_token_hash"] = hashlib.sha256(
+                self.circuit_operator_token.encode()).hexdigest()
         if self.providers:
             registry_material["providers"] = self.providers
         if self.workspace_root is not None:
@@ -174,6 +192,18 @@ class Substrate:
                 CREATE TABLE IF NOT EXISTS generation_providers (
                     generation_id TEXT PRIMARY KEY, provider TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS execution_grants (
+                    id TEXT PRIMARY KEY, token_hash TEXT NOT NULL UNIQUE,
+                    actor TEXT NOT NULL, session_id TEXT NOT NULL,
+                    action_hash TEXT NOT NULL, manifest_hash TEXT NOT NULL,
+                    policy_hash TEXT NOT NULL, capability TEXT NOT NULL,
+                    provider TEXT, expires_at REAL NOT NULL, status TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS circuit_stops (
+                    scope TEXT NOT NULL, target TEXT NOT NULL,
+                    active INTEGER NOT NULL, shutdown_confirmed INTEGER NOT NULL,
+                    PRIMARY KEY (scope, target)
+                );
                 CREATE TABLE IF NOT EXISTS events (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     timestamp REAL NOT NULL, actor TEXT NOT NULL,
@@ -196,6 +226,34 @@ class Substrate:
                 snapshot = self._snapshot(db)
                 self._append(db, "system", {"kind": "genesis"},
                              {"rule": "initial_state"}, "allow", snapshot, snapshot)
+        if self.runtime_supervisor is not None:
+            self._reconcile_runtime()
+
+    def _reconcile_runtime(self):
+        results = self.runtime_supervisor.reconcile()
+        if any(not item.confirmed for item in results):
+            raise RuntimeError("runtime reconciliation could not verify worker shutdown")
+        with self._db() as db:
+            db.execute("BEGIN IMMEDIATE")
+            expected = self._verify(db)
+            before = self._snapshot(db)
+            if before != expected:
+                raise IntegrityError("state integrity failed during runtime reconciliation")
+            for item in results:
+                db.execute("UPDATE generations SET status='revoked' WHERE id=? "
+                           "AND status IN ('prepared','claimed')", (item.generation_id,))
+                db.execute("UPDATE execution_grants SET status='revoked' "
+                           "WHERE action_hash=? AND status='issued'",
+                           (digest({"kind": "generation.execute",
+                                    "generation_id": item.generation_id}),))
+            db.execute("UPDATE circuit_stops SET shutdown_confirmed=1 "
+                       "WHERE active=1 AND shutdown_confirmed=0")
+            after = self._snapshot(db)
+            if results or after != before:
+                self._append(db, "system", {"kind": "runtime.reconcile",
+                                            "results": [item.audit() for item in results]},
+                             {"rule": "orphaned_workers_stopped"}, "allow", before, after)
+            db.commit()
 
     @contextmanager
     def _db(self):
@@ -221,6 +279,10 @@ class Substrate:
         generations = [dict(row) for row in db.execute("SELECT * FROM generations ORDER BY id")]
         generation_providers = [dict(row) for row in db.execute(
             "SELECT * FROM generation_providers ORDER BY generation_id")]
+        grants = [dict(row) for row in db.execute(
+            "SELECT * FROM execution_grants ORDER BY id")]
+        stops = [dict(row) for row in db.execute(
+            "SELECT * FROM circuit_stops ORDER BY scope,target")]
         snapshot = {"state": state, "sessions": sessions}
         if objects:
             snapshot["objects"] = objects
@@ -228,6 +290,10 @@ class Substrate:
             snapshot["generations"] = generations
         if generation_providers:
             snapshot["generation_providers"] = generation_providers
+        if grants:
+            snapshot["execution_grants_sha256"] = digest(grants)
+        if stops:
+            snapshot["circuit_stops"] = stops
         if self.workspace_root is not None:
             snapshot["workspace"] = workspace_snapshot(self.workspace_root)
         return snapshot
@@ -282,6 +348,200 @@ class Substrate:
     def is_operator(self, token: str) -> bool:
         return hmac.compare_digest(token, self.operator_token)
 
+    @staticmethod
+    def _capability(action: dict[str, Any]) -> str:
+        kind = action.get("kind", "")
+        if kind in ("network.request", "object.publish"):
+            return "network"
+        return kind.split(".", 1)[0] if isinstance(kind, str) else "unknown"
+
+    @staticmethod
+    def _stopped(db, actor: str, capability: str, provider: str | None) -> bool:
+        targets = [("global", "*"), ("actor", actor), ("capability", capability)]
+        if provider is not None:
+            targets.append(("provider", provider))
+        return any(db.execute(
+            "SELECT 1 FROM circuit_stops WHERE scope=? AND target=? AND active=1", target
+        ).fetchone() for target in targets)
+
+    @staticmethod
+    def _manifest_hash(db, action, context) -> str:
+        if action.get("kind") == "generation.prepare" and context is not None:
+            return digest({"ids": context[0], "hashes": context[1],
+                           "classification": context[2]})
+        object_id = action.get("object_id")
+        if isinstance(object_id, str):
+            row = db.execute("SELECT payload FROM objects WHERE id=?", (object_id,)).fetchone()
+            if row is not None:
+                return digest({"object_id": object_id,
+                               "sha256": hashlib.sha256(row["payload"]).hexdigest()})
+        return digest(action)
+
+    def _issue_grant(self, db, actor, session_id, action, manifest_hash,
+                     capability, provider, ttl=120):
+        token = secrets.token_urlsafe(32)
+        grant_id = secrets.token_hex(16)
+        expires_at = time.time() + ttl
+        before = self._snapshot(db)
+        db.execute("INSERT INTO execution_grants VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                   (grant_id, hashlib.sha256(token.encode()).hexdigest(), actor,
+                    session_id, digest(action), manifest_hash, self.registry_hash,
+                    capability, provider, expires_at, "issued"))
+        after = self._snapshot(db)
+        self._append(db, actor, {"kind": "execution.grant.issue", "grant_id": grant_id,
+                                 "action_hash": digest(action),
+                                 "manifest_hash": manifest_hash, "provider": provider,
+                                 "capability": capability, "expires_at": expires_at},
+                     {"rule": "execution_grant_issued"}, "allow", before, after)
+        return token
+
+    def _use_grant(self, db, token, actor, session_id, action, manifest_hash,
+                   capability, provider):
+        before = self._snapshot(db)
+        token_hash = hashlib.sha256(token.encode()).hexdigest() if isinstance(token, str) else ""
+        row = db.execute("SELECT * FROM execution_grants WHERE token_hash=?",
+                         (token_hash,)).fetchone()
+        if row is None:
+            rule = "execution_grant_invalid"
+        elif row["status"] != "issued":
+            rule = "execution_grant_reused"
+        elif row["expires_at"] <= time.time():
+            rule = "execution_grant_expired"
+        elif (row["actor"] != actor or row["session_id"] != session_id or
+              row["action_hash"] != digest(action) or
+              row["manifest_hash"] != manifest_hash or
+              row["policy_hash"] != self.registry_hash or
+              row["capability"] != capability or row["provider"] != provider):
+            rule = "execution_grant_binding_mismatch"
+        elif not db.execute("SELECT 1 FROM sessions WHERE id=? AND actor=? AND active=1",
+                            (session_id, actor)).fetchone():
+            rule = "execution_session_revoked"
+        elif self._stopped(db, actor, capability, provider):
+            rule = "execution_unavailable"
+        else:
+            rule = None
+        if rule is None:
+            db.execute("UPDATE execution_grants SET status='used' WHERE id=?", (row["id"],))
+        after = self._snapshot(db)
+        self._append(db, actor, {"kind": "execution.grant.use",
+                                 "grant_id": row["id"] if row else None,
+                                 "action_hash": digest(action),
+                                 "manifest_hash": manifest_hash,
+                                 "capability": capability, "provider": provider},
+                     {"rule": rule or "execution_grant_consumed"},
+                     "deny" if rule else "allow", before, after)
+        return rule
+
+    def set_circuit(self, token: str, scope: str, target: str,
+                    active: bool, reason: str) -> dict[str, Any]:
+        with self._execution_lock:
+            return self._set_circuit(token, scope, target, active, reason)
+
+    def _set_circuit(self, token: str, scope: str, target: str,
+                     active: bool, reason: str) -> dict[str, Any]:
+        if (self.circuit_operator_token is None or
+                not hmac.compare_digest(token, self.circuit_operator_token)):
+            raise PermissionError("invalid circuit operator credential")
+        if (scope not in ("global", "actor", "capability", "provider") or
+                (scope == "global" and target != "*") or
+                (scope == "actor" and target not in self.actors) or
+                (scope == "capability" and target not in
+                 ("session", "state", "object", "network", "filesystem", "generation")) or
+                (scope == "provider" and target not in self.providers) or
+                type(active) is not bool or not isinstance(reason, str) or not reason.strip()):
+            raise ValueError("invalid circuit change")
+        with self._execution_lock:
+            return self._set_circuit_locked(scope, target, active, reason)
+
+    def _set_circuit_locked(self, scope: str, target: str, active: bool,
+                            reason: str) -> dict[str, Any]:
+        with self._db() as db:
+            db.execute("BEGIN IMMEDIATE")
+            expected = self._verify(db)
+            before = self._snapshot(db)
+            if before != expected:
+                raise IntegrityError("state integrity failed")
+            current = db.execute("SELECT active,shutdown_confirmed FROM circuit_stops "
+                                 "WHERE scope=? AND target=?",
+                                 (scope, target)).fetchone()
+            if not active and current is None:
+                raise ValueError("circuit is not active")
+            if current is not None and bool(current["active"]) == active:
+                raise ValueError("circuit already in requested state")
+            if not active and current is not None and not current["shutdown_confirmed"]:
+                raise ValueError("runtime shutdown remains unconfirmed")
+            db.execute("INSERT INTO circuit_stops VALUES (?,?,?,?) ON CONFLICT(scope,target) "
+                       "DO UPDATE SET active=excluded.active, "
+                       "shutdown_confirmed=excluded.shutdown_confirmed",
+                       (scope, target, int(active), int(not active)))
+            affected = []
+            if active:
+                grants = list(db.execute("SELECT * FROM execution_grants WHERE status='issued'"))
+                for grant in grants:
+                    if (scope == "global" or
+                            (scope == "actor" and grant["actor"] == target) or
+                            (scope == "capability" and grant["capability"] == target) or
+                            (scope == "provider" and grant["provider"] == target)):
+                        db.execute("UPDATE execution_grants SET status='revoked' WHERE id=?",
+                                   (grant["id"],))
+                        affected.append(grant["actor"])
+                runs = list(db.execute("SELECT g.id,g.actor,p.provider FROM generations g "
+                                       "LEFT JOIN generation_providers p ON p.generation_id=g.id "
+                                       "WHERE g.status IN ('prepared','claimed')"))
+                stopped_runs = []
+                for run in runs:
+                    if (scope == "global" or
+                            (scope == "actor" and run["actor"] == target) or
+                            (scope == "capability" and target == "generation") or
+                            (scope == "provider" and run["provider"] == target)):
+                        db.execute("UPDATE generations SET status='revoked' WHERE id=?",
+                                   (run["id"],))
+                        affected.append(run["actor"])
+                        stopped_runs.append(run["id"])
+                if scope == "global":
+                    db.execute("UPDATE sessions SET active=0")
+                elif scope == "actor":
+                    db.execute("UPDATE sessions SET active=0 WHERE actor=?", (target,))
+                elif affected:
+                    db.executemany("UPDATE sessions SET active=0 WHERE actor=?",
+                                   [(actor,) for actor in set(affected)])
+            after = self._snapshot(db)
+            event_id = self._append(db, "circuit-operator",
+                                    {"kind": "circuit.trigger" if active else "circuit.reset",
+                                     "scope": scope, "target": target},
+                                    {"rule": "authorized_circuit_control", "reason": reason},
+                                    "allow", before, after)
+            db.commit()
+        if active:
+            if self.runtime_supervisor is not None and stopped_runs:
+                try:
+                    shutdowns = self.runtime_supervisor.stop(tuple(stopped_runs))
+                except Exception:
+                    shutdowns = ()
+            else:
+                shutdowns = ()
+            by_id = {item.generation_id: item for item in shutdowns}
+            results = [by_id.get(run_id, StopResult(run_id, "unwired", None,
+                                                    False, "stop_unconfirmed"))
+                       for run_id in stopped_runs]
+            verified = all(item.confirmed for item in results)
+            with self._db() as db:
+                db.execute("BEGIN IMMEDIATE")
+                before = self._snapshot(db)
+                if verified:
+                    db.execute("UPDATE circuit_stops SET shutdown_confirmed=1 "
+                               "WHERE scope=? AND target=?", (scope, target))
+                after = self._snapshot(db)
+                self._append(db, "circuit-operator",
+                             {"kind": "circuit.shutdown", "trigger_event_id": event_id,
+                              "results": [item.audit() for item in results]},
+                             {"rule": "circuit_shutdown_verified" if verified else
+                              "circuit_shutdown_unconfirmed"},
+                             "succeeded" if verified else "failed", before, after)
+                db.commit()
+        return {"event_id": event_id, "decision": "allow",
+                "shutdown_confirmed": verified if active else None}
+
     def create_session(self, actor: str) -> dict[str, Any]:
         with self._execution_lock:
             return self._create_session(actor)
@@ -297,6 +557,12 @@ class Substrate:
                                         {"rule": "state_integrity"}, "deny", before, before)
                 db.commit()
                 return {"event_id": event_id, "decision": "deny", "reason": "state_integrity"}
+            if self._stopped(db, actor, "session", None):
+                event_id = self._append(db, actor, {"kind": "session.create"},
+                                        {"rule": "circuit_blocked"}, "deny", before, before)
+                db.commit()
+                return {"event_id": event_id, "decision": "deny",
+                        "reason": "capability_unavailable"}
             db.execute("UPDATE sessions SET active=0 WHERE actor=?", (actor,))
             db.execute("INSERT INTO sessions VALUES (?,?,?,1)",
                        (session_id, actor, hashlib.sha256(token.encode()).hexdigest()))
@@ -365,6 +631,12 @@ class Substrate:
                                         {"rule": "state_integrity"}, "deny", before, before)
                 db.commit()
                 return {"event_id": event_id, "decision": "deny", "reason": "state_integrity"}
+            if self._stopped(db, "human-operator", "object", None):
+                event_id = self._append(db, "human-operator", {"kind": "object.import"},
+                                        {"rule": "circuit_blocked"}, "deny", before, before)
+                db.commit()
+                return {"event_id": event_id, "decision": "deny",
+                        "reason": "capability_unavailable"}
             object_id = self._insert_object(db, classification, media_type, sorted(readers),
                                             [], "import", payload)
             after = self._snapshot(db)
@@ -388,6 +660,8 @@ class Substrate:
             parent = db.execute("SELECT * FROM objects WHERE id=?", (object_id,)).fetchone()
             if before != expected:
                 rule = "state_integrity"
+            elif self._stopped(db, "human-operator", "object", None):
+                rule = "circuit_blocked"
             elif parent is None:
                 rule = "object_not_found"
             elif not reason.strip():
@@ -402,7 +676,8 @@ class Substrate:
                                          "target": classification}, {"rule": rule},
                                         "deny", before, before)
                 db.commit()
-                return {"event_id": event_id, "decision": "deny", "reason": rule}
+                return {"event_id": event_id, "decision": "deny",
+                        "reason": "capability_unavailable" if rule == "circuit_blocked" else rule}
             child_id = self._insert_object(db, classification, parent["media_type"],
                                            json.loads(parent["readers"]), [object_id],
                                            "declassify", parent["payload"])
@@ -433,7 +708,13 @@ class Substrate:
             return None
         return sources
 
-    def claim_generation(self, generation_id: str,
+    @staticmethod
+    def _generation_provider(db, generation_id):
+        row = db.execute("SELECT provider FROM generation_providers WHERE generation_id=?",
+                         (generation_id,)).fetchone()
+        return row["provider"] if row else None
+
+    def claim_generation(self, generation_id: str, execution_token: str,
                          provider: str | None = None) -> dict[str, Any]:
         with self._execution_lock, self._db() as db:
             db.execute("BEGIN IMMEDIATE")
@@ -454,6 +735,8 @@ class Substrate:
                 rule = "generation_provider_mismatch"
             elif sources is None:
                 rule = "generation_manifest_invalid"
+            elif self._stopped(db, run["actor"], "generation", sealed_provider):
+                rule = "execution_unavailable"
             else:
                 rule = None
             action = {"kind": "generation.claim", "generation_id": generation_id,
@@ -463,6 +746,23 @@ class Substrate:
                                         {"rule": rule}, "deny", before, before)
                 db.commit()
                 return {"event_id": event_id, "decision": "deny", "reason": rule}
+            grant_action = {"kind": "generation.execute", "generation_id": generation_id}
+            manifest_hash = digest({"ids": json.loads(run["input_ids"]),
+                                    "hashes": json.loads(run["input_hashes"]),
+                                    "classification": run["classification"]})
+            grant = db.execute("SELECT session_id FROM execution_grants WHERE token_hash=?",
+                               (hashlib.sha256(execution_token.encode()).hexdigest(),)
+                               ).fetchone() if isinstance(execution_token, str) else None
+            grant_rule = self._use_grant(db, execution_token, run["actor"],
+                                         grant["session_id"] if grant else "",
+                                         grant_action, manifest_hash, "generation", sealed_provider)
+            if grant_rule:
+                snapshot = self._snapshot(db)
+                event_id = self._append(db, "trusted-generation-adapter", action,
+                                        {"rule": grant_rule}, "deny", snapshot, snapshot)
+                db.commit()
+                return {"event_id": event_id, "decision": "deny", "reason": grant_rule}
+            before = self._snapshot(db)
             db.execute("UPDATE generations SET status='claimed' WHERE id=?", (generation_id,))
             after = self._snapshot(db)
             event_id = self._append(db, "trusted-generation-adapter", action,
@@ -495,6 +795,8 @@ class Substrate:
                 rule = "generation_already_consumed" if run["status"] == "completed" else "generation_not_claimed"
             elif sources is None:
                 rule = "generation_manifest_invalid"
+            elif self._stopped(db, run["actor"], "generation", self._generation_provider(db, generation_id)):
+                rule = "execution_unavailable"
             elif not payload or len(payload) > MAX_CONTENT:
                 rule = "invalid_generation_output"
             else:
@@ -731,11 +1033,25 @@ class Substrate:
             return "deny", "credential_scope_fixed", None
         return "deny", "unknown_action", None
 
-    def propose(self, actor: str, session_token: str, action: dict[str, Any]) -> dict[str, Any]:
+    def propose(self, actor: str, session_token: str, action: dict[str, Any],
+                execution_token: str | None = None,
+                authorize_only: bool = False) -> dict[str, Any]:
+        if action.get("kind") in ("network.request", "object.publish"):
+            return self._propose(actor, session_token, action, execution_token, authorize_only)
         with self._execution_lock:
-            return self._propose(actor, session_token, action)
+            return self._propose(actor, session_token, action, execution_token, authorize_only)
 
-    def _propose(self, actor: str, session_token: str, action: dict[str, Any]) -> dict[str, Any]:
+    def _external_execution_open(self, actor: str, session_token: str) -> bool:
+        with self._db() as db:
+            expected = self._verify(db)
+            if self._snapshot(db) != expected:
+                return False
+            return (self._session_valid(db, actor, session_token) and
+                    not self._stopped(db, actor, "network", None))
+
+    def _propose(self, actor: str, session_token: str, action: dict[str, Any],
+                 execution_token: str | None = None,
+                 authorize_only: bool = False) -> dict[str, Any]:
         started = time.perf_counter()
         with self._db() as db:
             db.execute("BEGIN IMMEDIATE")
@@ -749,22 +1065,40 @@ class Substrate:
                 decision, rule, namespace = "deny", "invalid_session", None
             else:
                 session_id = row["id"]
-                decision, rule, namespace = self._decide(actor, action, session_id, db)
+                provider = action.get("provider") if action.get("kind") == "generation.prepare" else None
+                capability = self._capability(action)
+                if self._stopped(db, actor, capability, provider):
+                    decision, rule, namespace = "deny", "circuit_blocked", None
+                else:
+                    decision, rule, namespace = self._decide(actor, action, session_id, db)
+                if decision == "allow":
+                    manifest_hash = self._manifest_hash(db, action, namespace)
+                    if authorize_only or execution_token is None:
+                        issued_token = self._issue_grant(db, actor, session_id, action,
+                                                         manifest_hash, capability, provider)
+                    else:
+                        issued_token = execution_token
+                    if not authorize_only:
+                        grant_rule = self._use_grant(db, issued_token, actor, session_id,
+                                                     action, manifest_hash, capability, provider)
+                        if grant_rule:
+                            decision, rule, namespace = "deny", grant_rule, None
+                    before = self._snapshot(db)
             value = None
-            if decision == "allow" and action["kind"] == "state.write":
+            if decision == "allow" and not authorize_only and action["kind"] == "state.write":
                 db.execute("INSERT INTO state VALUES (?,?,?) ON CONFLICT(namespace,key) "
                            "DO UPDATE SET value=excluded.value",
                            (namespace, action["key"], canonical(action.get("value"))))
-            elif decision == "allow" and action["kind"] == "state.read":
+            elif decision == "allow" and not authorize_only and action["kind"] == "state.read":
                 found = db.execute("SELECT value FROM state WHERE namespace=? AND key=?",
                                    (namespace, action["key"])).fetchone()
                 value = json.loads(found[0]) if found else None
-            elif decision == "allow" and action["kind"] == "object.transform":
+            elif decision == "allow" and not authorize_only and action["kind"] == "object.transform":
                 parent, transformed, media_type = namespace
                 value = self._insert_object(db, parent["classification"], media_type,
                                             json.loads(parent["readers"]), [parent["id"]],
                                             action["operation"], transformed)
-            elif decision == "allow" and action["kind"] == "generation.prepare":
+            elif decision == "allow" and not authorize_only and action["kind"] == "generation.prepare":
                 input_ids, hashes, classification, provider = namespace
                 value = secrets.token_hex(16)
                 db.execute("INSERT INTO generations VALUES (?,?,?,?,?,?,?)",
@@ -773,6 +1107,12 @@ class Substrate:
                 if provider is not None:
                     db.execute("INSERT INTO generation_providers VALUES (?,?)",
                                (value, provider))
+                generation_manifest = digest({"ids": input_ids, "hashes": hashes,
+                                              "classification": classification})
+                generation_token = self._issue_grant(
+                    db, actor, session_id,
+                    {"kind": "generation.execute", "generation_id": value},
+                    generation_manifest, "generation", provider, ttl=300)
             after = self._snapshot(db)
             logged_action = action
             if isinstance(action.get("kind"), str) and action["kind"].startswith("object."):
@@ -822,6 +1162,11 @@ class Substrate:
                                     elapsed_ms=(time.perf_counter() - started) * 1000)
             db.commit()
         result = {"event_id": event_id, "decision": decision, "reason": rule}
+        if decision == "deny" and rule == "circuit_blocked":
+            result["reason"] = "capability_unavailable"
+        if decision == "allow" and authorize_only:
+            result["execution_token"] = issued_token
+            return result
         if decision == "allow" and action["kind"] == "state.read":
             result["value"] = value
         if decision == "allow" and action["kind"] == "object.read":
@@ -833,10 +1178,13 @@ class Substrate:
                           media_type=namespace[2], parents=[namespace[0]["id"]])
         if decision == "allow" and action["kind"] == "generation.prepare":
             result.update(generation_id=value, classification=namespace[2],
-                          input_ids=namespace[0], provider=namespace[3])
+                          input_ids=namespace[0], provider=namespace[3],
+                          execution_token=generation_token)
         if decision == "allow" and action["kind"] == "object.publish":
             parent, url, origin = namespace
             try:
+                if not self._external_execution_open(actor, session_token):
+                    raise ValueError("capability_unavailable")
                 response = fetch(url, [origin])
                 outcome = {key: response[key] for key in
                            ("status", "bytes", "body_sha256", "origin", "resolved_ip")}
@@ -856,6 +1204,8 @@ class Substrate:
                 db.commit()
         if decision == "allow" and action["kind"] == "network.request":
             try:
+                if not self._external_execution_open(actor, session_token):
+                    raise ValueError("capability_unavailable")
                 network = self.actors[actor]["network"]
                 destinations = list(network.get("destinations", []))
                 destinations.extend(service["origin"] for service in network.get("services", [])
@@ -935,6 +1285,9 @@ class Substrate:
             if before != expected:
                 rule = "state_integrity"
                 target = None
+            elif self._stopped(db, "human-operator", "state", None):
+                rule = "circuit_blocked"
+                target = None
             else:
                 target = db.execute("SELECT * FROM events WHERE id=?", (event_id,)).fetchone()
                 if not reason.strip():
@@ -952,7 +1305,8 @@ class Substrate:
                     elapsed_ms=(time.perf_counter() - started) * 1000,
                 )
                 db.commit()
-                return {"event_id": rejected_id, "decision": "deny", "reason": rule}
+                return {"event_id": rejected_id, "decision": "deny",
+                        "reason": "capability_unavailable" if rule == "circuit_blocked" else rule}
             action = json.loads(target["action"])
             if action.get("kind") != "state.write" or action.get("scope") != "persistent":
                 rejected_id = self._append(
@@ -1056,6 +1410,7 @@ class ObjectDeclassificationRequest(BaseModel):
 
 class GenerationClaimRequest(BaseModel):
     generation_id: str
+    execution_token: str
     provider: str | None = None
 
     class Config:
@@ -1068,6 +1423,11 @@ class GenerationCompleteRequest(BaseModel):
 
     class Config:
         extra = "forbid"
+
+
+class ExecutionRequest(BaseModel):
+    action: dict[str, Any]
+    execution_token: str
 
 
 def create_app(substrate: Substrate) -> FastAPI:
@@ -1093,6 +1453,26 @@ def create_app(substrate: Substrate) -> FastAPI:
         actor = actor_from_header(authorization)
         try:
             return substrate.propose(actor, x_session_token or "", body.action)
+        except IntegrityError as exc:
+            raise HTTPException(503, str(exc)) from exc
+
+    @app.post("/authorizations")
+    def authorization(body: Proposal, authorization: str | None = Header(default=None),
+                      x_session_token: str | None = Header(default=None)):
+        actor = actor_from_header(authorization)
+        try:
+            return substrate.propose(actor, x_session_token or "", body.action,
+                                     authorize_only=True)
+        except IntegrityError as exc:
+            raise HTTPException(503, str(exc)) from exc
+
+    @app.post("/executions")
+    def execution(body: ExecutionRequest, authorization: str | None = Header(default=None),
+                  x_session_token: str | None = Header(default=None)):
+        actor = actor_from_header(authorization)
+        try:
+            return substrate.propose(actor, x_session_token or "", body.action,
+                                     execution_token=body.execution_token)
         except IntegrityError as exc:
             raise HTTPException(503, str(exc)) from exc
 
@@ -1142,7 +1522,8 @@ def create_app(substrate: Substrate) -> FastAPI:
         if not substrate.is_operator(token):
             raise HTTPException(401, "invalid trusted adapter token")
         try:
-            return substrate.claim_generation(body.generation_id, body.provider)
+            return substrate.claim_generation(body.generation_id, body.execution_token,
+                                              body.provider)
         except IntegrityError as exc:
             raise HTTPException(503, str(exc)) from exc
 

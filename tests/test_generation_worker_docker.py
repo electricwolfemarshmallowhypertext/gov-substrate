@@ -64,7 +64,8 @@ def test_fresh_worker_receives_only_sealed_context(tmp_path, monkeypatch):
             "kind": "generation.prepare", "input_ids": input_ids}}).json()
         assert prepared["decision"] == "allow", prepared
         return run_generation(client, prepared["generation_id"], "operator-token",
-                              [*prefix, "run", "--rm", "-T", "--no-deps", "generator"])
+                              [*prefix, "run", "--rm", "-T", "--no-deps", "generator"],
+                              prepared["execution_token"])
 
     try:
         config = json.loads(docker("config", "--format", "json"))["services"]["generator"]

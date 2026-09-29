@@ -15,6 +15,7 @@ services:
       - python
       - /app/local_generation_worker.py
     network_mode: none
+    restart: "no"
     user: "65534:65534"
     read_only: true
     cap_drop: [ALL]
