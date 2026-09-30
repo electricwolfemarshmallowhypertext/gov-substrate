@@ -89,7 +89,8 @@ class PodmanRuntimeSupervisor:
             "--read-only-tmpfs=false", "--cap-drop=ALL",
             "--security-opt=no-new-privileges", "--pids-limit=32",
             "--tmpfs", "/tmp:rw,nodev,nosuid,noexec,size=16m",
-            "--shm-size=16m", "-i",
+            "--tmpfs", "/dev/shm:rw,nodev,nosuid,noexec,size=16m,mode=1777",
+            "-i",
         ]
         if detached:
             command.append("-d")

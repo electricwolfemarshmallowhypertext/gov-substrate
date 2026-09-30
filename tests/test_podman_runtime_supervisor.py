@@ -87,6 +87,9 @@ def test_run_uses_fixed_rootless_isolation_shape(monkeypatch):
         "--security-opt=no-new-privileges", "--pids-limit=32",
     ):
         assert option in command
+    assert "/tmp:rw,nodev,nosuid,noexec,size=16m" in command
+    assert "/dev/shm:rw,nodev,nosuid,noexec,size=16m,mode=1777" in command
+    assert not any(option.startswith("--shm-size") for option in command)
     image_index = command.index("gov-substrate-runtime-probe:test")
     assert "-d" not in command
     assert command[image_index + 1:] == [
