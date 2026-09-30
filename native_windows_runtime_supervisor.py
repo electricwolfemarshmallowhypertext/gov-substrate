@@ -717,8 +717,10 @@ class NativeWindowsRuntimeSupervisor:
                 command_line = ctypes.create_unicode_buffer(
                     subprocess.list2cmdline([str(copied_worker)])
                 )
+                system_root = os.environ.get("SystemRoot", r"C:\Windows")
                 environment_text = (
-                    f"TEMP={private_tmp}\0TMP={private_tmp}\0\0"
+                    f"SystemRoot={system_root}\0TEMP={private_tmp}\0"
+                    f"TMP={private_tmp}\0\0"
                 )
                 environment = ctypes.create_unicode_buffer(environment_text)
                 flags = (

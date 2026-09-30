@@ -2,6 +2,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <grp.h>
 #include <linux/capability.h>
 #include <sched.h>
 #include <seccomp.h>
@@ -87,25 +88,19 @@ static void write_text(const char *path, const char *value) {
 }
 
 static void configure_user_namespace(void) {
-    uid_t host_uid = getuid();
-    gid_t host_gid = getgid();
+    if (geteuid() != 0 || getegid() != 0) {
+        errno = EPERM;
+        fail("require trusted root launcher");
+    }
+    if (setgroups(0, NULL) != 0) {
+        fail("clear supplementary groups");
+    }
     if (unshare(CLONE_NEWUSER) != 0) {
         fail("unshare user namespace");
     }
     write_text("/proc/self/setgroups", "deny\n");
-    char mapping[96];
-    int length = snprintf(mapping, sizeof(mapping), "65534 %u 1\n", host_uid);
-    if (length <= 0 || (size_t)length >= sizeof(mapping)) {
-        errno = EOVERFLOW;
-        fail("format uid map");
-    }
-    write_text("/proc/self/uid_map", mapping);
-    length = snprintf(mapping, sizeof(mapping), "65534 %u 1\n", host_gid);
-    if (length <= 0 || (size_t)length >= sizeof(mapping)) {
-        errno = EOVERFLOW;
-        fail("format gid map");
-    }
-    write_text("/proc/self/gid_map", mapping);
+    write_text("/proc/self/uid_map", "0 0 1\n65534 65534 1\n");
+    write_text("/proc/self/gid_map", "0 0 1\n65534 65534 1\n");
 }
 
 static void configure_namespaces(void) {
@@ -258,11 +253,15 @@ static void configure_seccomp(void) {
     seccomp_release(context);
 }
 
-static void drop_capabilities(void) {
+static void drop_privileges(void) {
     for (int capability = 0; capability <= CAP_LAST_CAP; capability++) {
         if (prctl(PR_CAPBSET_DROP, capability, 0, 0, 0) != 0 && errno != EINVAL) {
             fail("drop capability bounding set");
         }
+    }
+    if (setresgid(65534, 65534, 65534) != 0 ||
+        setresuid(65534, 65534, 65534) != 0) {
+        fail("drop worker uid and gid");
     }
     struct __user_cap_header_struct header = {
         .version = _LINUX_CAPABILITY_VERSION_3,
@@ -354,9 +353,9 @@ int main(int argc, char **argv) {
     if (child == 0) {
         close(ready_pipe[0]);
         configure_child_mounts();
+        drop_privileges();
         configure_landlock(worker);
         configure_seccomp();
-        drop_capabilities();
         if (write(ready_pipe[1], "1", 1) != 1) {
             fail("signal sandbox readiness");
         }

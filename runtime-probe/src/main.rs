@@ -557,7 +557,7 @@ fn linux_attempts(rows: &mut Vec<Attempt>, config: &BTreeMap<String, String>) {
     ] {
         attempt(rows, format!("unexpected_mount:{path}"), || list_path(path));
     }
-    let allowed = ["TEMP", "TMP"];
+    let allowed = ["SystemRoot", "TEMP", "TMP"];
     let leaked = env::vars()
         .map(|(name, _)| name)
         .filter(|name| !allowed.contains(&name.as_str()))
