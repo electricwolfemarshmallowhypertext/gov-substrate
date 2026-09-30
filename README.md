@@ -91,6 +91,7 @@ Local verification on September 29, 2026: Qwen acceptance **4 passed**; Phi acce
 
 ## Read more
 
+- [v0.5.0 release notes](docs/Release-v0.5.0.md) — execution grants, emergency stops, runtime acceptance, and expanded model validation.
 - [Substrate Reference Architecture](docs/Substrate-Reference-Architecture.md) — implementation, test protocol, and limitations.
 - [Scoped Authority Evaluation](docs/Scoped-Authority-Evaluation.md) — baseline comparison, replay, and limits.
 - [Sensitive-Data Egress Evaluation](docs/Sensitive-Data-Egress-Evaluation.md) — publication authority and local-model replay.
