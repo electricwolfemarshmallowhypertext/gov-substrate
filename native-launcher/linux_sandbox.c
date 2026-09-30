@@ -211,7 +211,17 @@ static int add_landlock_path(int ruleset_fd, const char *path,
     return result;
 }
 
-static void configure_landlock(const char *worker) {
+static int add_landlock_fd(int ruleset_fd, int path_fd,
+                           uint64_t allowed_access) {
+    struct ll_path_beneath_attr rule = {
+        .allowed_access = allowed_access,
+        .parent_fd = path_fd,
+    };
+    return (int)syscall(SYS_landlock_add_rule, ruleset_fd,
+                        LANDLOCK_RULE_PATH_BENEATH, &rule, 0);
+}
+
+static void configure_landlock(int worker_fd) {
     int abi = (int)syscall(SYS_landlock_create_ruleset, NULL, 0,
                            LANDLOCK_CREATE_RULESET_VERSION);
     if (abi < 6) {
@@ -247,9 +257,9 @@ static void configure_landlock(const char *worker) {
     if (ruleset_fd < 0) {
         fail("create Landlock ruleset");
     }
-    if (add_landlock_path(ruleset_fd, worker,
-                          LANDLOCK_ACCESS_FS_EXECUTE |
-                          LANDLOCK_ACCESS_FS_READ_FILE) != 0) {
+    if (add_landlock_fd(ruleset_fd, worker_fd,
+                        LANDLOCK_ACCESS_FS_EXECUTE |
+                        LANDLOCK_ACCESS_FS_READ_FILE) != 0) {
         close(ruleset_fd);
         fail("allow worker executable");
     }
@@ -333,7 +343,7 @@ static void drop_privileges(void) {
 
 static void close_untrusted_descriptors(void) {
 #ifdef SYS_close_range
-    if (syscall(SYS_close_range, 3U, ~0U, 0U) == 0) {
+    if (syscall(SYS_close_range, 4U, ~0U, 0U) == 0) {
         return;
     }
     if (errno != ENOSYS) {
@@ -344,7 +354,7 @@ static void close_untrusted_descriptors(void) {
     if (limit < 0 || limit > 1048576) {
         limit = 65536;
     }
-    for (int fd = 3; fd < limit; fd++) {
+    for (int fd = 4; fd < limit; fd++) {
         close(fd);
     }
 }
@@ -398,6 +408,17 @@ int main(int argc, char **argv) {
         fail("cgroup release handshake");
     }
     close(control_fd);
+    int opened_worker = open(worker, O_PATH | O_CLOEXEC);
+    if (opened_worker < 0) {
+        fail("preopen hostile worker");
+    }
+    int worker_fd = 3;
+    if (opened_worker != worker_fd) {
+        if (dup3(opened_worker, worker_fd, O_CLOEXEC) != worker_fd) {
+            fail("stabilize hostile worker descriptor");
+        }
+        close(opened_worker);
+    }
     configure_namespaces();
 
     int ready_pipe[2];
@@ -411,7 +432,7 @@ int main(int argc, char **argv) {
     if (child == 0) {
         close(ready_pipe[0]);
         configure_child_mounts();
-        configure_landlock(worker);
+        configure_landlock(worker_fd);
         drop_privileges();
         configure_seccomp();
         if (write(ready_pipe[1], "1", 1) != 1) {
@@ -421,7 +442,7 @@ int main(int argc, char **argv) {
         close_untrusted_descriptors();
         char *const worker_argv[] = {(char *)worker, NULL};
         char *const worker_env[] = {"HOME=/tmp", "PATH=/usr/bin:/bin", NULL};
-        execve(worker, worker_argv, worker_env);
+        execveat(worker_fd, "", worker_argv, worker_env, AT_EMPTY_PATH);
         fail("exec hostile worker");
     }
 

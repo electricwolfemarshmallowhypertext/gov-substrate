@@ -704,10 +704,23 @@ class NativeWindowsRuntimeSupervisor:
                     subprocess.list2cmdline([str(copied_worker)])
                 )
                 system_root = os.environ.get("SystemRoot", r"C:\Windows")
-                environment_text = (
-                    f"SystemRoot={system_root}\0TEMP={private_tmp}\0"
-                    f"TMP={private_tmp}\0windir={system_root}\0\0"
-                )
+                system_drive = Path(system_root).drive
+                safe_environment = {
+                    "ComSpec": str(Path(system_root) / "System32" / "cmd.exe"),
+                    "LOCALAPPDATA": str(run_root),
+                    "Path": str(Path(system_root) / "System32") + ";" + system_root,
+                    "SystemDrive": system_drive,
+                    "SystemRoot": system_root,
+                    "TEMP": str(private_tmp),
+                    "TMP": str(private_tmp),
+                    "USERPROFILE": str(run_root),
+                    "windir": system_root,
+                }
+                environment_text = "\0".join(
+                    f"{name}={value}" for name, value in sorted(
+                        safe_environment.items(), key=lambda item: item[0].casefold()
+                    )
+                ) + "\0\0"
                 environment = ctypes.create_unicode_buffer(environment_text)
                 flags = (
                     self.api.CREATE_SUSPENDED | self.api.CREATE_NO_WINDOW |
