@@ -543,7 +543,7 @@ class NativeWindowsConformanceBackend(_NativeTargetMixin):
     granted_attempts = {
         "sealed_context_stdin", "private_storage:/tmp",
         "private_storage:/dev/shm", "windows_job_object",
-        "windows_restricted_token", "windows_appcontainer",
+        "windows_zero_capabilities", "windows_appcontainer",
     }
 
     def __init__(self, artifact, state_dir):
@@ -567,7 +567,7 @@ class NativeWindowsConformanceBackend(_NativeTargetMixin):
             if runtime_id is not None:
                 security = self.supervisor.security_state(generation_id)
                 assert security["appcontainer"] is True
-                assert security["restricted"] is True
+                assert security["capability_count"] == 0
                 assert security["integrity_rid"] <= 0x1000
                 assert security["job_required_limits"] is True
                 assert security["active_process_limit"] == 1

@@ -266,10 +266,9 @@ static void configure_landlock(int worker_fd) {
     uint64_t private_access = handled_fs & ~LANDLOCK_ACCESS_FS_EXECUTE;
     if (add_landlock_path(ruleset_fd, "/tmp", private_access) != 0 ||
         add_landlock_path(ruleset_fd, "/dev/shm", private_access) != 0 ||
-        add_landlock_path(ruleset_fd, "/proc/self/ns/ipc",
-                          LANDLOCK_ACCESS_FS_READ_FILE) != 0 ||
-        add_landlock_path(ruleset_fd, "/proc/self/ns/mnt",
-                          LANDLOCK_ACCESS_FS_READ_FILE) != 0) {
+        add_landlock_path(ruleset_fd, "/proc/self/ns",
+                          LANDLOCK_ACCESS_FS_READ_FILE |
+                          LANDLOCK_ACCESS_FS_READ_DIR) != 0) {
         close(ruleset_fd);
         fail("add Landlock path rule");
     }

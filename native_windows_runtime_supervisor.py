@@ -136,10 +136,7 @@ class _WindowsAPI:
     CREATE_UNICODE_ENVIRONMENT = 0x00000400
     PROC_THREAD_ATTRIBUTE_HANDLE_LIST = 0x00020002
     PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES = 0x00020009
-    TOKEN_ASSIGN_PRIMARY = 0x0001
-    TOKEN_DUPLICATE = 0x0002
     TOKEN_QUERY = 0x0008
-    DISABLE_MAX_PRIVILEGE = 0x1
     PROCESS_TERMINATE = 0x0001
     PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
     SYNCHRONIZE = 0x00100000
@@ -152,6 +149,7 @@ class _WindowsAPI:
     JobObjectExtendedLimitInformation = 9
     TokenIntegrityLevel = 25
     TokenIsAppContainer = 29
+    TokenCapabilities = 30
 
     def __init__(self):
         if os.name != "nt":
@@ -237,12 +235,6 @@ class _WindowsAPI:
             wintypes.HANDLE, wintypes.DWORD, ctypes.POINTER(wintypes.HANDLE),
         ]
         adv.OpenProcessToken.restype = wintypes.BOOL
-        adv.CreateRestrictedToken.argtypes = [
-            wintypes.HANDLE, wintypes.DWORD, wintypes.DWORD, LPVOID,
-            wintypes.DWORD, LPVOID, wintypes.DWORD, LPVOID,
-            ctypes.POINTER(wintypes.HANDLE),
-        ]
-        adv.CreateRestrictedToken.restype = wintypes.BOOL
         adv.CreateProcessAsUserW.argtypes = [
             wintypes.HANDLE, wintypes.LPCWSTR, wintypes.LPWSTR, LPVOID, LPVOID,
             wintypes.BOOL, wintypes.DWORD, LPVOID, wintypes.LPCWSTR,
@@ -251,8 +243,6 @@ class _WindowsAPI:
         adv.CreateProcessAsUserW.restype = wintypes.BOOL
         adv.ConvertSidToStringSidW.argtypes = [LPVOID, ctypes.POINTER(wintypes.LPWSTR)]
         adv.ConvertSidToStringSidW.restype = wintypes.BOOL
-        adv.IsTokenRestricted.argtypes = [wintypes.HANDLE]
-        adv.IsTokenRestricted.restype = wintypes.BOOL
         adv.GetTokenInformation.argtypes = [
             wintypes.HANDLE, ctypes.c_int, LPVOID, wintypes.DWORD,
             ctypes.POINTER(wintypes.DWORD),
@@ -935,7 +925,6 @@ class NativeWindowsRuntimeSupervisor:
             if not self.api.advapi32.OpenProcessToken(
                     process_handle, self.api.TOKEN_QUERY, ctypes.byref(token)):
                 raise self.api._win_error("open native Windows worker token")
-            restricted = bool(self.api.advapi32.IsTokenRestricted(token))
             appcontainer = wintypes.DWORD()
             returned = wintypes.DWORD()
             if not self.api.advapi32.GetTokenInformation(
@@ -943,6 +932,21 @@ class NativeWindowsRuntimeSupervisor:
                     ctypes.byref(appcontainer), ctypes.sizeof(appcontainer),
                     ctypes.byref(returned)):
                 raise self.api._win_error("query AppContainer token")
+            capability_size = wintypes.DWORD()
+            self.api.advapi32.GetTokenInformation(
+                token, self.api.TokenCapabilities, None, 0,
+                ctypes.byref(capability_size),
+            )
+            if not capability_size.value:
+                raise self.api._win_error("size capability token query")
+            capability_buffer = ctypes.create_string_buffer(capability_size.value)
+            if not self.api.advapi32.GetTokenInformation(
+                    token, self.api.TokenCapabilities, capability_buffer,
+                    capability_size, ctypes.byref(capability_size)):
+                raise self.api._win_error("query capability token")
+            capability_count = ctypes.cast(
+                capability_buffer, ctypes.POINTER(wintypes.DWORD)
+            ).contents.value
             size = wintypes.DWORD()
             self.api.advapi32.GetTokenInformation(
                 token, self.api.TokenIntegrityLevel, None, 0, ctypes.byref(size)
@@ -975,7 +979,7 @@ class NativeWindowsRuntimeSupervisor:
             )
             return {
                 "appcontainer": bool(appcontainer.value),
-                "restricted": restricted,
+                "capability_count": capability_count,
                 "integrity_rid": integrity,
                 "job_limit_flags": flags,
                 "job_required_limits": (flags & required) == required,

@@ -413,7 +413,6 @@ extern "system" {
         desired_access: u32,
         token_handle: *mut *mut std::ffi::c_void,
     ) -> i32;
-    fn IsTokenRestricted(token_handle: *mut std::ffi::c_void) -> i32;
     fn GetTokenInformation(
         token_handle: *mut std::ffi::c_void,
         token_information_class: u32,
@@ -432,6 +431,7 @@ fn windows_security_attempts(
     const PROCESS_VM_READ: u32 = 0x0010;
     const TOKEN_QUERY: u32 = 0x0008;
     const TOKEN_IS_APP_CONTAINER: u32 = 29;
+    const TOKEN_CAPABILITIES: u32 = 30;
 
     if let Some(host_pid) = config.get("host_pid") {
         attempt(rows, "windows_unrelated_process", || {
@@ -485,7 +485,7 @@ fn windows_security_attempts(
     } != 0;
     if !token_opened {
         rows.push(Attempt {
-            name: "windows_restricted_token".to_string(),
+            name: "windows_zero_capabilities".to_string(),
             allowed: false,
             result: io::Error::last_os_error().to_string(),
         });
@@ -496,11 +496,38 @@ fn windows_security_attempts(
         });
         return;
     }
-    let restricted = unsafe { IsTokenRestricted(token) } != 0;
+    let mut capability_bytes = 0_u32;
+    unsafe {
+        GetTokenInformation(
+            token,
+            TOKEN_CAPABILITIES,
+            std::ptr::null_mut(),
+            0,
+            &mut capability_bytes,
+        );
+    }
+    let mut capability_buffer = vec![0_u8; capability_bytes as usize];
+    let capabilities_ok = capability_bytes >= std::mem::size_of::<u32>() as u32
+        && unsafe {
+            GetTokenInformation(
+                token,
+                TOKEN_CAPABILITIES,
+                capability_buffer.as_mut_ptr().cast(),
+                capability_bytes,
+                &mut capability_bytes,
+            )
+        } != 0;
+    let capability_count = if capabilities_ok {
+        unsafe { std::ptr::read_unaligned(capability_buffer.as_ptr().cast::<u32>()) }
+    } else {
+        u32::MAX
+    };
     rows.push(Attempt {
-        name: "windows_restricted_token".to_string(),
-        allowed: restricted,
-        result: format!("restricted={restricted}"),
+        name: "windows_zero_capabilities".to_string(),
+        allowed: capabilities_ok && capability_count == 0,
+        result: format!(
+            "query_ok={capabilities_ok};capability_count={capability_count}"
+        ),
     });
     let mut appcontainer = 0_u32;
     let mut returned = 0_u32;
