@@ -616,7 +616,7 @@ class NativeWindowsRuntimeSupervisor:
                 raise RuntimeError("explicit AppContainer ACL grant failed")
             return (
                 profile_name, sid, sid_text, run_root, private_tmp,
-                copied_worker,
+                private_shm, copied_worker,
             )
         except Exception:
             self.api.advapi32.FreeSid(sid)
@@ -641,7 +641,7 @@ class NativeWindowsRuntimeSupervisor:
             info = PROCESS_INFORMATION()
             try:
                 (profile_name, sid, sid_text, run_root, private_tmp,
-                 copied_worker) = self._prepare_profile(generation_id)
+                 private_shm, copied_worker) = self._prepare_profile(generation_id)
                 stdin_read, stdin_write = self._create_pipe()
                 stdout_read, stdout_write = self._create_pipe()
                 stderr_read, stderr_write = self._create_pipe()
@@ -697,6 +697,7 @@ class NativeWindowsRuntimeSupervisor:
                 system_drive = Path(system_root).drive
                 safe_environment = {
                     "ComSpec": str(Path(system_root) / "System32" / "cmd.exe"),
+                    "GOV_PRIVATE_SHM": str(private_shm),
                     "LOCALAPPDATA": str(run_root),
                     "Path": str(Path(system_root) / "System32") + ";" + system_root,
                     "SystemDrive": system_drive,

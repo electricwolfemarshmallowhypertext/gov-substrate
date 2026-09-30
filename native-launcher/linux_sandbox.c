@@ -358,13 +358,22 @@ static void close_untrusted_descriptors(void) {
     }
 }
 
-static void write_ready_file(const char *path, pid_t child_pid) {
-    int fd = open(path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0600);
+static int preopen_ready_file(const char *path) {
+    int fd = open(path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW,
+                  0600);
     if (fd < 0) {
         fail("create readiness record");
     }
-    if (dprintf(fd, "%d\n", child_pid) < 0 || fsync(fd) != 0 || close(fd) != 0) {
+    return fd;
+}
+
+static void write_ready_file(int fd, pid_t child_pid) {
+    if (dprintf(fd, "%d\n", child_pid) < 0 || fsync(fd) != 0) {
+        close(fd);
         fail("write readiness record");
+    }
+    if (close(fd) != 0) {
+        fail("close readiness record");
     }
 }
 
@@ -418,6 +427,7 @@ int main(int argc, char **argv) {
         }
         close(opened_worker);
     }
+    int ready_file_fd = preopen_ready_file(ready_file);
     configure_namespaces();
 
     int ready_pipe[2];
@@ -430,6 +440,7 @@ int main(int argc, char **argv) {
     }
     if (child == 0) {
         close(ready_pipe[0]);
+        close(ready_file_fd);
         configure_child_mounts();
         configure_landlock(worker_fd);
         drop_privileges();
@@ -450,12 +461,13 @@ int main(int argc, char **argv) {
     ssize_t ready_count = read(ready_pipe[0], &child_ready, 1);
     close(ready_pipe[0]);
     if (ready_count != 1 || child_ready != '1') {
+        close(ready_file_fd);
         kill(child, SIGKILL);
         waitpid(child, NULL, 0);
         errno = EPROTO;
         fail("child sandbox setup");
     }
-    write_ready_file(ready_file, child);
+    write_ready_file(ready_file_fd, child);
 
     int status = 0;
     if (waitpid(child, &status, 0) < 0) {
