@@ -69,8 +69,28 @@ redirect following, automatic retry, built-in tools, system instruction, or
 conversation history. It accepts only the sealed text parts. Keep the key in
 the trusted host process; do not pass it to an agent or container.
 
+For OpenRouter, register `openrouter` and explicitly pin both the model and its
+upstream provider:
+
+```python
+import os
+from hosted_generation_adapters import OpenRouterClient, OpenRouterTextAdapter
+
+provider = OpenRouterTextAdapter(
+    client=OpenRouterClient(os.environ["OPENROUTER_API_KEY"], "z-ai"),
+    model="z-ai/glm-5.2", max_output_tokens=2048)
+```
+
+The OpenRouter client disables fallback providers, permits only the configured
+upstream, denies data collection, requires zero-data-retention routing, and
+requests routing metadata. The adapter fails closed unless that metadata names
+exactly one selected upstream matching the configured provider. OpenRouter is
+still an intermediary trust layer; the substrate controls what it sends and
+what it accepts back, but cannot attest to either OpenRouter's or the upstream
+provider's internal runtime.
+
 The application supplies already configured OpenAI or Anthropic SDK clients;
-the Gemini adapter uses the standard library for Google's direct REST API.
+the Gemini and OpenRouter adapters use the standard library for their REST APIs.
 Install `.[llm]` or `.[anthropic]` only for the SDK provider it uses. Models are selected
 by the host application; the substrate does not substitute one. Any new
 provider can implement `generate(inputs) -> str`, declare its registered
@@ -118,10 +138,10 @@ or non-text output. The OpenAI adapter uses one stateless Responses request
 with `store=False` and truncation disabled. The Anthropic adapter uses one
 Messages request with a single user turn. Both pass separate text blocks in
 the sealed order, add no system instruction or previous conversation, and
-disable SDK retries for that request. Gemini uses a single ordered user turn
-and rejects non-text parts or a non-normal finish. Every API request can incur
-charges. Unit tests use fake clients; the direct Google smoke driver is an
-explicit, two-request opt-in run.
+disable SDK retries for that request. Gemini and OpenRouter use a single
+ordered user turn and reject non-text parts or a non-normal finish. Every API
+request can incur charges. Unit tests use fake clients; the direct Google and
+OpenRouter smoke drivers are explicit, two-request opt-in runs.
 
 ## Boundary
 
@@ -146,4 +166,5 @@ provides a stronger runtime boundary in the documented container setup.
 
 API request shapes follow the official [OpenAI Responses API](https://developers.openai.com/api/docs/guides/text),
 [Anthropic Messages API](https://platform.claude.com/docs/en/api/python/messages/create),
-and [Gemini generateContent API](https://ai.google.dev/api/generate-content).
+[Gemini generateContent API](https://ai.google.dev/api/generate-content), and
+[OpenRouter chat completions API](https://openrouter.ai/docs/api/api-reference/chat/create-a-chat-completion).

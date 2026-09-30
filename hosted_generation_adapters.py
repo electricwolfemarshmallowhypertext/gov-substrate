@@ -5,6 +5,7 @@ API clients and their credentials belong to the trusted host application.
 
 from dataclasses import dataclass
 import json
+import re
 from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
@@ -179,3 +180,215 @@ class GeminiTextAdapter:
         if not text.strip():
             raise RuntimeError("Gemini response contained no text")
         return text
+
+
+def _redact_error_text(value: str) -> str:
+    value = re.sub(r"(?i)bearer\s+[^\s,;]+", "Bearer [REDACTED]", value)
+    return re.sub(r"sk-or-[A-Za-z0-9_-]+", "[REDACTED]", value)[:1000]
+
+
+def _sanitize_error_metadata(value, depth=0):
+    blocked = {"authorization", "headers", "api_key", "key", "prompt",
+               "messages", "content", "input", "output", "request", "body"}
+    if depth > 4:
+        return "[TRUNCATED]"
+    if isinstance(value, dict):
+        return {str(key): _sanitize_error_metadata(item, depth + 1)
+                for key, item in value.items()
+                if str(key).lower() not in blocked}
+    if isinstance(value, list):
+        return [_sanitize_error_metadata(item, depth + 1) for item in value[:20]]
+    if isinstance(value, str):
+        return _redact_error_text(value)
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    return "[REDACTED]"
+
+
+class OpenRouterHTTPError(RuntimeError):
+    def __init__(self, status_code: int, message="", code=None,
+                 error_type=None, metadata=None):
+        self.status_code = status_code
+        self.message = _redact_error_text(str(message))
+        self.code = code if isinstance(code, (str, int, float)) else None
+        self.error_type = (error_type if isinstance(error_type, str) else None)
+        self.metadata = _sanitize_error_metadata(metadata or {})
+        super().__init__(f"OpenRouter API returned HTTP {status_code}")
+
+
+class OpenRouterResponseError(RuntimeError):
+    def __init__(self, reason: str, metadata=None):
+        self.reason = reason
+        self.metadata = _sanitize_error_metadata(metadata or {})
+        super().__init__(f"OpenRouter response rejected: {reason}")
+
+
+class OpenRouterClient:
+    """One direct OpenRouter request with a single pinned upstream provider."""
+
+    def __init__(self, api_key: str, upstream_provider: str):
+        if not api_key or not upstream_provider:
+            raise ValueError("OpenRouter key and upstream provider are required")
+        self._api_key = api_key
+        self.upstream_provider = upstream_provider
+        self._opener = build_opener(_NoRedirect)
+
+    def chat_completion(self, model: str, messages: list,
+                        max_completion_tokens: int) -> dict:
+        allowed = "abcdefghijklmnopqrstuvwxyz0123456789-./_:"
+        if not model or any(char not in allowed for char in model):
+            raise ValueError("Invalid OpenRouter model ID")
+        body = {
+            "model": model,
+            "messages": messages,
+            "max_completion_tokens": max_completion_tokens,
+            "stream": False,
+            "provider": {
+                "only": [self.upstream_provider],
+                "allow_fallbacks": False,
+                "data_collection": "deny",
+                "zdr": True,
+            },
+        }
+        request = Request(
+            "https://openrouter.ai/api/v1/chat/completions",
+            data=json.dumps(body).encode(),
+            headers={"Content-Type": "application/json",
+                     "Authorization": f"Bearer {self._api_key}",
+                     "X-OpenRouter-Metadata": "enabled"},
+            method="POST")
+        try:
+            with self._opener.open(request, timeout=45) as response:
+                return json.load(response)
+        except HTTPError as exc:
+            raise self._http_error(exc) from None
+        except (URLError, TimeoutError) as exc:
+            raise RuntimeError(
+                f"OpenRouter transport failed: {type(exc).__name__}") from None
+
+    def current_key_status(self) -> dict:
+        request = Request(
+            "https://openrouter.ai/api/v1/key",
+            headers={"Authorization": f"Bearer {self._api_key}"}, method="GET")
+        try:
+            with self._opener.open(request, timeout=15) as response:
+                payload = json.load(response)
+        except HTTPError as exc:
+            raise self._http_error(exc) from None
+        except (URLError, TimeoutError) as exc:
+            raise RuntimeError(
+                f"OpenRouter key-status request failed: {type(exc).__name__}") from None
+        data = payload.get("data") if type(payload) is dict else None
+        if type(data) is not dict:
+            raise RuntimeError("OpenRouter key-status response was malformed")
+        limit = data.get("limit")
+        remaining = data.get("limit_remaining")
+        if limit is not None and not isinstance(limit, (int, float)):
+            raise RuntimeError("OpenRouter key limit was malformed")
+        if remaining is not None and not isinstance(remaining, (int, float)):
+            raise RuntimeError("OpenRouter remaining key limit was malformed")
+        return {"available": True, "spending_limit_configured": limit is not None,
+                "limit_usd": limit, "limit_remaining_usd": remaining,
+                "limit_reset": data.get("limit_reset")}
+
+    @staticmethod
+    def _http_error(exc: HTTPError) -> OpenRouterHTTPError:
+        try:
+            payload = json.loads(exc.read(65_536))
+        except (json.JSONDecodeError, UnicodeDecodeError, TypeError):
+            payload = {}
+        error = payload.get("error") if type(payload) is dict else None
+        if type(error) is not dict:
+            error = {}
+        metadata = error.get("metadata")
+        error_type = error.get("type")
+        if error_type is None and type(metadata) is dict:
+            error_type = metadata.get("type")
+        return OpenRouterHTTPError(
+            exc.code, message=error.get("message", ""), code=error.get("code"),
+            error_type=error_type, metadata=metadata)
+
+
+@dataclass
+class OpenRouterTextAdapter:
+    client: object
+    model: str
+    max_output_tokens: int
+    max_context_bytes: int = 32_768
+    service_id: str = "openrouter"
+    last_usage: dict | None = None
+    last_routing: dict | None = None
+
+    def __post_init__(self):
+        if (not self.model or self.max_output_tokens <= 0 or
+                self.max_context_bytes <= 0 or not self.service_id):
+            raise ValueError("Model and positive request limits are required")
+
+    def generate(self, inputs: tuple[SealedInput, ...]) -> str:
+        texts = _governed_text(inputs, self.max_context_bytes)
+        try:
+            response = self.client.chat_completion(
+                model=self.model,
+                messages=[{"role": "user", "content": [
+                    {"type": "text", "text": text} for text in texts]}],
+                max_completion_tokens=self.max_output_tokens)
+        except OpenRouterHTTPError:
+            raise
+        except Exception as exc:
+            raise RuntimeError(
+                f"OpenRouter request failed: {type(exc).__name__}") from None
+        if type(response) is not dict:
+            raise OpenRouterResponseError("malformed_response")
+        if type(response.get("error")) is dict:
+            error = response["error"]
+            raise OpenRouterResponseError("error_payload_on_success", {
+                "message": error.get("message"), "code": error.get("code"),
+                "type": error.get("type"), "metadata": error.get("metadata")})
+        if response.get("model") != self.model:
+            raise OpenRouterResponseError("unexpected_model", {
+                "requested_model": self.model,
+                "returned_model": response.get("model")})
+        self.last_usage = response.get("usage")
+        self.last_routing = response.get("openrouter_metadata")
+        self._verify_routing()
+        choices = response.get("choices")
+        if type(choices) is not list or len(choices) != 1:
+            raise OpenRouterResponseError("unexpected_choice_count", {
+                "choice_count": len(choices) if type(choices) is list else None})
+        choice = choices[0]
+        if type(choice) is not dict or choice.get("finish_reason") != "stop":
+            raise OpenRouterResponseError("non_normal_finish", {
+                "finish_reason": (choice.get("finish_reason")
+                                  if type(choice) is dict else None)})
+        message = choice.get("message")
+        if (type(message) is not dict or message.get("tool_calls") or
+                type(message.get("content")) is not str or
+                not message["content"].strip()):
+            raise OpenRouterResponseError("no_plain_text", {
+                "message_present": type(message) is dict,
+                "tool_calls_present": (bool(message.get("tool_calls"))
+                                       if type(message) is dict else False),
+                "content_type": (type(message.get("content")).__name__
+                                 if type(message) is dict else None)})
+        return message["content"]
+
+    def _verify_routing(self):
+        routing = self.last_routing
+        endpoints = routing.get("endpoints") if type(routing) is dict else None
+        available = endpoints.get("available") if type(endpoints) is dict else None
+        selected = ([item for item in available if type(item) is dict and
+                     item.get("selected") is True] if type(available) is list else [])
+        expected = "".join(char for char in self.client.upstream_provider.lower()
+                           if char.isalnum())
+        actual = ("".join(char for char in selected[0].get("provider", "").lower()
+                          if char.isalnum()) if len(selected) == 1 else "")
+        if (type(routing) is not dict or routing.get("requested") != self.model or
+                len(selected) != 1 or
+                expected != actual):
+            raise OpenRouterResponseError("pinned_upstream_not_confirmed", {
+                "routing_present": type(routing) is dict,
+                "requested_model": (routing.get("requested")
+                                    if type(routing) is dict else None),
+                "available_endpoint_count": (len(available)
+                                             if type(available) is list else None),
+                "selected_providers": [item.get("provider") for item in selected]})
