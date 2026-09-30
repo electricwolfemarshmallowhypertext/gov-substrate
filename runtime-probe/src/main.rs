@@ -3,6 +3,8 @@ use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::env;
 use std::fs;
+#[cfg(target_os = "windows")]
+use std::fs::OpenOptions;
 use std::io::{self, Read, Write};
 use std::net::{IpAddr, SocketAddr, TcpStream, ToSocketAddrs};
 use std::path::{Path, PathBuf};
@@ -234,11 +236,24 @@ fn write_and_read(path: &Path) -> Result<String, String> {
         })
 }
 
-fn private_storage_paths() -> [PathBuf; 2] {
+fn private_storage_paths() -> [(&'static str, PathBuf); 2] {
     if cfg!(target_family = "wasm") {
-        [PathBuf::from("/tmp"), PathBuf::from("/dev/shm")]
+        [
+            ("/tmp", PathBuf::from("/tmp")),
+            ("/dev/shm", PathBuf::from("/dev/shm")),
+        ]
+    } else if cfg!(target_os = "windows") {
+        let private_tmp = env::temp_dir();
+        let private_root = private_tmp.parent().unwrap_or(&private_tmp);
+        [
+            ("/tmp", private_tmp.clone()),
+            ("/dev/shm", private_root.join("shm")),
+        ]
     } else {
-        [env::temp_dir(), PathBuf::from("/dev/shm")]
+        [
+            ("/tmp", env::temp_dir()),
+            ("/dev/shm", PathBuf::from("/dev/shm")),
+        ]
     }
 }
 
@@ -373,7 +388,189 @@ fn linux_attempts(rows: &mut Vec<Attempt>, config: &BTreeMap<String, String>) {
     }
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "windows")]
+#[link(name = "kernel32")]
+extern "system" {
+    fn GetCurrentProcess() -> *mut std::ffi::c_void;
+    fn OpenProcess(
+        desired_access: u32,
+        inherit_handle: i32,
+        process_id: u32,
+    ) -> *mut std::ffi::c_void;
+    fn CloseHandle(handle: *mut std::ffi::c_void) -> i32;
+    fn IsProcessInJob(
+        process_handle: *mut std::ffi::c_void,
+        job_handle: *mut std::ffi::c_void,
+        result: *mut i32,
+    ) -> i32;
+}
+
+#[cfg(target_os = "windows")]
+#[link(name = "advapi32")]
+extern "system" {
+    fn OpenProcessToken(
+        process_handle: *mut std::ffi::c_void,
+        desired_access: u32,
+        token_handle: *mut *mut std::ffi::c_void,
+    ) -> i32;
+    fn IsTokenRestricted(token_handle: *mut std::ffi::c_void) -> i32;
+    fn GetTokenInformation(
+        token_handle: *mut std::ffi::c_void,
+        token_information_class: u32,
+        token_information: *mut std::ffi::c_void,
+        token_information_length: u32,
+        return_length: *mut u32,
+    ) -> i32;
+}
+
+#[cfg(target_os = "windows")]
+fn windows_security_attempts(
+    rows: &mut Vec<Attempt>,
+    config: &BTreeMap<String, String>,
+) {
+    const PROCESS_QUERY_LIMITED_INFORMATION: u32 = 0x1000;
+    const PROCESS_VM_READ: u32 = 0x0010;
+    const TOKEN_QUERY: u32 = 0x0008;
+    const TOKEN_IS_APP_CONTAINER: u32 = 29;
+
+    if let Some(host_pid) = config.get("host_pid") {
+        attempt(rows, "windows_unrelated_process", || {
+            let pid = host_pid
+                .parse::<u32>()
+                .map_err(|_| "invalid host pid".to_string())?;
+            let handle = unsafe {
+                OpenProcess(
+                    PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ,
+                    0,
+                    pid,
+                )
+            };
+            if handle.is_null() {
+                return Err(io::Error::last_os_error().to_string());
+            }
+            unsafe { CloseHandle(handle) };
+            Ok("host process opened".to_string())
+        });
+    }
+    if let Some(path) = config.get("host_canary_path") {
+        attempt(rows, "windows_host_file", || read_file(Path::new(path)));
+    }
+    attempt(rows, "windows_docker_pipe", || {
+        io_result(
+            OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(r"\\.\pipe\docker_engine"),
+            "Docker named pipe opened",
+        )
+    });
+
+    let mut in_job = 0_i32;
+    let job_query = unsafe {
+        IsProcessInJob(
+            GetCurrentProcess(),
+            std::ptr::null_mut(),
+            &mut in_job,
+        )
+    };
+    rows.push(Attempt {
+        name: "windows_job_object".to_string(),
+        allowed: job_query != 0 && in_job != 0,
+        result: format!("query_ok={};in_job={}", job_query != 0, in_job != 0),
+    });
+
+    let mut token = std::ptr::null_mut();
+    let token_opened = unsafe {
+        OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token)
+    } != 0;
+    if !token_opened {
+        rows.push(Attempt {
+            name: "windows_restricted_token".to_string(),
+            allowed: false,
+            result: io::Error::last_os_error().to_string(),
+        });
+        rows.push(Attempt {
+            name: "windows_appcontainer".to_string(),
+            allowed: false,
+            result: "token unavailable".to_string(),
+        });
+        return;
+    }
+    let restricted = unsafe { IsTokenRestricted(token) } != 0;
+    rows.push(Attempt {
+        name: "windows_restricted_token".to_string(),
+        allowed: restricted,
+        result: format!("restricted={restricted}"),
+    });
+    let mut appcontainer = 0_u32;
+    let mut returned = 0_u32;
+    let query_ok = unsafe {
+        GetTokenInformation(
+            token,
+            TOKEN_IS_APP_CONTAINER,
+            (&mut appcontainer as *mut u32).cast(),
+            std::mem::size_of::<u32>() as u32,
+            &mut returned,
+        )
+    } != 0;
+    unsafe { CloseHandle(token) };
+    rows.push(Attempt {
+        name: "windows_appcontainer".to_string(),
+        allowed: query_ok && appcontainer != 0,
+        result: format!(
+            "query_ok={query_ok};appcontainer={};bytes={returned}",
+            appcontainer != 0
+        ),
+    });
+}
+
+#[cfg(target_os = "windows")]
+fn linux_attempts(rows: &mut Vec<Attempt>, config: &BTreeMap<String, String>) {
+    for name in [
+        "unix_socket:/var/run/docker.sock",
+        "unix_socket:/run/docker.sock",
+        "unix_socket:/run/containerd/containerd.sock",
+        "unix_socket:/ipc/substrate.sock",
+        "unix_socket:/tmp/agent.sock",
+        "proc_self_secrets",
+        "proc_pid1_secrets",
+        "unrelated_host_pid",
+        "unrelated_processes",
+        "private_ipc_namespace",
+        "private_mount_namespace",
+    ] {
+        rows.push(Attempt {
+            name: name.to_string(),
+            allowed: false,
+            result: "unsupported_by_target".to_string(),
+        });
+    }
+    for path in [
+        "/workspace",
+        "/ipc",
+        "/run/secrets",
+        "/host",
+        "/mnt/c",
+        "/mnt/e",
+        "/run/desktop/mnt/host",
+        "/model",
+    ] {
+        attempt(rows, format!("unexpected_mount:{path}"), || list_path(path));
+    }
+    let allowed = ["TEMP", "TMP"];
+    let leaked = env::vars()
+        .map(|(name, _)| name)
+        .filter(|name| !allowed.contains(&name.as_str()))
+        .collect::<Vec<_>>();
+    rows.push(Attempt {
+        name: "environment_secrets".to_string(),
+        allowed: !leaked.is_empty(),
+        result: format!("unexpected_names={leaked:?}"),
+    });
+    windows_security_attempts(rows, config);
+}
+
+#[cfg(all(not(target_os = "linux"), not(target_os = "windows")))]
 fn linux_attempts(rows: &mut Vec<Attempt>, config: &BTreeMap<String, String>) {
     for name in [
         "unix_socket:/var/run/docker.sock",
@@ -470,9 +667,9 @@ fn write_marker_report(config: &BTreeMap<String, String>, rows: &mut Vec<Attempt
         .get("marker")
         .map(String::as_str)
         .unwrap_or("probe-marker");
-    for parent in private_storage_paths() {
+    for (logical, parent) in private_storage_paths() {
         let path = parent.join(marker);
-        attempt(rows, format!("write_private:{}", parent.display()), || {
+        attempt(rows, format!("write_private:{logical}"), || {
             write_and_read(&path)
         });
     }
@@ -485,11 +682,11 @@ fn scan(config: &BTreeMap<String, String>, rows: &mut Vec<Attempt>) {
         .get("marker")
         .map(String::as_str)
         .unwrap_or("probe-marker");
-    for parent in private_storage_paths() {
+    for (logical, parent) in private_storage_paths() {
         let previous = marker_path(parent.to_str().unwrap_or("/tmp"), marker);
         attempt(
             rows,
-            format!("previous_worker:{}", parent.display()),
+            format!("previous_worker:{logical}"),
             || read_file(&previous),
         );
     }
@@ -497,11 +694,11 @@ fn scan(config: &BTreeMap<String, String>, rows: &mut Vec<Attempt>) {
         "current-{}",
         config.get("nonce").map(String::as_str).unwrap_or("probe")
     );
-    for parent in private_storage_paths() {
+    for (logical, parent) in private_storage_paths() {
         let path = parent.join(&current);
         attempt(
             rows,
-            format!("private_storage:{}", parent.display()),
+            format!("private_storage:{logical}"),
             || write_and_read(&path),
         );
     }

@@ -128,15 +128,56 @@ def wasmtime_manifest(executable, module):
     }
 
 
+def native_linux_manifest(launcher, worker, cgroup_root):
+    launcher = Path(launcher).resolve(strict=True)
+    worker = Path(worker).resolve(strict=True)
+    cgroup_root = Path(cgroup_root).resolve(strict=True)
+    return {
+        "launcher_sha256": sha256(launcher),
+        "worker_sha256": sha256(worker),
+        "cgroup_root": str(cgroup_root),
+        "cgroup_controllers": read_text(cgroup_root / "cgroup.controllers"),
+        "cgroup_subtree_control": read_text(cgroup_root / "cgroup.subtree_control"),
+        "user_namespace_limit": read_text("/proc/sys/user/max_user_namespaces"),
+        "unprivileged_user_namespaces": read_text(
+            "/proc/sys/kernel/unprivileged_userns_clone"
+        ),
+        "isolation_controls": [
+            "user/mount/pid/ipc/uts/network namespaces", "Landlock ABI >= 6",
+            "seccomp filter", "no_new_privs", "zero capability sets",
+            "cgroup v2 cpu/memory/pids", "closed inherited descriptors",
+            "supervisor-owned process group",
+        ],
+    }
+
+
+def native_windows_manifest(worker):
+    worker = Path(worker).resolve(strict=True)
+    return {
+        "worker_sha256": sha256(worker),
+        "isolation_controls": [
+            "zero-capability AppContainer", "restricted primary token",
+            "low-integrity token", "explicit filesystem ACL",
+            "isolated profile storage", "explicit inherited handle list",
+            "Job Object active-process/memory limits", "kill-on-job-close",
+            "exact PID and creation-time verification",
+        ],
+    }
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--backend", choices=(
-        "docker", "podman", "gvisor", "wasmtime"
+        "docker", "podman", "gvisor", "wasmtime", "native-linux",
+        "native-windows",
     ),
                         required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--wasmtime-bin")
     parser.add_argument("--wasmtime-module")
+    parser.add_argument("--native-launcher")
+    parser.add_argument("--native-worker")
+    parser.add_argument("--cgroup-root")
     args = parser.parse_args()
 
     if args.backend == "podman":
@@ -145,6 +186,16 @@ def main():
         if not args.wasmtime_bin or not args.wasmtime_module:
             raise RuntimeError("Wasmtime evidence requires executable and module")
         backend = wasmtime_manifest(args.wasmtime_bin, args.wasmtime_module)
+    elif args.backend == "native-linux":
+        if not args.native_launcher or not args.native_worker or not args.cgroup_root:
+            raise RuntimeError("native Linux evidence requires launcher, worker, and cgroup root")
+        backend = native_linux_manifest(
+            args.native_launcher, args.native_worker, args.cgroup_root
+        )
+    elif args.backend == "native-windows":
+        if not args.native_worker:
+            raise RuntimeError("native Windows evidence requires worker")
+        backend = native_windows_manifest(args.native_worker)
     else:
         backend = docker_manifest()
     if args.backend == "gvisor":

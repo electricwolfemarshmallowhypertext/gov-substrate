@@ -89,6 +89,7 @@ def test_ungranted_paths_are_physically_blocked_and_grants_still_work(
         config = import_text(substrate, "public", config_text(
             "scan", nonce, target_ip=target.address, gateway_ip=target.gateway,
             host_pid=os.getpid(), host_marker=host_marker, marker=marker,
+            host_canary_path=str(host_canary),
         ))
         private = import_text(substrate, "private", "classified context")
         output, report = execute(substrate, client, backend, [config, private])
@@ -116,6 +117,13 @@ def test_ungranted_paths_are_physically_blocked_and_grants_still_work(
     }
     assert required_forbidden <= rows.keys()
     assert all(not rows[name]["allowed"] for name in required_forbidden), rows
+    if backend.probe_target == "windows":
+        windows_forbidden = {
+            "windows_unrelated_process", "windows_host_file",
+            "windows_docker_pipe",
+        }
+        assert windows_forbidden <= rows.keys()
+        assert all(not rows[name]["allowed"] for name in windows_forbidden), rows
     for row in rows.values():
         print(json.dumps(row))
 

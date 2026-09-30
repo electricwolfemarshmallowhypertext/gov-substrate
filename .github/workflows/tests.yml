@@ -228,6 +228,114 @@ jobs:
           path: ${{ runner.temp }}/runtime-evidence/wasmtime.json
           if-no-files-found: error
 
+  runtime-conformance-native-linux:
+    name: Native Linux supervisor conformance
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -e '.[test]'
+      - name: Build the native Linux launcher and fixed hostile probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libseccomp-dev musl-tools
+          rustup toolchain install 1.90.0 --profile minimal
+          rustup target add --toolchain 1.90.0 x86_64-unknown-linux-musl
+          cargo +1.90.0 build --release --locked \
+            --manifest-path runtime-probe/Cargo.toml \
+            --target x86_64-unknown-linux-musl
+          gcc -std=c11 -O2 -Wall -Wextra -Werror \
+            native-launcher/linux_sandbox.c -lseccomp \
+            -o "$RUNNER_TEMP/native-linux-launcher"
+          echo "NATIVE_LINUX_LAUNCHER=$RUNNER_TEMP/native-linux-launcher" >> "$GITHUB_ENV"
+          echo "NATIVE_PROBE=$GITHUB_WORKSPACE/runtime-probe/target/x86_64-unknown-linux-musl/release/gov-runtime-probe" >> "$GITHUB_ENV"
+      - name: Create an explicit delegated cgroup v2 root
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="/sys/fs/cgroup/gov-substrate-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          sudo mkdir "$root"
+          sudo chown "$USER:$USER" "$root"
+          echo "NATIVE_CGROUP_ROOT=$root" >> "$GITHUB_ENV"
+      - name: Record native Linux environment
+        run: >-
+          python scripts/record_runtime_environment.py --backend native-linux
+          --native-launcher "$NATIVE_LINUX_LAUNCHER"
+          --native-worker "$NATIVE_PROBE" --cgroup-root "$NATIVE_CGROUP_ROOT"
+          --output "$RUNNER_TEMP/runtime-evidence/native-linux.json"
+      - name: Supervisor conformance (real native Linux workers)
+        env:
+          RUN_ACCEPTANCE_TESTS: '1'
+          RUNTIME_CONFORMANCE_BACKEND: native-linux
+        run: python -m pytest -q tests/acceptance/conformance -m conformance
+      - name: Runtime enforcement (real native Linux attempts)
+        env:
+          RUN_ACCEPTANCE_TESTS: '1'
+          RUNTIME_CONFORMANCE_BACKEND: native-linux
+        run: python -m pytest -q tests/acceptance/conformance -m runtime_enforcement
+      - name: Remove delegated cgroup root
+        if: always()
+        shell: bash
+        run: |
+          if [[ -n "${NATIVE_CGROUP_ROOT:-}" && -d "$NATIVE_CGROUP_ROOT" ]]; then
+            sudo rmdir "$NATIVE_CGROUP_ROOT" || true
+          fi
+      - name: Upload native Linux evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: runtime-environment-native-linux-${{ github.sha }}
+          path: ${{ runner.temp }}/runtime-evidence/native-linux.json
+          if-no-files-found: error
+
+  runtime-conformance-native-windows:
+    name: Native Windows supervisor conformance
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -e '.[test]'
+      - name: Build the fixed hostile probe for Windows
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.90.0 --profile minimal
+          rustup target add --toolchain 1.90.0 x86_64-pc-windows-msvc
+          cargo +1.90.0 build --release --locked \
+            --manifest-path runtime-probe/Cargo.toml \
+            --target x86_64-pc-windows-msvc
+          echo "NATIVE_PROBE=$GITHUB_WORKSPACE/runtime-probe/target/x86_64-pc-windows-msvc/release/gov-runtime-probe.exe" >> "$GITHUB_ENV"
+      - name: Record native Windows environment
+        run: >-
+          python scripts/record_runtime_environment.py --backend native-windows
+          --native-worker "$env:NATIVE_PROBE"
+          --output "$env:RUNNER_TEMP/runtime-evidence/native-windows.json"
+      - name: Supervisor conformance (real native Windows workers)
+        env:
+          RUN_ACCEPTANCE_TESTS: '1'
+          RUNTIME_CONFORMANCE_BACKEND: native-windows
+        run: python -m pytest -q tests/acceptance/conformance -m conformance
+      - name: Runtime enforcement (real native Windows attempts)
+        env:
+          RUN_ACCEPTANCE_TESTS: '1'
+          RUNTIME_CONFORMANCE_BACKEND: native-windows
+        run: python -m pytest -q tests/acceptance/conformance -m runtime_enforcement
+      - name: Upload native Windows evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: runtime-environment-native-windows-${{ github.sha }}
+          path: ${{ runner.temp }}/runtime-evidence/native-windows.json
+          if-no-files-found: error
+
   acceptance-qwen:
     runs-on: ubuntu-latest
     timeout-minutes: 90

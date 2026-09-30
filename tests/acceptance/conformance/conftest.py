@@ -13,6 +13,8 @@ from pathlib import Path
 import pytest
 
 from docker_runtime_supervisor import DockerRuntimeSupervisor
+from native_linux_runtime_supervisor import NativeLinuxRuntimeSupervisor
+from native_windows_runtime_supervisor import NativeWindowsRuntimeSupervisor
 from podman_runtime_supervisor import PodmanRuntimeSupervisor
 from runtime_conformance import ReachableTarget, RuntimeIdentity
 from wasmtime_runtime_supervisor import WasmtimeRuntimeSupervisor
@@ -57,8 +59,25 @@ def podman_command(*args, env=None, input_text=None, timeout=1200):
 def conformance_image(acceptance_enabled):
     backend = os.environ.get("RUNTIME_CONFORMANCE_BACKEND", "docker")
     assert backend in (
-        "docker", "gvisor", "podman", "wasmtime"
+        "docker", "gvisor", "podman", "wasmtime", "native-linux",
+        "native-windows",
     ), "unsupported conformance backend"
+    if backend == "native-linux":
+        assert os.name == "posix", "native-linux requires a Linux host"
+        yield {
+            "backend": backend,
+            "launcher": Path(os.environ["NATIVE_LINUX_LAUNCHER"]).resolve(strict=True),
+            "worker": Path(os.environ["NATIVE_PROBE"]).resolve(strict=True),
+            "cgroup_root": Path(os.environ["NATIVE_CGROUP_ROOT"]).resolve(strict=True),
+        }
+        return
+    if backend == "native-windows":
+        assert os.name == "nt", "native-windows requires a Windows host"
+        yield {
+            "backend": backend,
+            "worker": Path(os.environ["NATIVE_PROBE"]).resolve(strict=True),
+        }
+        return
     if backend == "wasmtime":
         yield {
             "backend": backend,
@@ -392,6 +411,195 @@ class _QuietHandler(http.server.BaseHTTPRequestHandler):
         pass
 
 
+class _NativeTargetMixin:
+    def _init_target(self):
+        self._server = None
+        self._server_thread = None
+
+    def start_reachable_target(self):
+        self._server = http.server.ThreadingHTTPServer(
+            ("127.0.0.1", 8002), _QuietHandler
+        )
+        self._server_thread = threading.Thread(
+            target=self._server.serve_forever, daemon=True
+        )
+        self._server_thread.start()
+        with urllib.request.urlopen("http://127.0.0.1:8002/", timeout=2) as response:
+            assert response.status == 200
+        return ReachableTarget("127.0.0.1", "127.0.0.1")
+
+    def _cleanup_target(self):
+        if self._server is not None:
+            self._server.shutdown()
+            self._server.server_close()
+        if self._server_thread is not None:
+            self._server_thread.join(timeout=5)
+
+
+class NativeLinuxConformanceBackend(_NativeTargetMixin):
+    name = "native-linux"
+    probe_target = "linux"
+    granted_attempts = {
+        "sealed_context_stdin", "private_ipc_namespace",
+        "private_mount_namespace", "private_storage:/tmp",
+        "private_storage:/dev/shm",
+    }
+
+    def __init__(self, artifact, state_dir):
+        self.project = "govconformance" + uuid.uuid4().hex[:10]
+        self.launcher = artifact["launcher"]
+        self.worker = artifact["worker"]
+        self.cgroup_root = artifact["cgroup_root"]
+        self.state_dir = state_dir
+        self.supervisor = self.new_supervisor()
+        self._orphans = []
+        self._identities = {}
+        self._init_target()
+
+    def new_supervisor(self):
+        return NativeLinuxRuntimeSupervisor(
+            self.launcher, self.worker, self.state_dir, self.cgroup_root,
+            self.project,
+        )
+
+    @staticmethod
+    def _status(pid):
+        return {
+            line.split(":", 1)[0]: line.split(":", 1)[1].strip()
+            for line in Path(f"/proc/{pid}/status").read_text(
+                encoding="utf-8"
+            ).splitlines()
+        }
+
+    def _assert_runtime_shape(self, generation_id):
+        record = self.supervisor._read_record(generation_id)
+        assert record is not None
+        status = self._status(record["worker_pid"])
+        assert status["NoNewPrivs"] == "1"
+        assert status["Seccomp"] == "2"
+        assert all(
+            int(status[name], 16) == 0
+            for name in ("CapInh", "CapPrm", "CapEff", "CapBnd", "CapAmb")
+        )
+        assert {int(value) for value in status["Uid"].split()} == {65534}
+        for namespace in ("net", "mnt", "ipc", "uts", "pid"):
+            assert os.readlink(f"/proc/{record['worker_pid']}/ns/{namespace}") != os.readlink(
+                f"/proc/self/ns/{namespace}"
+            )
+        cgroup = Path(record["cgroup"])
+        assert (cgroup / "memory.max").read_text(encoding="ascii").strip() == "134217728"
+        assert (cgroup / "pids.max").read_text(encoding="ascii").strip() == "16"
+        assert (cgroup / "cpu.max").read_text(encoding="ascii").strip() == "50000 100000"
+        members = {
+            int(value) for value in
+            (cgroup / "cgroup.procs").read_text(encoding="ascii").split()
+        }
+        assert record["launcher_pid"] in members
+        assert record["worker_pid"] in members
+        return record
+
+    def wait_running(self, generation_id):
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            runtime_id = self.supervisor.runtime_identity(generation_id)
+            if runtime_id is not None:
+                self._assert_runtime_shape(generation_id)
+                self._identities[runtime_id] = generation_id
+                return RuntimeIdentity(runtime_id, True)
+            time.sleep(0.05)
+        raise AssertionError("native Linux conformance worker did not start")
+
+    def launch_orphan(self, generation_id, sealed_context):
+        process, runtime_id = self.supervisor._spawn(generation_id)
+        process.stdin.write(sealed_context)
+        process.stdin.close()
+        self._orphans.append(process)
+        self._identities[runtime_id] = generation_id
+        identity = self.wait_running(generation_id)
+        assert identity.runtime_id == runtime_id
+        return identity
+
+    def assert_terminated(self, runtime_id):
+        for process in self._orphans:
+            if str(process.pid) == runtime_id.split(":", 1)[0]:
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    pass
+        assert not self.supervisor.runtime_exists(runtime_id), "runtime still exists"
+        generation_id = self._identities[runtime_id]
+        assert self.supervisor._read_record(generation_id) is None
+        assert not self.supervisor._execution_dir(generation_id).exists()
+        assert not self.supervisor._cgroup_dir(generation_id).exists()
+
+    def cleanup(self):
+        self.supervisor.cleanup_project()
+        self._cleanup_target()
+
+
+class NativeWindowsConformanceBackend(_NativeTargetMixin):
+    name = "native-windows"
+    probe_target = "windows"
+    granted_attempts = {
+        "sealed_context_stdin", "private_storage:/tmp",
+        "private_storage:/dev/shm", "windows_job_object",
+        "windows_restricted_token", "windows_appcontainer",
+    }
+
+    def __init__(self, artifact, state_dir):
+        self.project = "govconformance" + uuid.uuid4().hex[:10]
+        self.worker = artifact["worker"]
+        self.state_dir = state_dir
+        self.supervisor = self.new_supervisor()
+        self._orphans = []
+        self._identities = {}
+        self._init_target()
+
+    def new_supervisor(self):
+        return NativeWindowsRuntimeSupervisor(
+            self.worker, self.state_dir, self.project,
+        )
+
+    def wait_running(self, generation_id):
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            runtime_id = self.supervisor.runtime_identity(generation_id)
+            if runtime_id is not None:
+                security = self.supervisor.security_state(generation_id)
+                assert security["appcontainer"] is True
+                assert security["restricted"] is True
+                assert security["integrity_rid"] <= 0x1000
+                assert security["job_required_limits"] is True
+                assert security["active_process_limit"] == 1
+                assert security["process_memory_limit"] == 134217728
+                self._identities[runtime_id] = generation_id
+                return RuntimeIdentity(runtime_id, True)
+            time.sleep(0.05)
+        raise AssertionError("native Windows conformance worker did not start")
+
+    def launch_orphan(self, generation_id, sealed_context):
+        process, runtime_id = self.supervisor._spawn(generation_id)
+        process._write_all(sealed_context.encode("utf-8"))
+        process.api.close(process.stdin_write)
+        process.stdin_write = None
+        self._orphans.append(process)
+        self._identities[runtime_id] = generation_id
+        identity = self.wait_running(generation_id)
+        assert identity.runtime_id == runtime_id
+        return identity
+
+    def assert_terminated(self, runtime_id):
+        assert not self.supervisor.runtime_exists(runtime_id), "runtime still exists"
+        generation_id = self._identities[runtime_id]
+        assert self.supervisor._read_record(generation_id) is None
+
+    def cleanup(self):
+        self.supervisor.reconcile()
+        for process in self._orphans:
+            process.close()
+        self._cleanup_target()
+
+
 class WasmtimeConformanceBackend:
     name = "wasmtime"
     probe_target = "wasi"
@@ -474,6 +682,14 @@ def conformance_backend(conformance_image, tmp_path):
         backend = PodmanConformanceBackend(conformance_image)
     elif conformance_image["backend"] == "wasmtime":
         backend = WasmtimeConformanceBackend(conformance_image, tmp_path / "wasmtime")
+    elif conformance_image["backend"] == "native-linux":
+        backend = NativeLinuxConformanceBackend(
+            conformance_image, tmp_path / "native-linux"
+        )
+    elif conformance_image["backend"] == "native-windows":
+        backend = NativeWindowsConformanceBackend(
+            conformance_image, tmp_path / "native-windows"
+        )
     else:
         backend = DockerConformanceBackend(conformance_image)
     try:
