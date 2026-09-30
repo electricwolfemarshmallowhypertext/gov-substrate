@@ -165,11 +165,64 @@ def native_windows_manifest(worker):
     }
 
 
+def kubernetes_manifest(namespace, probe_image):
+    namespace_info = json.loads(command(
+        "kubectl", "get", f"namespace/{namespace}", "-o", "json"
+    )["stdout"])
+    policy = json.loads(command(
+        "kubectl", "--namespace", namespace, "get",
+        "networkpolicy/gov-substrate-default-deny", "-o", "json"
+    )["stdout"])
+    nodes = json.loads(command("kubectl", "get", "nodes", "-o", "json")["stdout"])
+    calico = json.loads(command(
+        "kubectl", "--namespace", "kube-system", "get", "pods",
+        "--selector", "k8s-app=calico-node", "-o", "json"
+    )["stdout"])
+    return {
+        "kubectl_version": json.loads(command(
+            "kubectl", "version", "-o", "json"
+        )["stdout"]),
+        "current_context": command(
+            "kubectl", "config", "current-context"
+        )["stdout"],
+        "namespace": namespace,
+        "namespace_labels": namespace_info.get("metadata", {}).get("labels", {}),
+        "default_deny_policy": policy.get("spec", {}),
+        "probe_image": probe_image,
+        "nodes": [{
+            "name": node.get("metadata", {}).get("name"),
+            "kubelet_version": node.get("status", {}).get("nodeInfo", {}).get(
+                "kubeletVersion"
+            ),
+            "container_runtime": node.get("status", {}).get("nodeInfo", {}).get(
+                "containerRuntimeVersion"
+            ),
+            "kernel_version": node.get("status", {}).get("nodeInfo", {}).get(
+                "kernelVersion"
+            ),
+            "os_image": node.get("status", {}).get("nodeInfo", {}).get("osImage"),
+        } for node in nodes.get("items", [])],
+        "calico_nodes": [{
+            "name": pod.get("metadata", {}).get("name"),
+            "node": pod.get("spec", {}).get("nodeName"),
+            "images": [
+                container.get("image")
+                for container in pod.get("spec", {}).get("containers", [])
+            ],
+            "image_ids": [
+                container.get("imageID")
+                for container in pod.get("status", {}).get("containerStatuses", [])
+            ],
+            "phase": pod.get("status", {}).get("phase"),
+        } for pod in calico.get("items", [])],
+    }
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--backend", choices=(
         "docker", "podman", "gvisor", "wasmtime", "native-linux",
-        "native-windows",
+        "native-windows", "kubernetes",
     ),
                         required=True)
     parser.add_argument("--output", type=Path, required=True)
@@ -178,6 +231,8 @@ def main():
     parser.add_argument("--native-launcher")
     parser.add_argument("--native-worker")
     parser.add_argument("--cgroup-root")
+    parser.add_argument("--kube-namespace")
+    parser.add_argument("--probe-image")
     args = parser.parse_args()
 
     if args.backend == "podman":
@@ -196,6 +251,12 @@ def main():
         if not args.native_worker:
             raise RuntimeError("native Windows evidence requires worker")
         backend = native_windows_manifest(args.native_worker)
+    elif args.backend == "kubernetes":
+        if not args.kube_namespace or not args.probe_image:
+            raise RuntimeError(
+                "Kubernetes evidence requires namespace and probe image"
+            )
+        backend = kubernetes_manifest(args.kube_namespace, args.probe_image)
     else:
         backend = docker_manifest()
     if args.backend == "gvisor":

@@ -7,6 +7,8 @@ use std::fs;
 use std::fs::OpenOptions;
 use std::io::{self, Read, Write};
 use std::net::{IpAddr, SocketAddr, TcpStream, ToSocketAddrs};
+#[cfg(not(target_family = "wasm"))]
+use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::Duration;
@@ -773,6 +775,27 @@ fn emit_report(context_bytes: usize, config: &BTreeMap<String, String>, rows: &[
     println!("{{\"text\":\"{}\"}}", json_escape(&report));
 }
 
+#[cfg(not(target_family = "wasm"))]
+fn serve_reachable_target() -> Result<(), String> {
+    let listener = TcpListener::bind("0.0.0.0:8002").map_err(|error| error.to_string())?;
+    for connection in listener.incoming() {
+        let mut stream = connection.map_err(|error| error.to_string())?;
+        let mut request = [0_u8; 1024];
+        let _ = stream.read(&mut request);
+        stream
+            .write_all(
+                b"HTTP/1.1 200 OK\r\nContent-Length: 9\r\nConnection: close\r\n\r\nreachable",
+            )
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
+#[cfg(target_family = "wasm")]
+fn serve_reachable_target() -> Result<(), String> {
+    Err("network target mode is unavailable on WASI".to_string())
+}
+
 fn run() -> Result<(), String> {
     let mut input = Vec::new();
     io::stdin()
@@ -805,7 +828,12 @@ fn run() -> Result<(), String> {
 }
 
 fn main() {
-    if let Err(error) = run() {
+    let result = if env::args().skip(1).eq(["--serve".to_string()]) {
+        serve_reachable_target()
+    } else {
+        run()
+    };
+    if let Err(error) = result {
         let _ = writeln!(io::stderr(), "runtime probe failed: {error}");
         std::process::exit(1);
     }

@@ -3,6 +3,7 @@
 import json
 import os
 import http.server
+import socket
 import subprocess
 import threading
 import time
@@ -13,6 +14,7 @@ from pathlib import Path
 import pytest
 
 from docker_runtime_supervisor import DockerRuntimeSupervisor
+from kubernetes_runtime_supervisor import KubernetesRuntimeSupervisor
 from native_linux_runtime_supervisor import NativeLinuxRuntimeSupervisor
 from native_windows_runtime_supervisor import NativeWindowsRuntimeSupervisor
 from podman_runtime_supervisor import PodmanRuntimeSupervisor
@@ -60,8 +62,18 @@ def conformance_image(acceptance_enabled):
     backend = os.environ.get("RUNTIME_CONFORMANCE_BACKEND", "docker")
     assert backend in (
         "docker", "gvisor", "podman", "wasmtime", "native-linux",
-        "native-windows",
+        "native-windows", "kubernetes",
     ), "unsupported conformance backend"
+    if backend == "kubernetes":
+        yield {
+            "backend": backend,
+            "namespace": os.environ["KUBERNETES_NAMESPACE"],
+            "image": os.environ["KUBERNETES_PROBE_IMAGE"],
+            "kubeconfig": Path(os.environ["KUBECONFIG"]).resolve(strict=True),
+            "context": os.environ["KUBERNETES_CONTEXT"],
+            "kubectl": os.environ.get("KUBECTL_BIN", "kubectl"),
+        }
+        return
     if backend == "native-linux":
         assert os.name == "posix", "native-linux requires a Linux host"
         yield {
@@ -676,6 +688,212 @@ class WasmtimeConformanceBackend:
             self._server_thread.join(timeout=5)
 
 
+class KubernetesConformanceBackend:
+    name = "kubernetes"
+    probe_target = "linux"
+    granted_attempts = {
+        "sealed_context_stdin", "private_ipc_namespace",
+        "private_mount_namespace", "private_storage:/tmp",
+        "private_storage:/dev/shm",
+    }
+
+    def __init__(self, artifact):
+        self.namespace = artifact["namespace"]
+        self.image = artifact["image"]
+        self.kubeconfig = artifact["kubeconfig"]
+        self.context = artifact["context"]
+        self.kubectl = artifact["kubectl"]
+        self.project = "govconformance" + uuid.uuid4().hex[:10]
+        self.supervisor = self.new_supervisor()
+        self._identities = {}
+        self._orphans = []
+        self._port_forwards = []
+        self._fixtures = []
+
+    def new_supervisor(self):
+        return KubernetesRuntimeSupervisor(
+            self.namespace,
+            self.image,
+            self.project,
+            kubeconfig=self.kubeconfig,
+            context=self.context,
+            kubectl=self.kubectl,
+        )
+
+    def _command(self, *args):
+        return [
+            self.kubectl, "--context", self.context,
+            "--namespace", self.namespace, *args,
+        ]
+
+    def _kubectl(self, *args, input_text=None, timeout=60):
+        result = subprocess.run(
+            self._command(*args), cwd=ROOT, env=clean_environment(),
+            input=input_text, capture_output=True, text=True, encoding="utf-8",
+            errors="replace", timeout=timeout,
+        )
+        assert result.returncode == 0, result.stderr or result.stdout
+        return result.stdout.strip()
+
+    def wait_running(self, generation_id):
+        deadline = time.monotonic() + 45
+        while time.monotonic() < deadline:
+            identity = self.supervisor.runtime_identity(generation_id)
+            if identity is not None:
+                pod = self.supervisor._inspect(generation_id)
+                statuses = pod.get("status", {}).get("containerStatuses") or []
+                if (
+                    pod.get("status", {}).get("phase") == "Running"
+                    and statuses
+                    and statuses[0].get("state", {}).get("running")
+                ):
+                    self._identities[identity] = generation_id
+                    return RuntimeIdentity(identity, True)
+            time.sleep(0.1)
+        raise AssertionError("Kubernetes conformance worker did not start")
+
+    def launch_orphan(self, generation_id, sealed_context):
+        created = self.supervisor._create_pod(generation_id)
+        self.supervisor._wait_running(generation_id)
+        process = subprocess.Popen(
+            self.supervisor._attach_command(generation_id),
+            cwd=ROOT,
+            env=self.supervisor._environment,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        process.stdin.write(sealed_context)
+        process.stdin.close()
+        self._orphans.append(process)
+        identity = self.wait_running(generation_id)
+        assert identity.runtime_id == created["metadata"]["uid"]
+        return identity
+
+    def assert_terminated(self, runtime_id):
+        generation_id = self._identities[runtime_id]
+        assert self.supervisor._inspect(generation_id) is None, "runtime still exists"
+        for process in self._orphans:
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+
+    @staticmethod
+    def _free_port():
+        with socket.socket() as listener:
+            listener.bind(("127.0.0.1", 0))
+            return listener.getsockname()[1]
+
+    def start_reachable_target(self):
+        target_name = "environment-target"
+        target = {
+            "apiVersion": "v1",
+            "kind": "Pod",
+            "metadata": {
+                "name": target_name,
+                "namespace": self.namespace,
+                "labels": {"gov.substrate/fixture": "reachable-target"},
+            },
+            "spec": {
+                "automountServiceAccountToken": False,
+                "enableServiceLinks": False,
+                "restartPolicy": "Never",
+                "hostNetwork": False,
+                "hostPID": False,
+                "hostIPC": False,
+                "securityContext": {
+                    "runAsNonRoot": True,
+                    "runAsUser": 65534,
+                    "runAsGroup": 65534,
+                    "seccompProfile": {"type": "RuntimeDefault"},
+                },
+                "containers": [{
+                    "name": "target",
+                    "image": self.image,
+                    "imagePullPolicy": "IfNotPresent",
+                    "command": ["/usr/local/bin/gov-runtime-probe", "--serve"],
+                    "securityContext": {
+                        "allowPrivilegeEscalation": False,
+                        "readOnlyRootFilesystem": True,
+                        "runAsNonRoot": True,
+                        "runAsUser": 65534,
+                        "runAsGroup": 65534,
+                        "capabilities": {"drop": ["ALL"]},
+                        "seccompProfile": {"type": "RuntimeDefault"},
+                    },
+                    "resources": {
+                        "requests": {"cpu": "5m", "memory": "8Mi"},
+                        "limits": {"cpu": "100m", "memory": "32Mi"},
+                    },
+                }],
+            },
+        }
+        service = {
+            "apiVersion": "v1",
+            "kind": "Service",
+            "metadata": {"name": target_name, "namespace": self.namespace},
+            "spec": {
+                "selector": {"gov.substrate/fixture": "reachable-target"},
+                "ports": [{"port": 8002, "targetPort": 8002}],
+            },
+        }
+        self._kubectl(
+            "create", "-f", "-", input_text=json.dumps({
+                "apiVersion": "v1", "kind": "List", "items": [target, service],
+            }),
+        )
+        self._fixtures.extend(("pod/environment-target", "service/environment-target"))
+        self._kubectl("wait", "--for=condition=Ready", "pod/environment-target",
+                      "--timeout=90s", timeout=100)
+        service_info = json.loads(self._kubectl("get", "service/environment-target", "-o", "json"))
+        address = service_info["spec"]["clusterIP"]
+
+        port = self._free_port()
+        forward = subprocess.Popen(
+            self._command(
+                "port-forward", "pod/environment-target", f"{port}:8002",
+                "--address=127.0.0.1",
+            ),
+            cwd=ROOT,
+            env=clean_environment(),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        self._port_forwards.append(forward)
+        for _ in range(80):
+            if forward.poll() is not None:
+                raise AssertionError("Kubernetes target port-forward stopped")
+            try:
+                with urllib.request.urlopen(
+                    f"http://127.0.0.1:{port}/", timeout=1
+                ) as response:
+                    if response.status == 200 and response.read() == b"reachable":
+                        return ReachableTarget(address, address)
+            except OSError:
+                time.sleep(0.1)
+        raise AssertionError("substrate control path could not reach Kubernetes target")
+
+    def cleanup(self):
+        self.supervisor.reconcile()
+        for process in self._port_forwards:
+            if process.poll() is None:
+                process.kill()
+                process.wait(timeout=5)
+        for resource in reversed(self._fixtures):
+            subprocess.run(
+                self._command("delete", resource, "--ignore-not-found=true", "--wait=true"),
+                cwd=ROOT, env=clean_environment(), capture_output=True, timeout=60,
+            )
+        for process in self._orphans:
+            if process.poll() is None:
+                process.kill()
+                process.wait(timeout=5)
+
+
 @pytest.fixture
 def conformance_backend(conformance_image, tmp_path):
     if conformance_image["backend"] == "podman":
@@ -690,6 +908,8 @@ def conformance_backend(conformance_image, tmp_path):
         backend = NativeWindowsConformanceBackend(
             conformance_image, tmp_path / "native-windows"
         )
+    elif conformance_image["backend"] == "kubernetes":
+        backend = KubernetesConformanceBackend(conformance_image)
     else:
         backend = DockerConformanceBackend(conformance_image)
     try:
