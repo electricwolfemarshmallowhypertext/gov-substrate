@@ -54,6 +54,18 @@ def acceptance_enabled():
             env=docker_environment(),
         )
         assert result.returncode == 0, result.stderr or result.stdout
+    elif backend == "native-linux":
+        launcher = os.getenv("NATIVE_LINUX_LAUNCHER")
+        worker = os.getenv("NATIVE_PROBE")
+        cgroup_root = os.getenv("NATIVE_CGROUP_ROOT")
+        assert launcher and os.access(Path(launcher).resolve(strict=True), os.X_OK)
+        assert worker and os.access(Path(worker).resolve(strict=True), os.X_OK)
+        root = Path(cgroup_root).resolve(strict=True) if cgroup_root else None
+        assert root is not None and (root / "cgroup.controllers").is_file()
+    elif backend == "native-windows":
+        worker = os.getenv("NATIVE_PROBE")
+        path = Path(worker).resolve(strict=True) if worker else None
+        assert path is not None and path.is_file() and path.suffix.lower() == ".exe"
     else:
         docker_command("info", "--format", "{{.ServerVersion}}", timeout=20)
 
