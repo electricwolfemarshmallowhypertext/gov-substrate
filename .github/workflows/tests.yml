@@ -260,7 +260,6 @@ jobs:
           set -euo pipefail
           root="/sys/fs/cgroup/gov-substrate-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           sudo mkdir "$root"
-          sudo chown "$USER:$USER" "$root"
           echo "NATIVE_CGROUP_ROOT=$root" >> "$GITHUB_ENV"
       - name: Record native Linux environment
         run: >-
@@ -272,12 +271,16 @@ jobs:
         env:
           RUN_ACCEPTANCE_TESTS: '1'
           RUNTIME_CONFORMANCE_BACKEND: native-linux
-        run: python -m pytest -q tests/acceptance/conformance -m conformance
+        run: >-
+          sudo --preserve-env=RUN_ACCEPTANCE_TESTS,RUNTIME_CONFORMANCE_BACKEND,NATIVE_LINUX_LAUNCHER,NATIVE_PROBE,NATIVE_CGROUP_ROOT
+          "$(command -v python)" -m pytest -q tests/acceptance/conformance -m conformance
       - name: Runtime enforcement (real native Linux attempts)
         env:
           RUN_ACCEPTANCE_TESTS: '1'
           RUNTIME_CONFORMANCE_BACKEND: native-linux
-        run: python -m pytest -q tests/acceptance/conformance -m runtime_enforcement
+        run: >-
+          sudo --preserve-env=RUN_ACCEPTANCE_TESTS,RUNTIME_CONFORMANCE_BACKEND,NATIVE_LINUX_LAUNCHER,NATIVE_PROBE,NATIVE_CGROUP_ROOT
+          "$(command -v python)" -m pytest -q tests/acceptance/conformance -m runtime_enforcement
       - name: Remove delegated cgroup root
         if: always()
         shell: bash
