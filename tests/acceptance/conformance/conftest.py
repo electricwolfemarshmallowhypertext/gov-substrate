@@ -16,6 +16,7 @@ from runtime_conformance import ReachableTarget, RuntimeIdentity
 
 ROOT = Path(__file__).resolve().parents[3]
 COMPOSE = ROOT / "compose.runtime-conformance.yaml"
+GVISOR_COMPOSE = ROOT / "compose.runtime-conformance-gvisor.yaml"
 
 
 def clean_environment():
@@ -51,7 +52,10 @@ def podman_command(*args, env=None, input_text=None, timeout=1200):
 @pytest.fixture(scope="session")
 def conformance_image(acceptance_enabled):
     backend = os.environ.get("RUNTIME_CONFORMANCE_BACKEND", "docker")
-    assert backend in ("docker", "podman"), "unsupported conformance backend"
+    assert backend in (
+        "docker", "gvisor", "podman"
+    ), "unsupported conformance backend"
+    compose = GVISOR_COMPOSE if backend == "gvisor" else COMPOSE
     previous_tag = os.environ.get("LAB_IMAGE_TAG")
     tag = "conformance" + uuid.uuid4().hex[:10]
     os.environ["LAB_IMAGE_TAG"] = tag
@@ -59,8 +63,8 @@ def conformance_image(acceptance_enabled):
     env["LAB_IMAGE_TAG"] = tag
     image = f"gov-substrate-runtime-probe:{tag}"
     try:
-        if backend == "docker":
-            docker_command("compose", "-f", str(COMPOSE), "build", "probe", env=env)
+        if backend in ("docker", "gvisor"):
+            docker_command("compose", "-f", str(compose), "build", "probe", env=env)
         else:
             image = f"localhost/{image}"
             info = json.loads(
@@ -72,13 +76,16 @@ def conformance_image(acceptance_enabled):
                 "build", "--file", str(ROOT / "Dockerfile.conformance"),
                 "--tag", image, str(ROOT), env=env,
             )
-        yield {"backend": backend, "env": env, "image": image}
+        yield {
+            "backend": backend, "compose": compose, "env": env,
+            "image": image,
+        }
     finally:
         if previous_tag is None:
             os.environ.pop("LAB_IMAGE_TAG", None)
         else:
             os.environ["LAB_IMAGE_TAG"] = previous_tag
-        executable = "docker" if backend == "docker" else "podman"
+        executable = "podman" if backend == "podman" else "docker"
         subprocess.run(
             [executable, "image", "rm", image], cwd=ROOT, env=env,
             capture_output=True, timeout=60,
@@ -86,18 +93,20 @@ def conformance_image(acceptance_enabled):
 
 
 class DockerConformanceBackend:
-    name = "docker"
-
     def __init__(self, artifact):
+        self.name = artifact["backend"]
         self.project = "govconformance" + uuid.uuid4().hex[:10]
         self.env = artifact["env"]
+        self.compose = artifact["compose"]
         self.supervisor = DockerRuntimeSupervisor(
-            COMPOSE, None, self.project, service="probe"
+            self.compose, None, self.project, service="probe"
         )
         self._targets = []
 
     def new_supervisor(self):
-        return DockerRuntimeSupervisor(COMPOSE, None, self.project, service="probe")
+        return DockerRuntimeSupervisor(
+            self.compose, None, self.project, service="probe"
+        )
 
     def _inspect(self, identity):
         result = subprocess.run(
@@ -125,6 +134,8 @@ class DockerConformanceBackend:
         assert info["HostConfig"]["PidsLimit"] == 32
         assert info["HostConfig"]["RestartPolicy"]["Name"] in ("", "no")
         assert info["Mounts"] == []
+        if self.name == "gvisor":
+            assert info["HostConfig"]["Runtime"] == "runsc"
 
     def wait_running(self, generation_id):
         name = self._name(generation_id)
@@ -140,7 +151,7 @@ class DockerConformanceBackend:
     def launch_orphan(self, generation_id, sealed_context):
         name = self._name(generation_id)
         container_id = docker_command(
-            "compose", "-f", str(COMPOSE), "-p", self.project,
+            "compose", "-f", str(self.compose), "-p", self.project,
             "run", "-d", "-i", "-T", "--no-deps", "--name", name,
             "--label", "gov.substrate.managed=true",
             "--label", f"gov.substrate.generation_id={generation_id}",
@@ -191,7 +202,7 @@ class DockerConformanceBackend:
                 env=self.env, capture_output=True, timeout=20,
             )
         subprocess.run(
-            ["docker", "compose", "-f", str(COMPOSE), "-p", self.project,
+            ["docker", "compose", "-f", str(self.compose), "-p", self.project,
              "down", "--volumes", "--remove-orphans"],
             cwd=ROOT, env=self.env, capture_output=True, timeout=60,
         )
@@ -244,8 +255,6 @@ class PodmanConformanceBackend:
         )
         assert host["PidsLimit"] == 32
         assert host["RestartPolicy"]["Name"] in ("", "no")
-        mappings = host.get("IDMappingsOptions") or {}
-        assert mappings.get("AutoUserNs") is True
         pid = info["State"]["Pid"]
         status = Path(f"/proc/{pid}/status").read_text(encoding="utf-8")
         capability_masks = {
@@ -260,7 +269,10 @@ class PodmanConformanceBackend:
         assert all(int(mask, 16) == 0 for mask in capability_masks.values())
         uid_map = Path(f"/proc/{pid}/uid_map").read_text(encoding="utf-8")
         first_mapping = [int(value) for value in uid_map.splitlines()[0].split()]
-        assert first_mapping[:2] != [0, 0], uid_map
+        container_uid, host_uid, uid_count = first_mapping
+        assert container_uid == 0, uid_map
+        assert host_uid != 0, uid_map
+        assert uid_count > 65534, uid_map
 
     def wait_running(self, generation_id):
         name = self._name(generation_id)

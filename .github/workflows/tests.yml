@@ -129,6 +129,52 @@ jobs:
           path: ${{ runner.temp }}/runtime-evidence/podman.json
           if-no-files-found: error
 
+  runtime-conformance-gvisor:
+    name: gVisor runsc OCI conformance
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -e '.[test]'
+      - name: Install pinned official gVisor release
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/gvisor-x86_64.tar.bz2"
+          curl -fsSLo "$archive" \
+            https://github.com/google/gvisor/releases/download/release-20260921.0/gvisor-x86_64.tar.bz2
+          echo "3dd478770dd751d09c257ba14d739b179348a36c5f2d9e954b773f5f90bff646  $archive" | sha256sum -c -
+          sudo tar -xjf "$archive" -C /usr/local/bin
+          rm -f "$archive"
+          sudo /usr/local/bin/runsc install
+          sudo systemctl restart docker
+          runsc --version
+          docker info --format '{{json .Runtimes}}' | grep -q '"runsc"'
+      - name: Record gVisor environment
+        run: >-
+          python scripts/record_runtime_environment.py --backend gvisor
+          --output "$RUNNER_TEMP/runtime-evidence/gvisor.json"
+      - name: Supervisor conformance (real gVisor workers)
+        env:
+          RUN_ACCEPTANCE_TESTS: '1'
+          RUNTIME_CONFORMANCE_BACKEND: gvisor
+        run: python -m pytest -q tests/acceptance/conformance -m conformance
+      - name: Runtime enforcement (real gVisor OS attempts)
+        env:
+          RUN_ACCEPTANCE_TESTS: '1'
+          RUNTIME_CONFORMANCE_BACKEND: gvisor
+        run: python -m pytest -q tests/acceptance/conformance -m runtime_enforcement
+      - name: Upload gVisor evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: runtime-environment-gvisor-${{ github.sha }}
+          path: ${{ runner.temp }}/runtime-evidence/gvisor.json
+          if-no-files-found: error
+
   acceptance-qwen:
     runs-on: ubuntu-latest
     timeout-minutes: 90

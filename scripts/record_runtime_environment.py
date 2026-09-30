@@ -110,6 +110,8 @@ def main():
 
     backend = docker_manifest() if args.backend != "podman" else podman_manifest()
     if args.backend == "gvisor":
+        if "runsc" not in backend["docker_info"]["available_runtimes"]:
+            raise RuntimeError("runsc is not registered with Docker")
         backend["runsc_version"] = command("runsc", "--version")
 
     manifest = {
