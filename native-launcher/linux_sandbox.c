@@ -184,11 +184,11 @@ static void configure_child_mounts(void) {
         fail("mount private proc");
     }
     if (mount("tmpfs", "/tmp", "tmpfs", MS_NOSUID | MS_NODEV,
-              "size=16m,mode=0700") != 0) {
+              "size=16m,mode=0700,uid=65534,gid=65534") != 0) {
         fail("mount private tmp");
     }
     if (mount("tmpfs", "/dev/shm", "tmpfs", MS_NOSUID | MS_NODEV | MS_NOEXEC,
-              "size=16m,mode=0700") != 0) {
+              "size=16m,mode=0700,uid=65534,gid=65534") != 0) {
         fail("mount private shm");
     }
 }
