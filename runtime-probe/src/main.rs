@@ -243,7 +243,9 @@ fn private_storage_paths() -> [(&'static str, PathBuf); 2] {
             ("/dev/shm", PathBuf::from("/dev/shm")),
         ]
     } else if cfg!(target_os = "windows") {
-        let private_tmp = env::temp_dir();
+        let private_tmp = env::var_os("GOV_PRIVATE_TMP")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| env::temp_dir().join("governance-private-tmp-unavailable"));
         let private_shm = env::var_os("GOV_PRIVATE_SHM")
             .map(PathBuf::from)
             .unwrap_or_else(|| private_tmp.join("shm-unavailable"));
@@ -587,8 +589,8 @@ fn linux_attempts(rows: &mut Vec<Attempt>, config: &BTreeMap<String, String>) {
         attempt(rows, format!("unexpected_mount:{path}"), || list_path(path));
     }
     let allowed = [
-        "ComSpec", "GOV_PRIVATE_SHM", "LOCALAPPDATA", "Path", "SystemDrive",
-        "SystemRoot", "TEMP", "TMP", "USERPROFILE", "windir",
+        "ComSpec", "GOV_PRIVATE_SHM", "GOV_PRIVATE_TMP", "LOCALAPPDATA", "Path",
+        "SystemDrive", "SystemRoot", "TEMP", "TMP", "USERPROFILE", "windir",
     ];
     let leaked = env::vars()
         .map(|(name, _)| name)

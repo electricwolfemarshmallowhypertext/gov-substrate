@@ -698,6 +698,7 @@ class NativeWindowsRuntimeSupervisor:
                 safe_environment = {
                     "ComSpec": str(Path(system_root) / "System32" / "cmd.exe"),
                     "GOV_PRIVATE_SHM": str(private_shm),
+                    "GOV_PRIVATE_TMP": str(private_tmp),
                     "LOCALAPPDATA": str(run_root),
                     "Path": str(Path(system_root) / "System32") + ";" + system_root,
                     "SystemDrive": system_drive,

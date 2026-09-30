@@ -28,7 +28,9 @@ def _process_birth(pid: int) -> str | None:
         return None
     closing = stat.rfind(")")
     fields = stat[closing + 2:].split()
-    return fields[19] if closing >= 0 and len(fields) > 19 else None
+    if closing < 0 or len(fields) <= 19 or fields[0] in {"Z", "X"}:
+        return None
+    return fields[19]
 
 
 class NativeLinuxRuntimeSupervisor:
