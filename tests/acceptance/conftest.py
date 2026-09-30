@@ -38,8 +38,16 @@ def docker_command(*args, env=None, timeout=1200):
 @pytest.fixture(scope="session", autouse=True)
 def acceptance_enabled():
     if os.getenv("RUN_ACCEPTANCE_TESTS") != "1":
-        pytest.skip("set RUN_ACCEPTANCE_TESTS=1 for real Docker acceptance")
-    docker_command("info", "--format", "{{.ServerVersion}}", timeout=20)
+        pytest.skip("set RUN_ACCEPTANCE_TESTS=1 for real runtime acceptance")
+    if os.getenv("RUNTIME_CONFORMANCE_BACKEND") == "podman":
+        result = subprocess.run(
+            ["podman", "info", "--format", "json"], capture_output=True,
+            text=True, encoding="utf-8", errors="replace", timeout=20,
+            env=docker_environment(),
+        )
+        assert result.returncode == 0, result.stderr or result.stdout
+    else:
+        docker_command("info", "--format", "{{.ServerVersion}}", timeout=20)
 
 
 @pytest.fixture(scope="session")

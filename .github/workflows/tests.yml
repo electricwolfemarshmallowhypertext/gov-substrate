@@ -68,6 +68,56 @@ jobs:
           RUN_ACCEPTANCE_TESTS: '1'
         run: python -m pytest -q tests/acceptance/conformance -m runtime_enforcement
 
+  runtime-conformance-podman:
+    name: Rootless Podman runtime conformance
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -e '.[test]'
+      - name: Configure local rootless Podman without Docker
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq podman uidmap fuse-overlayfs slirp4netns passt
+          if ! grep -q "^${USER}:" /etc/subuid; then
+            sudo usermod --add-subuids 100000-165535 "$USER"
+            sudo usermod --add-subgids 100000-165535 "$USER"
+          fi
+          sudo systemctl stop docker.service docker.socket containerd.service
+          if docker info >/dev/null 2>&1; then
+            echo 'Docker daemon must be unavailable during the Podman run' >&2
+            exit 1
+          fi
+          podman system migrate
+          podman info --format json > "$RUNNER_TEMP/podman-info.json"
+          python -c "import json; d=json.load(open('$RUNNER_TEMP/podman-info.json')); assert d['host']['security']['rootless'] is True; assert not d['host'].get('serviceIsRemote', False)"
+      - name: Record native rootless Podman environment
+        run: >-
+          python scripts/record_runtime_environment.py --backend podman
+          --output "$RUNNER_TEMP/runtime-evidence/podman.json"
+      - name: Supervisor conformance (real rootless workers)
+        env:
+          RUN_ACCEPTANCE_TESTS: '1'
+          RUNTIME_CONFORMANCE_BACKEND: podman
+        run: python -m pytest -q tests/acceptance/conformance -m conformance
+      - name: Runtime enforcement (real rootless OS attempts)
+        env:
+          RUN_ACCEPTANCE_TESTS: '1'
+          RUNTIME_CONFORMANCE_BACKEND: podman
+        run: python -m pytest -q tests/acceptance/conformance -m runtime_enforcement
+      - name: Upload rootless Podman evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: runtime-environment-podman-${{ github.sha }}
+          path: ${{ runner.temp }}/runtime-evidence/podman.json
+          if-no-files-found: error
+
   acceptance-qwen:
     runs-on: ubuntu-latest
     timeout-minutes: 90
