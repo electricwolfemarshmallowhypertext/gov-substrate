@@ -720,7 +720,7 @@ class NativeWindowsRuntimeSupervisor:
                 system_root = os.environ.get("SystemRoot", r"C:\Windows")
                 environment_text = (
                     f"SystemRoot={system_root}\0TEMP={private_tmp}\0"
-                    f"TMP={private_tmp}\0\0"
+                    f"TMP={private_tmp}\0windir={system_root}\0\0"
                 )
                 environment = ctypes.create_unicode_buffer(environment_text)
                 flags = (

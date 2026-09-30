@@ -95,12 +95,70 @@ static void configure_user_namespace(void) {
     if (setgroups(0, NULL) != 0) {
         fail("clear supplementary groups");
     }
+
+    int child_ready[2];
+    int maps_ready[2];
+    if (pipe2(child_ready, O_CLOEXEC) != 0 ||
+        pipe2(maps_ready, O_CLOEXEC) != 0) {
+        fail("create user namespace mapping pipes");
+    }
+    pid_t namespace_pid = getpid();
+    pid_t mapper = fork();
+    if (mapper < 0) {
+        fail("fork user namespace mapper");
+    }
+    if (mapper == 0) {
+        close(child_ready[1]);
+        close(maps_ready[0]);
+        char ready = 0;
+        if (read(child_ready[0], &ready, 1) != 1 || ready != '1') {
+            fail("wait for user namespace");
+        }
+        close(child_ready[0]);
+
+        char path[64];
+        if (snprintf(path, sizeof(path), "/proc/%d/setgroups",
+                     namespace_pid) < 0) {
+            fail("format setgroups path");
+        }
+        write_text(path, "deny\n");
+        if (snprintf(path, sizeof(path), "/proc/%d/uid_map",
+                     namespace_pid) < 0) {
+            fail("format uid map path");
+        }
+        write_text(path, "0 0 1\n65534 65534 1\n");
+        if (snprintf(path, sizeof(path), "/proc/%d/gid_map",
+                     namespace_pid) < 0) {
+            fail("format gid map path");
+        }
+        write_text(path, "0 0 1\n65534 65534 1\n");
+        if (write(maps_ready[1], "1", 1) != 1) {
+            fail("signal user namespace mappings");
+        }
+        close(maps_ready[1]);
+        _exit(0);
+    }
+
+    close(child_ready[0]);
+    close(maps_ready[1]);
     if (unshare(CLONE_NEWUSER) != 0) {
         fail("unshare user namespace");
     }
-    write_text("/proc/self/setgroups", "deny\n");
-    write_text("/proc/self/uid_map", "0 0 1\n65534 65534 1\n");
-    write_text("/proc/self/gid_map", "0 0 1\n65534 65534 1\n");
+    if (write(child_ready[1], "1", 1) != 1) {
+        fail("signal user namespace creation");
+    }
+    close(child_ready[1]);
+    char mapped = 0;
+    if (read(maps_ready[0], &mapped, 1) != 1 || mapped != '1') {
+        fail("receive user namespace mappings");
+    }
+    close(maps_ready[0]);
+    int mapper_status = 0;
+    if (waitpid(mapper, &mapper_status, 0) != mapper ||
+        !WIFEXITED(mapper_status) || WEXITSTATUS(mapper_status) != 0) {
+        errno = EPROTO;
+        fail("user namespace mapper");
+    }
 }
 
 static void configure_namespaces(void) {
