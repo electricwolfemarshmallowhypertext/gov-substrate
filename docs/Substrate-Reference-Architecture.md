@@ -179,9 +179,9 @@ Governance Substrate defines the boundary. Docker/OCI is the reference
 enforcement backend, not a product requirement. Rootless Podman and gVisor
 `runsc` have passed the same real conformance and enforcement assertions on
 recorded Ubuntu 24.04 environments. Wasmtime/WASI has passed the same shared
-assertions locally on Windows 11; its pinned Ubuntu CI leg records the portable
-host result separately. A native desktop supervisor is a future local agent
-backend, and a Kubernetes/OCI supervisor is a future server backend. Those
+assertions locally on Windows 11 and in pinned Ubuntu 24.04 CI. A native desktop
+supervisor is a future local agent backend, and a Kubernetes/OCI supervisor is
+a future server backend. Those
 later backends are not implemented here. Each would implement the same
 supervisor contract without adding runtime-specific concepts to the substrate
 API.

@@ -58,8 +58,9 @@ Current `main` runtime evidence:
 - native Ubuntu Docker/containerd: **3 conformance + 2 runtime-enforcement tests passed**;
 - rootless Podman/crun with the Docker daemon unavailable: **3 + 2 passed**;
 - gVisor `runsc` release `release-20260921.0`: **3 + 2 passed**;
-- Wasmtime 49.0.1 on Windows 11: **3 + 2 passed** in local pre-push verification;
-- [Phase 3 CI and runtime manifests](https://github.com/electricwolfemarshmallowhypertext/gov-substrate/actions/runs/36727109512).
+- Wasmtime 49.0.1 on Windows 11 and Ubuntu 24.04.5: **3 + 2 passed** on each host;
+- [Phase 3 OCI CI and runtime manifests](https://github.com/electricwolfemarshmallowhypertext/gov-substrate/actions/runs/36727109512);
+- [Phase 4 Wasmtime/WASI CI and runtime manifest](https://github.com/electricwolfemarshmallowhypertext/gov-substrate/actions/runs/36736013718).
 
 Release verification for v0.5.0:
 

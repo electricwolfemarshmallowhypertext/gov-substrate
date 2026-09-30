@@ -112,9 +112,11 @@ orphaned instances before the substrate starts.
 
 Local pre-push verification used official Wasmtime 49.0.1 on Windows 11 and the
 same Rust 1.90 `wasm32-wasip1` probe: **3 conformance and 2 runtime-enforcement
-tests passed**. The Linux CI job downloads the pinned official Wasmtime archive,
-verifies SHA-256, rebuilds the same probe, runs the same five assertions, and
-uploads a sanitized environment manifest. See the
+tests passed**. The [Phase 4 CI run](https://github.com/electricwolfemarshmallowhypertext/gov-substrate/actions/runs/36736013718)
+passed the same **3 + 2** assertions on Ubuntu 24.04.5 with Linux
+6.17.0-1022-azure and Wasmtime 49.0.1. CI verified the official Wasmtime archive
+before execution and uploaded the sanitized environment manifest for source
+commit `3499280165a62a4eaabd59ee0ce58886855d59f7`. See the
 [Wasmtime/WASI runtime evaluation](Wasmtime-Runtime-Evaluation.md).
 
 ## Separate model proof

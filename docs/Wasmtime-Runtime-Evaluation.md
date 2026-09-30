@@ -13,6 +13,7 @@ the common lifecycle assertions?
 - Probe compiler: Rust `1.90.0`, locked dependency-free crate
 - Supervisor: `WasmtimeRuntimeSupervisor`
 - Local pre-push host: Windows 11, build `10.0.26200`, AMD64
+- CI host: Ubuntu 24.04.5, Linux `6.17.0-1022-azure`, x86_64
 
 The supervisor starts a fresh Wasmtime process and guest instance for every
 generation. It disables the Wasmtime compilation cache, inherited environment,
@@ -63,11 +64,20 @@ storage attempts are real guest operations.
 
 ## CI evidence
 
-The `runtime-conformance-wasmtime` job downloads the official
-`wasmtime-v49.0.1-x86_64-linux.tar.xz` asset and verifies SHA-256
+The [completed Phase 4 CI run](https://github.com/electricwolfemarshmallowhypertext/gov-substrate/actions/runs/36736013718)
+passed the same **3 conformance + 2 runtime-enforcement tests** on Ubuntu 24.04.5.
+The `runtime-conformance-wasmtime` job downloaded the official
+`wasmtime-v49.0.1-x86_64-linux.tar.xz` asset and verified archive SHA-256
 `c71f7e0d30a92e418f0d17db7c6d8f6664c1ad764340a1278678f4209deab534`.
-It compiles the same probe with pinned Rust 1.90, runs the same three conformance
-and two enforcement assertions, and uploads a sanitized environment manifest.
+It compiled the same probe with pinned Rust 1.90 and uploaded a sanitized
+environment manifest recording:
+
+- source commit `3499280165a62a4eaabd59ee0ce58886855d59f7`;
+- Wasmtime `49.0.1` (`46c23a87d`);
+- Ubuntu 24.04.5 on Linux `6.17.0-1022-azure`;
+- runner image `ubuntu24` version `20260927.320.1`;
+- guest module SHA-256 `473d70ad20e263c205d70ffd7c77ddd33d2b8f5c4aeff0d8a5b414432e53f0c1`;
+- inherited guest environment and network both disabled.
 
 ## Limits
 
