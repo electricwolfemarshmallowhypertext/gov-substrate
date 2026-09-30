@@ -404,7 +404,12 @@ jobs:
           digest=$(docker exec gov-substrate-worker ctr --namespace k8s.io \
             images list | awk -v ref="$ref" '$1 == ref {print $3}')
           [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
-          echo "KUBERNETES_PROBE_IMAGE=docker.io/library/gov-substrate-runtime-probe@${digest}" >> "$GITHUB_ENV"
+          immutable_ref="docker.io/library/gov-substrate-runtime-probe@${digest}"
+          while read -r node; do
+            docker exec "$node" ctr --namespace k8s.io images tag \
+              "$ref" "$immutable_ref"
+          done < <(kind get nodes --name gov-substrate)
+          echo "KUBERNETES_PROBE_IMAGE=${immutable_ref}" >> "$GITHUB_ENV"
       - name: Create restricted default-deny worker namespace
         shell: bash
         run: |
