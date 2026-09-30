@@ -51,7 +51,7 @@ The project reports five kinds of evidence separately:
 - **Model integration** uses real Qwen inference through the same sealed-input and governed-output path, separately from the hostile-worker proof.
 - **Hosted validation** verifies the governed request and output path with external providers. It does not attest to a provider's internal runtime.
 
-[Runtime conformance](docs/Runtime-Conformance.md) defines the shared contract and evidence rules. Native Ubuntu Docker/containerd, rootless Podman/crun, gVisor/runsc, Wasmtime/WASI, native Linux, and native Windows use the same real suite. Docker/OCI remains the reference backend. Wasmtime, Linux, and Windows run the same hostile probe in their actual runtime rather than treating compilation as runtime evidence.
+[Runtime conformance](docs/Runtime-Conformance.md) defines the shared contract and evidence rules. Native Ubuntu Docker/containerd, rootless Podman/crun, gVisor/runsc, Wasmtime/WASI, native Linux, native Windows, and Kubernetes/Calico use the same real suite. Docker/OCI remains the reference backend. Each result comes from the hostile probe running in the named backend rather than from configuration inspection alone.
 
 Current `main` runtime evidence:
 
@@ -61,9 +61,11 @@ Current `main` runtime evidence:
 - Wasmtime 49.0.1 on Windows 11 and Ubuntu 24.04.5: **3 + 2 passed** on each host;
 - native Linux namespaces, Landlock, seccomp, capabilities, and cgroup v2: **3 + 2 passed**;
 - native Windows AppContainer, low integrity, zero capabilities, and Job Object supervision: **3 + 2 passed**;
+- Kubernetes 1.36.4 with Calico 3.32.2, restricted Pod Security, and default-deny ingress and egress: **3 + 2 passed** in a disposable Kind cluster;
 - [Phase 3 OCI CI and runtime manifests](https://github.com/electricwolfemarshmallowhypertext/gov-substrate/actions/runs/36727109512);
 - [Phase 4 Wasmtime/WASI CI and runtime manifest](https://github.com/electricwolfemarshmallowhypertext/gov-substrate/actions/runs/36736013718);
-- [Phase 6 native Linux and Windows CI and runtime manifests](https://github.com/electricwolfemarshmallowhypertext/gov-substrate/actions/runs/36756130136).
+- [Phase 6 native Linux and Windows CI and runtime manifests](https://github.com/electricwolfemarshmallowhypertext/gov-substrate/actions/runs/36756130136);
+- [Phase 7 Kubernetes/Calico CI and runtime manifest](https://github.com/electricwolfemarshmallowhypertext/gov-substrate/actions/runs/36761111887).
 
 Release verification for v0.5.0:
 
@@ -79,6 +81,7 @@ Local model evidence uses pinned, hash-verified official Qwen and Microsoft Phi 
 ## Evaluation reports
 
 - [Runtime conformance](docs/Runtime-Conformance.md)
+- [Kubernetes runtime evaluation](docs/Kubernetes-Runtime-Evaluation.md)
 - [Native operating-system runtime evaluation](docs/Native-OS-Runtime-Evaluation.md)
 - [Wasmtime/WASI runtime evaluation](docs/Wasmtime-Runtime-Evaluation.md)
 - [Environment skeleton](docs/Environment-Skeleton-Evaluation.md)
@@ -110,7 +113,7 @@ Earlier evaluations document the failures that motivated scoped authority, persi
 
 The evidence applies to the documented reference configuration and tested scenarios. It does not establish universal AI confinement or prove every runtime backend.
 
-The substrate controls capabilities placed behind its boundary. It cannot secure an agent given an alternate unmediated route, attest to hidden behavior inside a hosted provider, or defend itself from a fully compromised trusted host or kernel. Docker/OCI is the reference backend. Rootless Podman, gVisor, Wasmtime/WASI, native Linux, and native Windows have separate real conformance evidence; untested backends require the same proof before equivalent claims are made.
+The substrate controls capabilities placed behind its boundary. It cannot secure an agent given an alternate unmediated route, attest to hidden behavior inside a hosted provider, or defend itself from a fully compromised trusted host or kernel. Docker/OCI is the reference backend. Rootless Podman, gVisor, Wasmtime/WASI, native Linux, native Windows, and the disposable Kubernetes/Calico configuration have separate real conformance evidence; untested backends require the same proof before equivalent claims are made. Kubernetes results have not yet been repeated on a managed Kubernetes service.
 
 ## License
 

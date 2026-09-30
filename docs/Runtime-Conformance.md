@@ -1,6 +1,6 @@
 # Runtime Conformance
 
-Phases 2, 3, 4, and 6 separate the runtime boundary from model behavior. A backend must
+Phases 2, 3, 4, 6, and 7 separate the runtime boundary from model behavior. A backend must
 implement the same supervisor contract and pass the same real assertions before
 the project describes it as conformant.
 
@@ -152,6 +152,32 @@ The jobs ran on GitHub-hosted Ubuntu 24.04 and Windows runners and uploaded a
 sanitized environment manifest for each. See the
 [native operating-system runtime evaluation](Native-OS-Runtime-Evaluation.md).
 
+## Phase 7 Kubernetes backend
+
+`KubernetesRuntimeSupervisor` implements the unchanged supervisor contract with
+one Pod per generation. The trusted host invokes `kubectl` with an explicit
+kubeconfig, context, namespace, and digest-pinned worker image. The namespace
+must enforce restricted Pod Security and contain a deny-all ingress and egress
+NetworkPolicy before the supervisor creates a worker.
+
+Each worker runs without a service-account token, host namespaces, ambient
+environment, ports, added capabilities, privilege escalation, or a writable
+root filesystem. It receives fresh size-limited `/tmp` and `/dev/shm` volumes,
+resource requests and limits, `RuntimeDefault` seccomp, a non-root identity,
+and an optional read-only model PVC. The supervisor binds a generation to the
+exact Pod UID. Circuit shutdown and restart reconciliation delete that UID with
+a Kubernetes precondition, wait for removal, and reject name reuse.
+
+The [Phase 7 disposable-cluster CI run](https://github.com/electricwolfemarshmallowhypertext/gov-substrate/actions/runs/36761111887)
+passed **3 conformance and 2 runtime-enforcement tests** with Kind 0.33.0,
+Kubernetes 1.36.4, containerd 2.3.4, and Calico 3.32.2. The job used the same
+hostile Linux probe and shared assertions as the other backends, uploaded a
+sanitized environment manifest, and removed the cluster afterward. See the
+[Kubernetes runtime evaluation](Kubernetes-Runtime-Evaluation.md).
+
+This is disposable-cluster evidence. The same suite has not yet been repeated
+on a managed Kubernetes service.
+
 ## Separate model proof
 
 Model integration is not a prerequisite for the hostile-worker suite. The
@@ -179,9 +205,12 @@ python -m pytest -q tests/acceptance/test_local_runtime.py -m model_integration
 
 CI selects an additional backend with `RUNTIME_CONFORMANCE_BACKEND=podman`,
 `RUNTIME_CONFORMANCE_BACKEND=gvisor`, `RUNTIME_CONFORMANCE_BACKEND=native-linux`,
-or `RUNTIME_CONFORMANCE_BACKEND=native-windows`. Wasmtime uses
+`RUNTIME_CONFORMANCE_BACKEND=native-windows`, or
+`RUNTIME_CONFORMANCE_BACKEND=kubernetes`. Wasmtime uses
 `RUNTIME_CONFORMANCE_BACKEND=wasmtime` with pinned `WASMTIME_BIN` and
-`WASMTIME_MODULE` paths. Podman must be local and rootless. The
+`WASMTIME_MODULE` paths. Kubernetes additionally requires explicit
+`KUBECONFIG`, `KUBERNETES_CONTEXT`, `KUBERNETES_NAMESPACE`, and
+digest-pinned `KUBERNETES_PROBE_IMAGE` values. Podman must be local and rootless. The
 Podman job proves the Docker daemon is unavailable. The gVisor job installs a
 pinned official release, verifies its archive SHA-256, registers `runsc` with
 Docker, and verifies each worker's assigned runtime through Docker inspect.
@@ -201,6 +230,9 @@ recorded as unsupported rather than presented as OS attempts. Network, DNS,
 filesystem, environment, lifecycle, and fresh-storage checks execute against
 the real WASI guest. The native results apply to the recorded Ubuntu and
 Windows runner configurations; they do not establish equivalence for other
-kernel versions, Windows builds, policies, or launch contexts. macOS has no
-native supervisor. A fully compromised host, kernel, runtime engine, or trusted
-supervisor remains outside this boundary.
+kernel versions, Windows builds, policies, or launch contexts. The Kubernetes
+result applies to the recorded Kind/Calico cluster and does not establish
+equivalence for a managed control plane, different CNI, admission stack,
+service mesh, node policy, or cloud identity configuration. macOS has no native
+supervisor. A fully compromised host, kernel, runtime engine, cluster control
+plane, or trusted supervisor remains outside this boundary.
