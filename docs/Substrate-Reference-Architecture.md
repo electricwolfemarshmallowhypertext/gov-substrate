@@ -1,8 +1,37 @@
 # Governance Substrate Reference Architecture
 
-A small reference implementation of the paper's distinction: policy declares what should happen; the substrate and execution boundary decide which **managed transitions and capability executions** become real. The source is *Governance as Substrate: Engineering Patterns for Resilient Collective Systems*, Tionne Smith, September 2026 revision. The PDF is intentionally excluded from this code repository because it is marked all rights reserved.
+This document describes the working v0.5.0 reference implementation of the paper's distinction: policy declares what should happen; the substrate and execution boundary decide which **managed transitions and capability executions** become real.
 
-Research basis: [Governance as Substrate, V2 — September 2026 Revision](https://doi.org/10.5281/zenodo.23002435).
+> Governance as Substrate has a working reference implementation whose tested runtime boundary enforced capabilities independently of model behavior across local and hosted models.
+
+That statement applies to the documented tests and environments. It is not a claim of universal confinement or proof of every possible runtime backend.
+
+- Current implementation: [Governance Substrate v0.5.0](https://github.com/electricwolfemarshmallowhypertext/gov-substrate/releases/tag/v0.5.0)
+- Research basis: [Governance as Substrate, V2 — September 2026 Revision](https://doi.org/10.5281/zenodo.23002435)
+
+The paper PDF remains outside this repository because its prose is not distributed under the software license.
+
+## System boundary and trust model
+
+The complete execution path is:
+
+`agent → substrate authorization → one-use grant → execution-time check → runtime or provider adapter → verified outcome → audit`
+
+The substrate checks the circuit breaker before authorization and again before execution. A policy decision and a completed action are separate audit events. An allowance records what the substrate admitted; an outcome records what happened afterward.
+
+| Component | Treatment in v0.5.0 |
+| --- | --- |
+| Agent, model, and worker | Untrusted. Their requested actions and generated content do not create authority. |
+| Substrate and loaded capability registry | Trusted policy and state boundary. A registry change against an existing database fails closed. |
+| Runtime supervisor | Trusted enforcement component. It launches substrate-owned workers, targets exact runtime identities, verifies shutdown, and reconciles orphans. |
+| Host-side provider adapter | Trusted to send only the sealed inputs it claims and to return provider output to the substrate. Provider credentials remain here. |
+| Operator credentials | Trusted and unavailable to agents, workers, and provider calls. Separate credentials control ordinary operations and the emergency circuit. |
+| SQLite state and audit store | Inside the trusted host boundary. Hash chaining and triggers detect ordinary tampering, but a database owner can rewrite both data and chain. |
+| Docker/OCI runtime, host kernel, and isolation configuration | Enforcement dependencies for the current reference deployment. Their guarantees must be tested in the actual environment. |
+| Hosted-provider internals | External. The substrate can record what it sent and accepted back but cannot attest to hidden provider context, retention, or internal execution. |
+| Fully compromised trusted host or kernel | Outside the current boundary. It can bypass process-local enforcement, steal credentials, or rewrite local evidence. |
+
+The substrate API is independent of Docker. Docker/OCI is the only runtime backend with real acceptance evidence in v0.5.0; future backends require the same level of runtime-specific proof before equivalent claims are made.
 
 ## Managed state boundary (Milestone 1)
 
@@ -85,20 +114,32 @@ an HTTP agent endpoint. Configure a distinct circuit operator credential via
 adapter, or worker. Scopes are `global`, `actor`, `capability`, and `provider`.
 The substrate checks active stops before admission, at grant use or generation
 claim, and immediately before mediated outbound HTTP. A trigger revokes
-matching outstanding grants, sessions, and
-generation claims, then logs the trigger and shutdown action. Reset requires
+matching outstanding grants, sessions, and generation claims, then logs the
+trigger and shutdown action. Reset requires
 the same operator credential and a reason and is audited. Agent responses use
 a generic unavailable decision rather than exposing circuit configuration.
+
+### Runtime supervisor contract
+
 Local execution uses the runtime-neutral `RuntimeSupervisor` contract:
 `run(generation_id, sealed_context)`, `stop(generation_ids)`, and `reconcile()`.
-The substrate receives a supervisor instance; it never calls Docker itself.
-`stop` returns a per-generation result with runtime identity and a verified
-shutdown flag. The circuit audit records each result. If a worker cannot be
-verified stopped, the circuit remains active and the shutdown event is marked
-`failed`, not reported as a completed stop. Without a wired supervisor, an
-affected local claim is revoked but shutdown remains unconfirmed. Reset is
-blocked while shutdown remains unconfirmed. A trusted supervisor can reconcile
-orphan workers on restart and audit the verified empty runtime before reset.
+The substrate receives a supervisor instance and never calls Docker itself.
+The contract requires these behaviors:
+
+- `run` binds one runtime instance to the supplied generation ID, supplies only
+  the sealed context, and returns output only after the backend verifies worker
+  exit and cleanup;
+- `stop` targets the exact bound instance and returns its runtime identity,
+  state, and whether shutdown was confirmed;
+- `reconcile` finds substrate-owned orphan workers after supervisor restart and
+  returns the same verified stop results.
+
+The circuit audit records every stop result. If a worker cannot be verified
+stopped, the circuit remains active and the shutdown event is marked `failed`,
+not reported as a completed stop. Without a wired supervisor, an affected local
+claim is revoked but shutdown remains unconfirmed. Reset is blocked while
+shutdown remains unconfirmed. Startup reconciliation must verify the relevant
+runtime empty before the substrate admits new actions.
 
 `DockerRuntimeSupervisor` is the current Docker/OCI backend. The trusted host
 configures a unique project ID per substrate deployment and passes the same
@@ -120,6 +161,30 @@ agent backend; and a Kubernetes/OCI supervisor is a future server backend.
 None is implemented here. Each would implement the same supervisor contract
 without adding runtime-specific concepts to the substrate API.
 
+### Hosted-provider transfer boundary
+
+A hosted generation request names a registered provider before generation. The
+substrate resolves the requested governed objects, records their ordered IDs
+and SHA-256 hashes, calculates the highest classification, and checks whether
+that provider may receive that classification. Unknown providers and inputs
+above the provider's grant are denied before an API call.
+
+An admitted request issues a one-use claim bound to the actor, session,
+generation manifest, provider, policy digest, and expiry. The trusted host-side
+adapter claims that exact manifest once. It may send only those resolved inputs;
+the adapters do not accept an additional prompt, prior conversation, agent
+tools, or agent-held provider credentials. Provider output returns through the
+adapter and becomes an immutable governed object whose parents are the sealed
+inputs and whose classification is their highest classification.
+
+The OpenRouter adapter additionally pins the model and upstream, disables
+fallback providers, and verifies the reported upstream. Direct-provider and
+routed-provider runs record their configured retention or zero-retention
+requirements in their evaluation reports. These checks establish what the
+trusted adapter requested and accepted. They do not attest to provider-internal
+execution, hidden context, retention, or model substitution that the provider
+does not expose.
+
 ## Measured properties
 
 These are explicit prototype proxies, not validated measures of institutional health. `null` means there is not enough observation to compute the value.
@@ -131,9 +196,43 @@ These are explicit prototype proxies, not validated measures of institutional he
 | Friction coherence | `friction_coherence` | Lowest ratio of median gate latencies across actors making the same action kind, requiring at least two observations per actor. `1` is equal latency; `null` when no comparable groups exist. It excludes human and economic burden. |
 | Accountability topology | `accountability_topology` | Share of non-genesis events with an actor and policy rule, provided the audit chain verifies; `0` if the chain fails, `null` before an attempt. It does not establish real-world responsibility. |
 
+## Evidence levels and current results
+
+The project separates policy checks from evidence that the configured runtime
+enforces them:
+
+- **Unit tests** exercise policy, state, audit, adapter, grant, circuit, and
+  supervisor logic. They may use fakes or mocks and do not establish runtime
+  isolation.
+- **Acceptance tests** use the real Docker daemon, real containers, the real
+  substrate and supervisor, and real local inference.
+- **Environment probes** make forbidden operating-system and network attempts
+  from a real worker configuration and record the observed result.
+- **Hosted validation** checks the governed transfer, generation, provenance,
+  and publication path with live provider APIs. It does not attest to provider
+  internals.
+
+| Claim | Implemented boundary | Evidence in v0.5.0 | Limit |
+| --- | --- | --- | --- |
+| Governed state and audit integrity | Transactional state gate, append-only audit triggers, hash chain, and state snapshots | Unit and deterministic adversarial tests | SQLite and its host remain trusted; a database owner can rewrite local evidence |
+| Network and filesystem confinement | Networkless agent container, substrate-owned adapters, scoped workspace, and path controls | Real Docker isolation tests and environment probes | Applies to the tested container settings and granted mounts or sockets |
+| Execution authority and emergency stop | One-use grants, execution-time circuit checks, runtime supervisor, and orphan reconciliation | Unit tests plus real Docker worker stop, removal, late-completion rejection, and restart reconciliation | Docker/OCI is the only runtime backend with acceptance evidence |
+| Local generated-output provenance | Sealed governed context, isolated local worker, inherited classification, and governed output object | Real Qwen and Phi inference through the same Docker worker | Establishes boundary behavior, not model quality or arbitrary backend equivalence |
+| Hosted transfer and generated-output provenance | Provider classification grants, sealed inputs, host-side credentials, governed return path, and publication gate | Bounded live OpenAI, Anthropic, Gemini, and pinned OpenRouter runs | The substrate cannot attest to hidden provider context, retention, or execution |
+
+The v0.5.0 release was verified with **91 passing unit tests and 10 opt-in
+skips**, **4 passing Qwen acceptance tests**, **4 passing Phi acceptance tests**,
+and **5 passing environment tests**. The
+[release CI](https://github.com/electricwolfemarshmallowhypertext/gov-substrate/actions/runs/36651807299)
+passed the unit, Qwen acceptance, and environment jobs. The separate
+[local-model matrix run](https://github.com/electricwolfemarshmallowhypertext/gov-substrate/actions/runs/36617457396)
+passed the same acceptance path with Qwen and Phi.
+
 ## Adversarial evaluation
 
-Run `python -m pytest -q --basetemp .pytest_tmp`. The ordinary suite makes these assertions against the API and SQLite store:
+Run `python -m pytest -q tests --ignore=tests/acceptance`. The unit suite makes
+these assertions against the API and SQLite store; runtime acceptance is
+reported separately:
 
 | Scenario | Expected observation | Test |
 | --- | --- | --- |
@@ -145,11 +244,13 @@ Run `python -m pytest -q --basetemp .pytest_tmp`. The ordinary suite makes these
 | Operator attempts an unlogged override | Invalid operator rejected; authenticated rejected attempts logged; successful override is linked and one-shot; audit update/delete triggers reject edits | `test_override_is_authenticated_one_shot_and_append_only` |
 | Audit content or registry modified out of band | Further proposals fail closed | `test_audit_tampering_blocks_further_actions`, `test_unlogged_registry_change_fails_closed` |
 
-The later [containment](Containment-Evaluation.md), [scoped-authority](Scoped-Authority-Evaluation.md), [sensitive-egress](Sensitive-Data-Egress-Evaluation.md), and [object-provenance](Object-Provenance-Evaluation.md) evaluations add cross-agent, persistence, delegated-service, and classified-publication scenarios. The complete deterministic suite passed **23 tests** after object provenance was added.
+The later [containment](Containment-Evaluation.md), [scoped-authority](Scoped-Authority-Evaluation.md), [sensitive-egress](Sensitive-Data-Egress-Evaluation.md), and [object-provenance](Object-Provenance-Evaluation.md) evaluations add cross-agent, persistence, delegated-service, and classified-publication scenarios. Their historical counts are preserved in those reports; the current v0.5.0 result appears in the evidence section above.
 
-### Docker isolation test
+### Docker isolation and runtime acceptance
 
-Requires a running Docker Desktop Linux engine. On PowerShell:
+Requires a Docker-compatible Linux engine. The reference configuration has
+been exercised locally with Docker Desktop and in GitHub Actions on Ubuntu.
+On PowerShell:
 
 ```powershell
 $env:RUN_DOCKER_TESTS = '1'
@@ -163,6 +264,24 @@ The filesystem test uses `compose.filesystem.yaml` and a substrate-only workspac
 ```powershell
 python -m pytest -q tests/test_filesystem_isolation.py --basetemp .pytest_tmp_filesystem
 ```
+
+The v0.5.0 acceptance suite uses a pinned, hash-verified Qwen or Phi GGUF file,
+the real Docker daemon, the real substrate and supervisor, and the real local
+generation worker. Only `GENERATION_MODEL_BLOB` changes between the model runs:
+
+```powershell
+$env:RUN_ACCEPTANCE_TESTS = '1'
+$env:GENERATION_MODEL_BLOB = 'C:\path\to\Qwen3-0.6B-Q8_0.gguf'
+python -m pytest -q tests/acceptance --ignore=tests/acceptance/environment
+python -m pytest -q tests/acceptance/environment
+```
+
+The first command checks governed local inference, inherited classification,
+verified circuit-breaker shutdown and removal, late-completion rejection,
+orphan reconciliation, and reachable-but-unauthorized network scope. The
+environment suite attempts forbidden network, filesystem, socket, process,
+IPC, mount, environment, proxy, and state-carryover paths from the real worker
+configuration while confirming the deliberately granted paths still work.
 
 Set `RUN_LIVE_NETWORK_TESTS=1` as well to exercise an explicitly allowed `https://example.com/` request through the adapter. That check requires external internet access and is excluded from the default Docker test. Deterministic tests are the reproducible evidence.
 

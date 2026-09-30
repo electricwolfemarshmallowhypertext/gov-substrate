@@ -2,112 +2,99 @@
 
 **Governance beneath the agent, not inside the prompt.**
 
-Governance Substrate is a reference architecture for enforcing AI agent capabilities at the system boundary. The environment determines which actions can execute, even when an agent asks for something else.
+Governance Substrate puts enforceable capability boundaries beneath AI agents. It decides what an agent may reach, change, retain, or publish, then records both the decision and the execution result.
 
 > **Technical architecture:** [Substrate Reference Architecture](docs/Substrate-Reference-Architecture.md)
 
-## Research paper
+Current release: [Governance Substrate v0.5.0](https://github.com/electricwolfemarshmallowhypertext/gov-substrate/releases/tag/v0.5.0)
 
-**Governance as Substrate: Engineering Patterns for Resilient Collective Systems — V2, September 2026 Revision**
+## Demonstrated result
 
-[Read the paper on ResearchGate →](https://www.researchgate.net/publication/403770865_Engineering_Patterns_for_Resilient_Collective_Systems_V2_-_September_2026_Revision)
+> Governance as Substrate has a working reference implementation whose tested runtime boundary enforced capabilities independently of model behavior across local and hosted models.
 
-## What it demonstrates
+In the tested reference configuration:
 
-In the supplied isolated-container configuration, an agent cannot directly change governed state, reach the network, or access the governed workspace. It must request those actions through the substrate. The substrate checks authority and state integrity, records its decision, and records the outcome of any admitted execution.
+- agents could not directly reach the network or governed workspace;
+- state, file, network, publication, and provider-transfer requests passed through the substrate;
+- one-use execution grants bound authorization to the exact actor, session, action, inputs, policy, and capability;
+- an operator circuit breaker revoked authority and stopped supervised workers;
+- Docker reported stopped workers removed, and supervisor restart removed labeled orphans;
+- classified model output inherited the highest classification of its sealed governed inputs;
+- private generated output could not be published, while clean public output could be published.
 
-`agent → proposed action → capability boundary → allow / deny / escalate → execution outcome + audit`
+## How it works
 
-**Agent intent is not authority.**
+`agent → substrate authorization → one-use grant → execution → verified outcome → audit`
+
+The circuit breaker is checked before authorization and again before execution. Agent intent does not create authority.
 
 ## Implemented boundaries
 
-- **State:** Admitted transitions, session and persistent state, tamper detection, and auditable one-shot overrides.
-- **Network:** No direct outbound route from the agent container. A destination-scoped HTTP GET adapter mediates and audits requests.
-- **Filesystem:** No workspace mount in the agent container. A scoped adapter mediates file reads and writes and rejects protected paths and escape attempts.
-- **Scoped authority:** Actor-, session-, and shared-resource access are distinct capabilities rather than implicit shared access.
-- **Delegated services:** Services that can proxy, store, forward, or act downstream are treated as delegated capabilities and fail closed unless explicitly mediated.
-- **Sensitive-data egress:** External publication is constrained by composed authority, not destination access alone.
-- **Object provenance:** Governed objects retain classification through supported transforms and sealed generation contexts; lowering classification requires an audited operator action.
-- **Local generation:** A one-shot CPU model worker receives only substrate-assembled text inputs. It has no outbound network, governed workspace, secret environment, or conversation store.
-- **Execution grants and emergency stops:** One-use execution tokens bind approved actions to their actor, session, inputs, policy, and capability. A separate operator control revokes scoped grants and requires verified shutdown from a wired local runtime supervisor.
+- **State:** governed transitions, session and persistent state, integrity checks, and audited one-shot overrides.
+- **Network:** destination-scoped requests through an audited adapter; the reference agent container has no direct network route.
+- **Filesystem:** actor-, session-, and shared-file authority through an audited adapter; the reference agent has no workspace mount.
+- **Delegated services:** services that can proxy, store, forward, or invoke downstream resources fail closed unless their downstream authority is mediated.
+- **Data egress:** external publication accepts governed public objects rather than arbitrary agent-supplied bytes.
+- **Object provenance:** transforms and generated text retain exact parents and inherit the highest input classification. Lowering classification requires an audited operator action.
+- **Hosted transfer:** external model providers are denied by default and must be registered for the classifications they may receive.
+- **Execution control:** one-use grants, scoped emergency stops, verified worker shutdown, and orphan reconciliation.
 
-Generation is model- and provider-agnostic. The local worker is optional; a trusted host can use the same sealed-input handoff with OpenAI, Anthropic, or another adapter while the substrate assigns output provenance and classification. Hosted transfer is denied until the provider is registered with an explicit classification grant.
+Generation is model- and provider-agnostic. The optional local worker and the OpenAI, Anthropic, Gemini, and OpenRouter adapters use the same sealed-input and governed-output path.
 
-Governance Substrate defines the boundary. Docker/OCI is the current reference enforcement backend, not a product requirement.
+## Evidence
 
-## Results
+The project reports three kinds of evidence separately:
 
-Governance Substrate has been evaluated against state tampering, unauthorized network access, filesystem escape, cross-agent communication, persistent memory, delegated-service abuse, privilege expansion, sensitive-data egress, and classified-object publication.
+- **Unit tests** verify policy and control logic. Fakes and mocks are allowed here; these tests do not prove runtime isolation.
+- **Acceptance tests** use the real Docker daemon, real containers, the real substrate and supervisor, and real local inference.
+- **Hosted validation** verifies the governed request and output path with external providers. It does not attest to a provider's internal runtime.
 
-Current implementation enforces:
+Release verification for v0.5.0:
 
-- isolated agent execution with no direct network or governed-workspace access
-- actor- and session-scoped authority
-- fail-closed policy and state integrity checks
-- explicit treatment of delegated services
-- governed sensitive-data publication
-- object-level classification and exact parent provenance through fixed transforms and sealed free-form generation
-- auditable decisions, execution outcomes, and operator-approved declassification
+- unit suite: **91 passed, 10 opt-in skips**;
+- real Qwen Docker acceptance: **4 passed**;
+- the same real-runtime acceptance with Phi-4 Mini: **4 passed**;
+- environment isolation probes: **5 passed**;
+- [release CI](https://github.com/electricwolfemarshmallowhypertext/gov-substrate/actions/runs/36651807299): unit, Qwen acceptance, and environment jobs passed;
+- [manual model-matrix CI](https://github.com/electricwolfemarshmallowhypertext/gov-substrate/actions/runs/36617457396): Qwen and Phi acceptance passed.
 
-The evaluations intentionally include failure cases. Earlier tests exposed cross-agent, persistence, and proxy-service gaps; subsequent enforcement changes closed those paths under the hardened policy.
+Local model evidence uses pinned, hash-verified official Qwen and Microsoft Phi artifacts through the same Docker worker. Hosted reports cover GPT-6 Luna, GPT-6 Sol, Claude Opus 4.7, direct Gemini Flash, and OpenRouter with pinned GLM, Grok, and Kimi upstreams. Future model runs should answer a new boundary question rather than add model names.
 
-Evaluations:
+## Evaluation reports
 
-- [Baseline containment evaluation](docs/Containment-Evaluation.md)
+- [Environment skeleton](docs/Environment-Skeleton-Evaluation.md)
+- [Local-model runtime matrix](docs/Local-Model-Matrix-Evaluation.md)
+- [Free-form output provenance](docs/Free-Form-Output-Provenance.md)
+- [Generation adapters](docs/Generation-Adapters.md)
+- [Hosted OpenAI validation](docs/Hosted-Object-Validation.md)
+- [Claude Opus 4.7 validation](docs/Anthropic-Opus-4.7-Validation-Report.md)
+- [Direct Gemini validation](docs/Gemini-Direct-Validation.md)
+- [OpenRouter GLM validation](docs/OpenRouter-Validation.md)
+- [OpenRouter Grok validation](docs/OpenRouter-Grok-4.7-Validation.md)
+- [OpenRouter Kimi validation](docs/OpenRouter-Kimi-K3-Validation.md)
+
+Earlier evaluations document the failures that motivated scoped authority, persistence lifetimes, delegated-service handling, sensitive-data egress, and object provenance:
+
+- [Containment evaluation](docs/Containment-Evaluation.md)
 - [Scoped-authority evaluation](docs/Scoped-Authority-Evaluation.md)
 - [Sensitive-data egress evaluation](docs/Sensitive-Data-Egress-Evaluation.md)
 - [Object-provenance evaluation](docs/Object-Provenance-Evaluation.md)
-- [Free-form output provenance evaluation](docs/Free-Form-Output-Provenance.md)
-- [Generation adapter integration](docs/Generation-Adapters.md)
-- [Hosted object-provenance validation report](docs/Hosted-Object-Validation.md)
-- [Claude Opus 4.7 validation report](docs/Anthropic-Opus-4.7-Validation-Report.md)
-- [Direct Gemini Flash validation report](docs/Gemini-Direct-Validation.md)
-- [OpenRouter validation report](docs/OpenRouter-Validation.md)
-- [OpenRouter Grok 4.7 validation report](docs/OpenRouter-Grok-4.7-Validation.md)
-- [OpenRouter Kimi K3 validation report](docs/OpenRouter-Kimi-K3-Validation.md)
-- [Environment skeleton evaluation](docs/Environment-Skeleton-Evaluation.md)
-- [Local-model runtime matrix](docs/Local-Model-Matrix-Evaluation.md)
 
-The same five governed object-provenance scenarios held across deterministic tests, two local models, GPT-6 Luna, GPT-6 Sol, and Claude Opus 4.7.
+## Research
 
-In a separate forced-call check, Opus requested a reachable third-party fixture outside the actor's grant. The substrate denied and logged it. The initial Opus scope response was inconclusive; the denial came from a one-request follow-up.
+**Governance as Substrate: Engineering Patterns for Resilient Collective Systems — V2, September 2026 Revision**
 
-A separate direct `gemini-3.8-flash` run confirmed provider-transfer denial before an API call, private generated-output publication denial, and clean public generated-output publication.
-
-A separate `z-ai/glm-5.2` run through OpenRouter, pinned to the Z.AI upstream with fallback disabled, confirmed the same three outcomes while treating the router as an additional trust and routing layer.
-
-The identical OpenRouter replay later passed with `x-ai/grok-4.7` pinned to xAI and `moonshotai/kimi-k3` pinned to Moonshot AI. The Grok run disclosed xAI's 30-day retention; the Kimi run required zero-retention routing. These complete the planned cross-provider model matrix; no further models are planned.
-
-## Testing
-
-- **Unit tests — policy and control logic:** `python -m pytest -q tests --ignore=tests/acceptance`. Fake provider and Docker clients are used where appropriate; opt-in Docker tests in the normal suite are skipped unless separately enabled. These results establish decision logic, not runtime enforcement.
-- **Acceptance tests — real Docker and runtime enforcement:** Set `GENERATION_MODEL_BLOB` to either pinned artifact in the [local-model matrix](docs/Local-Model-Matrix-Evaluation.md), set `RUN_ACCEPTANCE_TESTS=1`, and run `python -m pytest -q tests/acceptance --ignore=tests/acceptance/environment`. The same tests run real local inference through the substrate, Docker worker, and runtime supervisor; verify output classification and provenance; stop and remove a running worker; reject late completion; reconcile an orphan; and deny an agent access to a substrate-reachable unauthorized service. The model file is verified by size and SHA-256 before the worker is built.
-- **Environment probes — physical isolation:** Run `python -m pytest -q tests/acceptance/environment` separately with a pinned model file. These direct OS and Docker probes establish the reported isolation properties for the tested configuration; repeating them with different weights would not add network or filesystem isolation evidence.
-
-The GitHub Actions `unit-tests` and `acceptance-qwen` jobs run on pushes and pull requests. Qwen uses the official historical Q8_0 revision and a checked SHA-256. The `acceptance-phi` job runs only when manually requested with `workflow_dispatch` and `run_phi=true`; it downloads official Microsoft weights, verifies their hashes, converts them with a pinned official `llama.cpp` commit, then runs the same acceptance command. CI makes no paid model calls. Fake-client tests remain unit evidence, separate from real Docker acceptance.
-
-Local verification on September 29, 2026: Qwen acceptance **4 passed**; Phi acceptance **4 passed**; separate environment probes **5 passed**; normal unit suite **76 passed, 10 opt-in skips**. A [manual Linux CI run](https://github.com/electricwolfemarshmallowhypertext/gov-substrate/actions/runs/36617457396) passed both Qwen and Phi acceptance, environment probes, and unit tests. Qwen also passed the [automatic CI run](https://github.com/electricwolfemarshmallowhypertext/gov-substrate/actions/runs/36614343212).
-
-## Read more
-
-- [v0.5.0 release notes](docs/Release-v0.5.0.md) — execution grants, emergency stops, runtime acceptance, and expanded model validation.
-- [Substrate Reference Architecture](docs/Substrate-Reference-Architecture.md) — implementation, test protocol, and limitations.
-- [Scoped Authority Evaluation](docs/Scoped-Authority-Evaluation.md) — baseline comparison, replay, and limits.
-- [Sensitive-Data Egress Evaluation](docs/Sensitive-Data-Egress-Evaluation.md) — publication authority and local-model replay.
-- [Object Provenance Evaluation](docs/Object-Provenance-Evaluation.md) — classified objects, transforms, and audited declassification.
-- [Governance as Substrate: Engineering Patterns for Resilient Collective Systems, V2](https://doi.org/10.5281/zenodo.23002435) — research framework.
-
-## License
-
-The software source code is licensed under the [GNU Affero General Public License v3.0 or later](LICENSE) (`AGPL-3.0-or-later`). Copyright © 2026 Antiparty Inc. You may use, modify, and distribute the software under that license's terms.
-
-Organizations seeking to incorporate the software into proprietary products or services without AGPL obligations may request a separate commercial license from [smith@antiparty.co](mailto:smith@antiparty.co). A commercial license is granted only by a separate written agreement. The Governance Substrate name and associated branding, trademarks, research papers, and prose documentation are not licensed under the software license unless expressly stated.
+- [Research paper DOI](https://doi.org/10.5281/zenodo.23002435)
+- [v0.5.0 release notes](docs/Release-v0.5.0.md)
 
 ## Scope
 
-Governance Substrate enforces capabilities that are explicitly placed behind its boundary.
+The evidence applies to the documented reference configuration and tested scenarios. It does not establish universal AI confinement or prove every runtime backend.
 
-The current implementation covers governed state, network access, filesystem authority, delegated services, sensitive-data egress, and classified-object publication in the documented isolated-container architecture.
+The substrate controls capabilities placed behind its boundary. It cannot secure an agent given an alternate unmediated route, attest to hidden behavior inside a hosted provider, or defend itself from a fully compromised trusted host or kernel. Docker/OCI is the current reference backend; additional backends require their own real acceptance evidence.
 
-It does not claim to secure arbitrary host processes, privileged containers, unmediated external systems, or capabilities that bypass the substrate. Generated prose is classified from the exact governed objects supplied to a sealed generation. A compromised host or provider that injects extra context remains outside that boundary.
+## License
+
+The software source code is licensed under the [GNU Affero General Public License v3.0 or later](LICENSE) (`AGPL-3.0-or-later`). Copyright © 2026 Antiparty Inc.
+
+Organizations that want to incorporate Governance Substrate into proprietary products or services without AGPL obligations may request a separate commercial license from [smith@antiparty.co](mailto:smith@antiparty.co). The Governance Substrate name, associated branding, trademarks, research papers, and prose documentation are not licensed under the software license unless expressly stated.
