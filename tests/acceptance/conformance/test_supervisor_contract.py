@@ -102,7 +102,7 @@ def test_real_worker_sealed_context_governed_output_and_one_use_grant(conformanc
     report = read_output(substrate, session, output)
     assert report["schema"] == 1
     assert report["nonce"] == nonce
-    assert report["target"] == "linux"
+    assert report["target"] == backend.probe_target
     assert report["attempts"] == [{
         "attempt": "sealed_context_stdin",
         "allowed": True,

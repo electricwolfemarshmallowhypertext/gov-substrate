@@ -2,8 +2,11 @@
 
 import json
 import os
+import http.server
 import subprocess
+import threading
 import time
+import urllib.request
 import uuid
 from pathlib import Path
 
@@ -12,6 +15,7 @@ import pytest
 from docker_runtime_supervisor import DockerRuntimeSupervisor
 from podman_runtime_supervisor import PodmanRuntimeSupervisor
 from runtime_conformance import ReachableTarget, RuntimeIdentity
+from wasmtime_runtime_supervisor import WasmtimeRuntimeSupervisor
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -53,8 +57,15 @@ def podman_command(*args, env=None, input_text=None, timeout=1200):
 def conformance_image(acceptance_enabled):
     backend = os.environ.get("RUNTIME_CONFORMANCE_BACKEND", "docker")
     assert backend in (
-        "docker", "gvisor", "podman"
+        "docker", "gvisor", "podman", "wasmtime"
     ), "unsupported conformance backend"
+    if backend == "wasmtime":
+        yield {
+            "backend": backend,
+            "wasmtime": Path(os.environ["WASMTIME_BIN"]).resolve(strict=True),
+            "module": Path(os.environ["WASMTIME_MODULE"]).resolve(strict=True),
+        }
+        return
     compose = GVISOR_COMPOSE if backend == "gvisor" else COMPOSE
     previous_tag = os.environ.get("LAB_IMAGE_TAG")
     tag = "conformance" + uuid.uuid4().hex[:10]
@@ -103,6 +114,12 @@ class DockerConformanceBackend:
             runtime_name=self.name,
         )
         self._targets = []
+        self.probe_target = "linux"
+        self.granted_attempts = {
+            "sealed_context_stdin", "private_ipc_namespace",
+            "private_mount_namespace", "private_storage:/tmp",
+            "private_storage:/dev/shm",
+        }
 
     def new_supervisor(self):
         return DockerRuntimeSupervisor(
@@ -220,6 +237,12 @@ class PodmanConformanceBackend:
         self.supervisor = PodmanRuntimeSupervisor(self.image, self.project)
         self._targets = []
         self._networks = []
+        self.probe_target = "linux"
+        self.granted_attempts = {
+            "sealed_context_stdin", "private_ipc_namespace",
+            "private_mount_namespace", "private_storage:/tmp",
+            "private_storage:/dev/shm",
+        }
 
     def new_supervisor(self):
         return PodmanRuntimeSupervisor(self.image, self.project)
@@ -359,10 +382,98 @@ class PodmanConformanceBackend:
             )
 
 
+class _QuietHandler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"reachable")
+
+    def log_message(self, *_args):
+        pass
+
+
+class WasmtimeConformanceBackend:
+    name = "wasmtime"
+    probe_target = "wasi"
+    granted_attempts = {
+        "sealed_context_stdin", "private_storage:/tmp",
+        "private_storage:/dev/shm",
+    }
+
+    def __init__(self, artifact, state_dir):
+        self.project = "govconformance" + uuid.uuid4().hex[:10]
+        self.wasmtime = artifact["wasmtime"]
+        self.module = artifact["module"]
+        self.state_dir = state_dir
+        self.supervisor = self.new_supervisor()
+        self._orphans = []
+        self._identities = {}
+        self._server = None
+        self._server_thread = None
+
+    def new_supervisor(self):
+        return WasmtimeRuntimeSupervisor(
+            self.wasmtime, self.module, self.state_dir, self.project,
+        )
+
+    def wait_running(self, generation_id):
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            runtime_id = self.supervisor.runtime_identity(generation_id)
+            if runtime_id is not None:
+                self._identities[runtime_id] = generation_id
+                return RuntimeIdentity(runtime_id, True)
+            time.sleep(0.05)
+        raise AssertionError("conformance worker did not start")
+
+    def launch_orphan(self, generation_id, sealed_context):
+        process, runtime_id = self.supervisor._spawn(generation_id)
+        process.stdin.write(sealed_context)
+        process.stdin.close()
+        self._orphans.append(process)
+        self._identities[runtime_id] = generation_id
+        assert self.supervisor.runtime_exists(runtime_id)
+        return RuntimeIdentity(runtime_id, True)
+
+    def assert_terminated(self, runtime_id):
+        for process in self._orphans:
+            if process.pid == int(runtime_id.split(":", 1)[0]):
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    pass
+        assert not self.supervisor.runtime_exists(runtime_id), "runtime still exists"
+        generation_id = self._identities[runtime_id]
+        assert self.supervisor._read_record(generation_id) is None
+        assert not self.supervisor._execution_dir(generation_id).exists()
+
+    def start_reachable_target(self):
+        self._server = http.server.ThreadingHTTPServer(
+            ("127.0.0.1", 8002), _QuietHandler
+        )
+        self._server_thread = threading.Thread(
+            target=self._server.serve_forever, daemon=True
+        )
+        self._server_thread.start()
+        with urllib.request.urlopen("http://127.0.0.1:8002/", timeout=2) as response:
+            assert response.status == 200
+        return ReachableTarget("127.0.0.1", "127.0.0.1")
+
+    def cleanup(self):
+        self.supervisor.reconcile()
+        if self._server is not None:
+            self._server.shutdown()
+            self._server.server_close()
+        if self._server_thread is not None:
+            self._server_thread.join(timeout=5)
+
+
 @pytest.fixture
-def conformance_backend(conformance_image):
+def conformance_backend(conformance_image, tmp_path):
     if conformance_image["backend"] == "podman":
         backend = PodmanConformanceBackend(conformance_image)
+    elif conformance_image["backend"] == "wasmtime":
+        backend = WasmtimeConformanceBackend(conformance_image, tmp_path / "wasmtime")
     else:
         backend = DockerConformanceBackend(conformance_image)
     try:

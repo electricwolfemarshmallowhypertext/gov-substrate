@@ -39,7 +39,15 @@ def docker_command(*args, env=None, timeout=1200):
 def acceptance_enabled():
     if os.getenv("RUN_ACCEPTANCE_TESTS") != "1":
         pytest.skip("set RUN_ACCEPTANCE_TESTS=1 for real runtime acceptance")
-    if os.getenv("RUNTIME_CONFORMANCE_BACKEND") == "podman":
+    backend = os.getenv("RUNTIME_CONFORMANCE_BACKEND")
+    if backend == "wasmtime":
+        executable = os.getenv("WASMTIME_BIN")
+        module = os.getenv("WASMTIME_MODULE")
+        assert executable and Path(executable).resolve(strict=True).is_file()
+        module_path = Path(module).resolve(strict=True) if module else None
+        assert module_path is not None and module_path.is_file()
+        assert module_path.read_bytes()[:4] == b"\0asm"
+    elif backend == "podman":
         result = subprocess.run(
             ["podman", "info", "--format", "json"], capture_output=True,
             text=True, encoding="utf-8", errors="replace", timeout=20,

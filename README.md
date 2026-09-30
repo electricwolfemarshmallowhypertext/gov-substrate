@@ -51,14 +51,15 @@ The project reports five kinds of evidence separately:
 - **Model integration** uses real Qwen inference through the same sealed-input and governed-output path, separately from the hostile-worker proof.
 - **Hosted validation** verifies the governed request and output path with external providers. It does not attest to a provider's internal runtime.
 
-[Runtime conformance](docs/Runtime-Conformance.md) defines the shared contract and evidence rules. Native Ubuntu Docker/containerd, rootless Podman/crun, and gVisor/runsc each pass the same real suite. Docker/OCI remains the reference backend. The same hostile probe source builds for Linux, Windows, and WASI, but compilation alone is not runtime proof for backends that have not run the suite.
+[Runtime conformance](docs/Runtime-Conformance.md) defines the shared contract and evidence rules. Native Ubuntu Docker/containerd, rootless Podman/crun, gVisor/runsc, and Wasmtime/WASI use the same real suite. Docker/OCI remains the reference backend. Wasmtime runs the same hostile probe as real WebAssembly rather than treating compilation as runtime evidence.
 
-Current `main` Phase 3 OCI evidence:
+Current `main` runtime evidence:
 
 - native Ubuntu Docker/containerd: **3 conformance + 2 runtime-enforcement tests passed**;
 - rootless Podman/crun with the Docker daemon unavailable: **3 + 2 passed**;
 - gVisor `runsc` release `release-20260921.0`: **3 + 2 passed**;
-- [Phase 3 CI and runtime manifests](https://github.com/electricwolfemarshmallowhypertext/gov-substrate/actions/runs/36726237973).
+- Wasmtime 49.0.1 on Windows 11: **3 + 2 passed** in local pre-push verification;
+- [Phase 3 CI and runtime manifests](https://github.com/electricwolfemarshmallowhypertext/gov-substrate/actions/runs/36727109512).
 
 Release verification for v0.5.0:
 
@@ -74,6 +75,7 @@ Local model evidence uses pinned, hash-verified official Qwen and Microsoft Phi 
 ## Evaluation reports
 
 - [Runtime conformance](docs/Runtime-Conformance.md)
+- [Wasmtime/WASI runtime evaluation](docs/Wasmtime-Runtime-Evaluation.md)
 - [Environment skeleton](docs/Environment-Skeleton-Evaluation.md)
 - [Local-model runtime matrix](docs/Local-Model-Matrix-Evaluation.md)
 - [Free-form output provenance](docs/Free-Form-Output-Provenance.md)
@@ -103,7 +105,7 @@ Earlier evaluations document the failures that motivated scoped authority, persi
 
 The evidence applies to the documented reference configuration and tested scenarios. It does not establish universal AI confinement or prove every runtime backend.
 
-The substrate controls capabilities placed behind its boundary. It cannot secure an agent given an alternate unmediated route, attest to hidden behavior inside a hosted provider, or defend itself from a fully compromised trusted host or kernel. Docker/OCI is the reference backend. Rootless Podman and gVisor have separate real acceptance evidence; untested backends require the same proof before equivalent claims are made.
+The substrate controls capabilities placed behind its boundary. It cannot secure an agent given an alternate unmediated route, attest to hidden behavior inside a hosted provider, or defend itself from a fully compromised trusted host or kernel. Docker/OCI is the reference backend. Rootless Podman, gVisor, and Wasmtime/WASI have separate real conformance evidence; untested backends require the same proof before equivalent claims are made.
 
 ## License
 

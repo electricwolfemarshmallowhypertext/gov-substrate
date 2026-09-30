@@ -22,6 +22,8 @@ class RuntimeConformanceBackend(Protocol):
     """Real backend operations used by the shared conformance assertions."""
 
     name: str
+    probe_target: str
+    granted_attempts: set[str]
     supervisor: RuntimeSupervisor
 
     def new_supervisor(self) -> RuntimeSupervisor: ...

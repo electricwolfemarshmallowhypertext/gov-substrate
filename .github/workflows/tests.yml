@@ -175,6 +175,59 @@ jobs:
           path: ${{ runner.temp }}/runtime-evidence/gvisor.json
           if-no-files-found: error
 
+  runtime-conformance-wasmtime:
+    name: Wasmtime/WASI runtime conformance
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -e '.[test]'
+      - name: Build the fixed hostile probe for WASI
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.90.0 --profile minimal
+          rustup target add --toolchain 1.90.0 wasm32-wasip1
+          cargo +1.90.0 build --release --locked \
+            --manifest-path runtime-probe/Cargo.toml \
+            --target wasm32-wasip1
+          echo "WASMTIME_MODULE=$GITHUB_WORKSPACE/runtime-probe/target/wasm32-wasip1/release/gov-runtime-probe.wasm" >> "$GITHUB_ENV"
+      - name: Install pinned official Wasmtime release
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/wasmtime-v49.0.1-x86_64-linux.tar.xz"
+          curl -fsSLo "$archive" \
+            https://github.com/bytecodealliance/wasmtime/releases/download/v49.0.1/wasmtime-v49.0.1-x86_64-linux.tar.xz
+          echo "c71f7e0d30a92e418f0d17db7c6d8f6664c1ad764340a1278678f4209deab534  $archive" | sha256sum -c -
+          tar -xJf "$archive" -C "$RUNNER_TEMP"
+          echo "WASMTIME_BIN=$RUNNER_TEMP/wasmtime-v49.0.1-x86_64-linux/wasmtime" >> "$GITHUB_ENV"
+      - name: Record Wasmtime environment
+        run: >-
+          python scripts/record_runtime_environment.py --backend wasmtime
+          --wasmtime-bin "$WASMTIME_BIN" --wasmtime-module "$WASMTIME_MODULE"
+          --output "$RUNNER_TEMP/runtime-evidence/wasmtime.json"
+      - name: Supervisor conformance (real WASI instances)
+        env:
+          RUN_ACCEPTANCE_TESTS: '1'
+          RUNTIME_CONFORMANCE_BACKEND: wasmtime
+        run: python -m pytest -q tests/acceptance/conformance -m conformance
+      - name: Runtime enforcement (real WASI attempts)
+        env:
+          RUN_ACCEPTANCE_TESTS: '1'
+          RUNTIME_CONFORMANCE_BACKEND: wasmtime
+        run: python -m pytest -q tests/acceptance/conformance -m runtime_enforcement
+      - name: Upload Wasmtime evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: runtime-environment-wasmtime-${{ github.sha }}
+          path: ${{ runner.temp }}/runtime-evidence/wasmtime.json
+          if-no-files-found: error
+
   acceptance-qwen:
     runs-on: ubuntu-latest
     timeout-minutes: 90

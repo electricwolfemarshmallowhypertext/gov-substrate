@@ -1,6 +1,7 @@
-"""Write a sanitized, machine-readable manifest for OCI runtime evidence."""
+"""Write a sanitized, machine-readable manifest for runtime evidence."""
 
 import argparse
+import hashlib
 import json
 import os
 import platform
@@ -41,6 +42,14 @@ def read_text(path):
         return Path(path).read_text(encoding="utf-8").strip()
     except OSError:
         return None
+
+
+def sha256(path):
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def docker_manifest():
@@ -101,14 +110,43 @@ def podman_manifest():
     }
 
 
+def wasmtime_manifest(executable, module):
+    executable = Path(executable).resolve(strict=True)
+    module = Path(module).resolve(strict=True)
+    if not executable.is_file() or not module.is_file():
+        raise RuntimeError("Wasmtime executable and module must be files")
+    if module.read_bytes()[:4] != b"\0asm":
+        raise RuntimeError("Wasmtime module is not WebAssembly")
+    return {
+        "wasmtime_version": command(str(executable), "--version"),
+        "wasmtime_sha256": sha256(executable),
+        "module_sha256": sha256(module),
+        "module_size": module.stat().st_size,
+        "guest_target": "wasm32-wasip1",
+        "guest_environment_inherited": False,
+        "guest_network_inherited": False,
+    }
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--backend", choices=("docker", "podman", "gvisor"),
+    parser.add_argument("--backend", choices=(
+        "docker", "podman", "gvisor", "wasmtime"
+    ),
                         required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--wasmtime-bin")
+    parser.add_argument("--wasmtime-module")
     args = parser.parse_args()
 
-    backend = docker_manifest() if args.backend != "podman" else podman_manifest()
+    if args.backend == "podman":
+        backend = podman_manifest()
+    elif args.backend == "wasmtime":
+        if not args.wasmtime_bin or not args.wasmtime_module:
+            raise RuntimeError("Wasmtime evidence requires executable and module")
+        backend = wasmtime_manifest(args.wasmtime_bin, args.wasmtime_module)
+    else:
+        backend = docker_manifest()
     if args.backend == "gvisor":
         if "runsc" not in backend["docker_info"]["available_runtimes"]:
             raise RuntimeError("runsc is not registered with Docker")

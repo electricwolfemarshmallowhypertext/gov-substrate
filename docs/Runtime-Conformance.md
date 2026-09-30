@@ -1,6 +1,6 @@
 # Runtime Conformance
 
-Phases 2 and 3 separate the runtime boundary from model behavior. A backend must
+Phases 2 through 4 separate the runtime boundary from model behavior. A backend must
 implement the same supervisor contract and pass the same real assertions before
 the project describes it as conformant.
 
@@ -88,13 +88,34 @@ state, engine, and OCI runtime versions.
 | Rootless Podman | Ubuntu 24.04.5, Linux 6.17 Azure kernel, Podman 4.9.3, crun 1.14.1, rootless user namespace, cgroup v2, seccomp; Docker daemon unavailable | 3 passed | 2 passed |
 | gVisor | Same native Ubuntu Docker host with the worker explicitly assigned to `runsc` release `release-20260921.0` | 3 passed | 2 passed |
 
-The [Phase 3 CI run](https://github.com/electricwolfemarshmallowhypertext/gov-substrate/actions/runs/36726237973)
+The [Phase 3 CI run](https://github.com/electricwolfemarshmallowhypertext/gov-substrate/actions/runs/36727109512)
 contains the completed jobs and downloadable environment manifests. Docker/OCI
 remains the reference deployment. Podman and gVisor are additional conformant
 OCI environments under the recorded configurations.
 
-Windows and WASI remain compile targets until their runtime backends execute
-the shared suite.
+## Phase 4 Wasmtime/WASI backend
+
+`WasmtimeRuntimeSupervisor` executes the `wasm32-wasip1` hostile probe in a
+fresh Wasmtime process and instance for every generation. The guest inherits no
+environment or network. The only preopens are fresh per-run `/tmp` and
+`/dev/shm` directories. The backend sets fuel, wall-clock, memory, table,
+instance, host-call, resource, and random-byte limits. It supplies no guest
+arguments after the module path and exposes no model, workspace, host, or other
+resource directory.
+
+The supervisor binds each generation to the Wasmtime PID and operating-system
+process creation identity. Trusted metadata contains the generation, project,
+module hash, PID, creation identity, and combined runtime identity. A circuit
+trip terminates that exact process and verifies it is no longer active. A fresh
+supervisor reads the same metadata, rejects altered records, and terminates
+orphaned instances before the substrate starts.
+
+Local pre-push verification used official Wasmtime 49.0.1 on Windows 11 and the
+same Rust 1.90 `wasm32-wasip1` probe: **3 conformance and 2 runtime-enforcement
+tests passed**. The Linux CI job downloads the pinned official Wasmtime archive,
+verifies SHA-256, rebuilds the same probe, runs the same five assertions, and
+uploads a sanitized environment manifest. See the
+[Wasmtime/WASI runtime evaluation](Wasmtime-Runtime-Evaluation.md).
 
 ## Separate model proof
 
@@ -122,7 +143,9 @@ python -m pytest -q tests/acceptance/test_local_runtime.py -m model_integration
 ```
 
 CI selects an additional backend with `RUNTIME_CONFORMANCE_BACKEND=podman` or
-`RUNTIME_CONFORMANCE_BACKEND=gvisor`. Podman must be local and rootless. The
+`RUNTIME_CONFORMANCE_BACKEND=gvisor`. Wasmtime uses
+`RUNTIME_CONFORMANCE_BACKEND=wasmtime` with pinned `WASMTIME_BIN` and
+`WASMTIME_MODULE` paths. Podman must be local and rootless. The
 Podman job proves the Docker daemon is unavailable. The gVisor job installs a
 pinned official release, verifies its archive SHA-256, registers `runsc` with
 Docker, and verifies each worker's assigned runtime through Docker inspect.
@@ -136,6 +159,9 @@ python -m pytest -q tests --ignore=tests/acceptance
 ## Limits
 
 The substrate can standardize the contract and assertions; each runtime must
-still prove its own isolation properties. Source compilation for WASI or
-Windows is not runtime proof. A fully compromised host, kernel, runtime daemon,
-or trusted supervisor remains outside this boundary.
+still prove its own isolation properties. Wasmtime does not implement Linux
+process namespaces or Unix-domain sockets, so those probe rows are explicitly
+recorded as unsupported rather than presented as OS attempts. Network, DNS,
+filesystem, environment, lifecycle, and fresh-storage checks execute against
+the real WASI guest. A fully compromised host, kernel, runtime engine, or trusted
+supervisor remains outside this boundary.

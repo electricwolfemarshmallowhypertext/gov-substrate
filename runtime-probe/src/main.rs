@@ -1,4 +1,6 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
+#[cfg(target_os = "linux")]
+use std::collections::BTreeSet;
 use std::env;
 use std::fs;
 use std::io::{self, Read, Write};
@@ -232,6 +234,15 @@ fn write_and_read(path: &Path) -> Result<String, String> {
         })
 }
 
+fn private_storage_paths() -> [PathBuf; 2] {
+    if cfg!(target_family = "wasm") {
+        [PathBuf::from("/tmp"), PathBuf::from("/dev/shm")]
+    } else {
+        [env::temp_dir(), PathBuf::from("/dev/shm")]
+    }
+}
+
+#[cfg(target_os = "linux")]
 fn unexpected_environment(data: &[u8]) -> Vec<String> {
     let allowed: BTreeSet<&str> = ["HOME", "PATH"].into_iter().collect();
     let mut unexpected = BTreeSet::new();
@@ -248,15 +259,10 @@ fn unexpected_environment(data: &[u8]) -> Vec<String> {
     unexpected.into_iter().collect()
 }
 
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 fn unix_connect(path: &str) -> Result<String, String> {
     use std::os::unix::net::UnixStream;
     io_result(UnixStream::connect(path), "Unix socket connect succeeded")
-}
-
-#[cfg(not(unix))]
-fn unix_connect(_path: &str) -> Result<String, String> {
-    Err("unsupported_by_target".to_string())
 }
 
 #[cfg(target_os = "linux")]
@@ -368,11 +374,13 @@ fn linux_attempts(rows: &mut Vec<Attempt>, config: &BTreeMap<String, String>) {
 }
 
 #[cfg(not(target_os = "linux"))]
-fn linux_attempts(rows: &mut Vec<Attempt>, _config: &BTreeMap<String, String>) {
+fn linux_attempts(rows: &mut Vec<Attempt>, config: &BTreeMap<String, String>) {
     for name in [
         "unix_socket:/var/run/docker.sock",
-        "unexpected_mount:/workspace",
-        "environment_secrets",
+        "unix_socket:/run/docker.sock",
+        "unix_socket:/run/containerd/containerd.sock",
+        "unix_socket:/ipc/substrate.sock",
+        "unix_socket:/tmp/agent.sock",
         "proc_self_secrets",
         "proc_pid1_secrets",
         "unrelated_host_pid",
@@ -386,6 +394,39 @@ fn linux_attempts(rows: &mut Vec<Attempt>, _config: &BTreeMap<String, String>) {
             result: "unsupported_by_target".to_string(),
         });
     }
+    for path in [
+        "/workspace",
+        "/ipc",
+        "/run/secrets",
+        "/host",
+        "/mnt/c",
+        "/mnt/e",
+        "/run/desktop/mnt/host",
+        "/model",
+    ] {
+        attempt(rows, format!("unexpected_mount:{path}"), || list_path(path));
+    }
+    if let Some(host_marker) = config.get("host_marker") {
+        for path in [
+            format!("/workspace/{host_marker}"),
+            format!("/host/{host_marker}"),
+            format!("/mnt/e/gov-substrate/{host_marker}"),
+            format!("/run/desktop/mnt/host/e/gov-substrate/{host_marker}"),
+        ] {
+            attempt(rows, format!("host_file:{path}"), || {
+                read_file(Path::new(&path))
+            });
+        }
+    }
+    let leaked = env::vars()
+        .map(|(name, _)| name)
+        .filter(|name| name != "HOME" && name != "PATH")
+        .collect::<Vec<_>>();
+    rows.push(Attempt {
+        name: "environment_secrets".to_string(),
+        allowed: !leaked.is_empty(),
+        result: format!("unexpected_names={leaked:?}"),
+    });
 }
 
 fn network_attempts(rows: &mut Vec<Attempt>, config: &BTreeMap<String, String>) {
@@ -429,7 +470,7 @@ fn write_marker_report(config: &BTreeMap<String, String>, rows: &mut Vec<Attempt
         .get("marker")
         .map(String::as_str)
         .unwrap_or("probe-marker");
-    for parent in [env::temp_dir(), PathBuf::from("/dev/shm")] {
+    for parent in private_storage_paths() {
         let path = parent.join(marker);
         attempt(rows, format!("write_private:{}", parent.display()), || {
             write_and_read(&path)
@@ -444,7 +485,7 @@ fn scan(config: &BTreeMap<String, String>, rows: &mut Vec<Attempt>) {
         .get("marker")
         .map(String::as_str)
         .unwrap_or("probe-marker");
-    for parent in [env::temp_dir(), PathBuf::from("/dev/shm")] {
+    for parent in private_storage_paths() {
         let previous = marker_path(parent.to_str().unwrap_or("/tmp"), marker);
         attempt(
             rows,
@@ -456,7 +497,7 @@ fn scan(config: &BTreeMap<String, String>, rows: &mut Vec<Attempt>) {
         "current-{}",
         config.get("nonce").map(String::as_str).unwrap_or("probe")
     );
-    for parent in [env::temp_dir(), PathBuf::from("/dev/shm")] {
+    for parent in private_storage_paths() {
         let path = parent.join(&current);
         attempt(
             rows,

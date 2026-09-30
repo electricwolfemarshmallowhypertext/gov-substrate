@@ -97,17 +97,12 @@ def test_ungranted_paths_are_physically_blocked_and_grants_still_work(
 
     assert output["classification"] == "private"
     assert output["parents"] == [config, private]
-    assert report["target"] == "linux"
+    assert report["target"] == backend.probe_target
     assert report["nonce"] == nonce
     rows = rows_by_name(report)
-    granted = {
-        "sealed_context_stdin",
-        "private_ipc_namespace",
-        "private_mount_namespace",
-        "private_storage:/tmp",
-        "private_storage:/dev/shm",
-    }
-    assert {name for name, row in rows.items() if row["allowed"]} == granted, rows
+    assert {
+        name for name, row in rows.items() if row["allowed"]
+    } == backend.granted_attempts, rows
     required_forbidden = {
         "direct_ipv4", "direct_ipv6", "dns_public", "dns_other_container",
         "docker_gateway", "host_docker_internal", "cloud_metadata_ipv4",
