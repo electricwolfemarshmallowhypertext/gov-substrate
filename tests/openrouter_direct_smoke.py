@@ -11,6 +11,7 @@ import os
 import sys
 import tempfile
 import threading
+from dataclasses import dataclass
 from decimal import Decimal
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -28,14 +29,34 @@ from hosted_generation_adapters import (OpenRouterClient, OpenRouterHTTPError,
 from substrate import Substrate, create_app
 
 
-MODEL = "z-ai/glm-5.2"
 PROVIDER = "openrouter"
-UPSTREAM = "z-ai"
 MAX_OUTPUT_TOKENS = 2048
 INPUT_RESERVE = 4096  # Estimate only; OpenRouter does not enforce this input cap.
-INPUT_RATE = Decimal("1.40")
-OUTPUT_RATE = Decimal("4.40")
 MAX_REQUESTS = 2
+
+
+@dataclass(frozen=True)
+class ValidationProfile:
+    model: str
+    upstream: str
+    zdr: bool
+    retention: str
+    input_rate: Decimal
+    output_rate: Decimal
+
+
+PROFILES = {
+    "glm": ValidationProfile(
+        "z-ai/glm-5.2", "z-ai", True, "zero retention",
+        Decimal("1.40"), Decimal("4.40")),
+    "grok": ValidationProfile(
+        "x-ai/grok-4.7", "xai", False, "30 days",
+        Decimal("2.00"), Decimal("6.00")),
+    "kimi": ValidationProfile(
+        "moonshotai/kimi-k3", "moonshotai", True, "zero retention",
+        Decimal("3.00"), Decimal("15.00")),
+}
+DEFAULT_PROFILE = PROFILES["glm"]
 
 
 class LocalPublisher(BaseHTTPRequestHandler):
@@ -113,12 +134,14 @@ def result_metadata(adapter: OpenRouterTextAdapter):
             selected[0]["provider"])
 
 
-def plan():
-    estimate = MAX_REQUESTS * (INPUT_RESERVE * INPUT_RATE +
-                               MAX_OUTPUT_TOKENS * OUTPUT_RATE) / 1_000_000
-    return {"model": MODEL, "provider": PROVIDER, "upstream": UPSTREAM,
-            "routing": {"only": [UPSTREAM], "allow_fallbacks": False,
-                        "data_collection": "deny", "zdr": True},
+def plan(profile: ValidationProfile = DEFAULT_PROFILE):
+    estimate = MAX_REQUESTS * (INPUT_RESERVE * profile.input_rate +
+                               MAX_OUTPUT_TOKENS * profile.output_rate) / 1_000_000
+    return {"model": profile.model, "provider": PROVIDER,
+            "upstream": profile.upstream,
+            "routing": {"only": [profile.upstream], "allow_fallbacks": False,
+                        "data_collection": "deny", "zdr": profile.zdr,
+                        "provider_retention": profile.retention},
             "max_api_requests": MAX_REQUESTS,
             "max_output_tokens_per_request": MAX_OUTPUT_TOKENS,
             "input_token_reserve_per_request": INPUT_RESERVE,
@@ -129,7 +152,8 @@ def plan():
                           "clean_public_generation_and_publication"]}
 
 
-def failure_report(error, api_key: str | None):
+def failure_report(error, api_key: str | None,
+                   profile: ValidationProfile = DEFAULT_PROFILE):
     failure = {"result": "fail", "error_type": type(error).__name__}
     if isinstance(error, OpenRouterHTTPError):
         failure.update({"http_status": error.status_code,
@@ -147,7 +171,7 @@ def failure_report(error, api_key: str | None):
         return failure
     try:
         failure["key_status"] = OpenRouterClient(
-            api_key, UPSTREAM).current_key_status()
+            api_key, profile.upstream, profile.zdr).current_key_status()
     except OpenRouterHTTPError as status_error:
         failure["key_status"] = {"available": False,
                                  "http_status": status_error.status_code}
@@ -157,7 +181,7 @@ def failure_report(error, api_key: str | None):
     return failure
 
 
-def run():
+def run(profile: ValidationProfile = DEFAULT_PROFILE):
     api_key = os.getenv("OPENROUTER_API_KEY")
     if not api_key:
         raise RuntimeError("OPENROUTER_API_KEY is absent from this PowerShell session")
@@ -191,13 +215,13 @@ def run():
             prompt = imported("public", "Reply in one short sentence using only these sources.")
             private = imported("private", "Synthetic private ticket: amber-17.")
             public = imported("public", "Public source: the sky is blue.")
-            router = OpenRouterClient(api_key, UPSTREAM)
+            router = OpenRouterClient(api_key, profile.upstream, profile.zdr)
 
             private_run = propose({"kind": "generation.prepare",
                                    "input_ids": [prompt, private], "provider": PROVIDER})
             assert private_run["decision"] == "allow"
             private_adapter = OpenRouterTextAdapter(
-                router, MODEL, MAX_OUTPUT_TOKENS, max_context_bytes=2048)
+                router, profile.model, MAX_OUTPUT_TOKENS, max_context_bytes=2048)
             requests += 1
             private_result = run_with_adapter(
                 client, private_run["generation_id"], "operator-token",
@@ -224,7 +248,7 @@ def run():
                                   "input_ids": [prompt, public], "provider": PROVIDER})
             assert public_run["decision"] == "allow"
             public_adapter = OpenRouterTextAdapter(
-                router, MODEL, MAX_OUTPUT_TOKENS, max_context_bytes=2048)
+                router, profile.model, MAX_OUTPUT_TOKENS, max_context_bytes=2048)
             requests += 1
             public_result = run_with_adapter(
                 client, public_run["generation_id"], "operator-token",
@@ -251,21 +275,25 @@ def run():
     finally:
         server.shutdown()
         server.server_close()
-    print(json.dumps({"result": "pass", "model": MODEL, "api_requests": requests,
+    print(json.dumps({"result": "pass", "model": profile.model,
+                      "api_requests": requests,
                       "input_tokens": total_input, "output_tokens": total_output,
                       "openrouter_reported_cost_usd": str(total_cost)}))
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("--profile", choices=PROFILES, default="glm",
+                        help="Pinned model and upstream profile")
     parser.add_argument("--run", action="store_true",
                         help="Use OPENROUTER_API_KEY for two OpenRouter requests")
     args = parser.parse_args()
-    print(json.dumps(plan(), indent=2))
+    selected = PROFILES[args.profile]
+    print(json.dumps(plan(selected), indent=2))
     if args.run:
         try:
-            run()
+            run(selected)
         except Exception as error:
             print(json.dumps(failure_report(
-                error, os.getenv("OPENROUTER_API_KEY"))))
+                error, os.getenv("OPENROUTER_API_KEY"), selected)))
             raise SystemExit(1) from None

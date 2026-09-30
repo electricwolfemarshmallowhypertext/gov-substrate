@@ -226,11 +226,12 @@ class OpenRouterResponseError(RuntimeError):
 class OpenRouterClient:
     """One direct OpenRouter request with a single pinned upstream provider."""
 
-    def __init__(self, api_key: str, upstream_provider: str):
+    def __init__(self, api_key: str, upstream_provider: str, zdr: bool = True):
         if not api_key or not upstream_provider:
             raise ValueError("OpenRouter key and upstream provider are required")
         self._api_key = api_key
         self.upstream_provider = upstream_provider
+        self.zdr = zdr
         self._opener = build_opener(_NoRedirect)
 
     def chat_completion(self, model: str, messages: list,
@@ -247,7 +248,7 @@ class OpenRouterClient:
                 "only": [self.upstream_provider],
                 "allow_fallbacks": False,
                 "data_collection": "deny",
-                "zdr": True,
+                "zdr": self.zdr,
             },
         }
         request = Request(

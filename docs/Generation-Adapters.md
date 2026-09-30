@@ -82,12 +82,19 @@ provider = OpenRouterTextAdapter(
 ```
 
 The OpenRouter client disables fallback providers, permits only the configured
-upstream, denies data collection, requires zero-data-retention routing, and
-requests routing metadata. The adapter fails closed unless that metadata names
-exactly one selected upstream matching the configured provider. OpenRouter is
+upstream, denies data collection, applies the configured retention constraint,
+and requests routing metadata. The adapter fails closed unless that metadata
+names exactly one selected upstream matching the configured provider. OpenRouter is
 still an intermediary trust layer; the substrate controls what it sends and
 what it accepts back, but cannot attest to either OpenRouter's or the upstream
 provider's internal runtime.
+
+The client accepts an explicit `zdr` boolean because upstream retention differs.
+Keep it `True` for a provider documented as zero retention. Set it to `False`
+only when the selected upstream cannot satisfy ZDR, and disclose that retention
+condition in the validation record. The xAI Grok 4.7 validation used
+`zdr=False` with documented 30-day retention; the Moonshot AI Kimi K3
+validation used `zdr=True`.
 
 The application supplies already configured OpenAI or Anthropic SDK clients;
 the Gemini and OpenRouter adapters use the standard library for their REST APIs.

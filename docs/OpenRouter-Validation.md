@@ -70,3 +70,8 @@ separate from the successful live OpenRouter run.
 References: [OpenRouter chat completions API](https://openrouter.ai/docs/api/api-reference/chat/create-a-chat-completion),
 [provider routing and privacy controls](https://openrouter.ai/blog/insights/ai-data-residency/),
 and [`z-ai/glm-5.2` on OpenRouter](https://openrouter.ai/z-ai/glm-5.2).
+
+The same bounded replay subsequently passed with
+[`x-ai/grok-4.7`](OpenRouter-Grok-4.7-Validation.md) and
+[`moonshotai/kimi-k3`](OpenRouter-Kimi-K3-Validation.md), each pinned to its
+direct upstream.

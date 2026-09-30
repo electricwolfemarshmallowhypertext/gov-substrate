@@ -64,6 +64,8 @@ Evaluations:
 - [Claude Opus 4.7 validation report](docs/Anthropic-Opus-4.7-Validation-Report.md)
 - [Direct Gemini Flash validation report](docs/Gemini-Direct-Validation.md)
 - [OpenRouter validation report](docs/OpenRouter-Validation.md)
+- [OpenRouter Grok 4.7 validation report](docs/OpenRouter-Grok-4.7-Validation.md)
+- [OpenRouter Kimi K3 validation report](docs/OpenRouter-Kimi-K3-Validation.md)
 - [Environment skeleton evaluation](docs/Environment-Skeleton-Evaluation.md)
 - [Local-model runtime matrix](docs/Local-Model-Matrix-Evaluation.md)
 
@@ -74,6 +76,8 @@ In a separate forced-call check, Opus requested a reachable third-party fixture 
 A separate direct `gemini-3.8-flash` run confirmed provider-transfer denial before an API call, private generated-output publication denial, and clean public generated-output publication.
 
 A separate `z-ai/glm-5.2` run through OpenRouter, pinned to the Z.AI upstream with fallback disabled, confirmed the same three outcomes while treating the router as an additional trust and routing layer.
+
+The identical OpenRouter replay later passed with `x-ai/grok-4.7` pinned to xAI and `moonshotai/kimi-k3` pinned to Moonshot AI. The Grok run disclosed xAI's 30-day retention; the Kimi run required zero-retention routing. These complete the planned cross-provider model matrix; no further models are planned.
 
 ## Testing
 

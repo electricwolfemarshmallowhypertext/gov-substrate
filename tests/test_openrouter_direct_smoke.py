@@ -22,16 +22,16 @@ def load_driver():
     return module
 
 
-def response(provider="Z.AI"):
-    return {"id": "gen-fixture", "model": "z-ai/glm-5.2",
+def response(provider="Z.AI", model="z-ai/glm-5.2"):
+    return {"id": "gen-fixture", "model": model,
             "choices": [{"finish_reason": "stop", "message": {
                 "role": "assistant", "content": "Synthetic generated answer."}}],
             "usage": {"prompt_tokens": 40, "completion_tokens": 6,
                       "total_tokens": 46, "cost": 0.00002,
                       "completion_tokens_details": {"reasoning_tokens": 2}},
-            "openrouter_metadata": {"requested": "z-ai/glm-5.2", "attempt": 1,
+            "openrouter_metadata": {"requested": model, "attempt": 1,
                 "endpoints": {"total": 1, "available": [
-                    {"model": "z-ai/glm-5.2", "provider": provider,
+                    {"model": model, "provider": provider,
                      "selected": True}]}}}
 
 
@@ -64,6 +64,24 @@ def test_direct_client_pins_model_provider_and_privacy(monkeypatch):
         "stream": False,
         "provider": {"only": ["z-ai"], "allow_fallbacks": False,
                      "data_collection": "deny", "zdr": True}}
+
+
+def test_direct_client_can_record_non_zdr_pinned_provider(monkeypatch):
+    requests = []
+
+    class FakeOpener:
+        def open(self, request, timeout):
+            requests.append(request)
+            return io.BytesIO(json.dumps(response("xAI", "x-ai/grok-4.7")).encode())
+
+    monkeypatch.setattr("hosted_generation_adapters.build_opener",
+                        lambda *_handlers: FakeOpener())
+    client = OpenRouterClient("fixture-key", "xai", zdr=False)
+    client.chat_completion(
+        "x-ai/grok-4.7", [{"role": "user", "content": "governed"}], 2048)
+    provider = json.loads(requests[0].data)["provider"]
+    assert provider == {"only": ["xai"], "allow_fallbacks": False,
+                        "data_collection": "deny", "zdr": False}
 
 
 def test_adapter_fails_closed_if_router_selects_other_upstream():
@@ -106,8 +124,9 @@ def test_openrouter_error_is_sanitized_and_key_status_is_limited(monkeypatch):
     driver = load_driver()
 
     class KeyStatusClient:
-        def __init__(self, api_key, upstream_provider):
+        def __init__(self, api_key, upstream_provider, zdr=True):
             assert api_key == "fixture-key" and upstream_provider == "z-ai"
+            assert zdr is True
 
         def current_key_status(self):
             return {"available": True, "spending_limit_configured": True,
@@ -148,26 +167,44 @@ def test_current_key_status_reports_limit_without_key_identity(monkeypatch):
                       "limit_reset": "monthly"}
 
 
+@pytest.mark.parametrize(
+    "profile_name,model,upstream,reported_provider,zdr,retention,estimate",
+    [("glm", "z-ai/glm-5.2", "z-ai", "Z.AI", True,
+      "zero retention", "0.0294912"),
+     ("grok", "x-ai/grok-4.7", "xai", "xAI", False,
+      "30 days", "0.04096"),
+     ("kimi", "moonshotai/kimi-k3", "moonshotai", "Moonshot AI", True,
+      "zero retention", "0.086016")])
 def test_bounded_driver_follows_same_governed_path_with_fake_model(
-        monkeypatch, capsys):
+        monkeypatch, capsys, profile_name, model, upstream, reported_provider,
+        zdr, retention, estimate):
     driver = load_driver()
-    assert driver.plan()["max_output_tokens_per_request"] == 2048
-    assert driver.plan()["estimated_max_cost_usd"] == "0.0294912"
+    profile = driver.PROFILES[profile_name]
+    planned = driver.plan(profile)
+    assert planned["model"] == model
+    assert planned["upstream"] == upstream
+    assert planned["routing"] == {
+        "only": [upstream], "allow_fallbacks": False,
+        "data_collection": "deny", "zdr": zdr,
+        "provider_retention": retention}
+    assert planned["max_output_tokens_per_request"] == 2048
+    assert planned["estimated_max_cost_usd"] == estimate
     calls = []
 
     class FakeOpenRouter:
-        def __init__(self, api_key, upstream_provider):
+        def __init__(self, api_key, upstream_provider, requested_zdr):
             assert api_key == "fixture-key"
-            assert upstream_provider == "z-ai"
+            assert upstream_provider == upstream
+            assert requested_zdr is zdr
             self.upstream_provider = upstream_provider
 
         def chat_completion(self, **request):
             calls.append(request)
-            return response()
+            return response(reported_provider, model)
 
     monkeypatch.setenv("OPENROUTER_API_KEY", "fixture-key")
     monkeypatch.setattr(driver, "OpenRouterClient", FakeOpenRouter)
-    driver.run()
+    driver.run(profile)
     rows = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
     assert [row["scenario"] for row in rows[:-1]] == [
         "private_transfer_denied_before_api",
@@ -176,7 +213,8 @@ def test_bounded_driver_follows_same_governed_path_with_fake_model(
     assert rows[0]["api_requests"] == 0
     assert rows[1]["classification"] == "private" and rows[1]["publication"] == "deny"
     assert rows[2]["classification"] == "public" and rows[2]["publication"] == "succeeded"
-    assert rows[1]["upstream"] == "Z.AI" and rows[2]["upstream"] == "Z.AI"
+    assert rows[1]["upstream"] == reported_provider
+    assert rows[2]["upstream"] == reported_provider
     assert rows[-1]["result"] == "pass" and rows[-1]["api_requests"] == 2
     assert len(calls) == 2
     assert all(call["max_completion_tokens"] == 2048 for call in calls)
