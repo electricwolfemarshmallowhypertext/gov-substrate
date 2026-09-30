@@ -9,12 +9,14 @@ import pytest
 from docker_runtime_supervisor import DockerRuntimeSupervisor
 
 
-def supervisor(tmp_path):
+def supervisor(tmp_path, runtime_name="docker"):
     compose = tmp_path / "compose.yaml"
     compose.write_text("services: {}")
     model = tmp_path / "model.gguf"
     model.write_bytes(b"GGUFfixture")
-    return DockerRuntimeSupervisor(compose, model, "testproject")
+    return DockerRuntimeSupervisor(
+        compose, model, "testproject", runtime_name=runtime_name
+    )
 
 
 class FakeEngine:
@@ -68,6 +70,19 @@ def test_stop_targets_container_id_and_verifies_removal(tmp_path):
     assert engine.containers[f"gov-substrate-{other}"]["State"]["Running"]
     assert ("container", "stop", "--time", "1", f"container-{first}") in engine.commands
     assert ("container", "rm", f"container-{first}") in engine.commands
+
+
+def test_stop_reports_configured_runtime_name(tmp_path):
+    runtime = supervisor(tmp_path, runtime_name="gvisor")
+    engine = FakeEngine()
+    generation_id = "7" * 32
+    engine.add(generation_id)
+    runtime._inspect = engine.inspect
+    runtime._docker = engine.docker
+
+    result = runtime.stop((generation_id,))[0]
+
+    assert result.confirmed and result.runtime == "gvisor"
 
 
 def test_concurrent_shutdowns_share_one_verified_cleanup(tmp_path):

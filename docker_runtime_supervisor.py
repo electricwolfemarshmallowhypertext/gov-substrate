@@ -12,6 +12,7 @@ from runtime_supervisor import StopResult
 
 _GENERATION_ID = re.compile(r"[0-9a-f]{32}\Z")
 _SERVICE = re.compile(r"[a-z0-9][a-z0-9_-]{0,62}\Z")
+_RUNTIME_NAME = re.compile(r"[a-z0-9][a-z0-9_.-]{0,31}\Z")
 _MANAGED_LABEL = "gov.substrate.managed"
 _GENERATION_LABEL = "gov.substrate.generation_id"
 _OWNER_LABEL = "gov.substrate.owner"
@@ -19,7 +20,8 @@ _OWNER_LABEL = "gov.substrate.owner"
 
 class DockerRuntimeSupervisor:
     def __init__(self, compose_file: str | Path, model_blob: str | Path | None,
-                 project: str, service: str = "generator"):
+                 project: str, service: str = "generator",
+                 runtime_name: str = "docker"):
         self.compose_file = Path(compose_file).resolve(strict=True)
         self.model_blob = None if model_blob is None else Path(model_blob).resolve(strict=True)
         if self.model_blob is not None:
@@ -32,8 +34,12 @@ class DockerRuntimeSupervisor:
             raise ValueError("unique lowercase runtime project required")
         if not isinstance(service, str) or not _SERVICE.fullmatch(service):
             raise ValueError("valid lowercase Compose service required")
+        if (not isinstance(runtime_name, str) or
+                not _RUNTIME_NAME.fullmatch(runtime_name)):
+            raise ValueError("valid lowercase runtime name required")
         self.project = project
         self.service = service
+        self.runtime_name = runtime_name
         self._lock = threading.RLock()
         self._running: dict[str, subprocess.Popen] = {}
         self._cancelled: set[str] = set()
@@ -137,10 +143,12 @@ class DockerRuntimeSupervisor:
                 process.wait(timeout=5)
                 info = self._inspect(name)
                 if info is None:
-                    return StopResult(generation_id, "docker", None,
+                    return StopResult(generation_id, self.runtime_name, None,
                                       False, "creation_unconfirmed")
             if info is None:
-                return StopResult(generation_id, "docker", None, True, "absent")
+                return StopResult(
+                    generation_id, self.runtime_name, None, True, "absent"
+                )
             runtime_id = info["Id"]
             if info["State"]["Running"]:
                 try:
@@ -158,9 +166,11 @@ class DockerRuntimeSupervisor:
             self._docker("container", "rm", runtime_id)
             if self._inspect(name) is not None:
                 raise RuntimeError("worker removal unverified")
-            return StopResult(generation_id, "docker", runtime_id, True, "stopped")
+            return StopResult(
+                generation_id, self.runtime_name, runtime_id, True, "stopped"
+            )
         except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired):
-            return StopResult(generation_id, "docker", runtime_id,
+            return StopResult(generation_id, self.runtime_name, runtime_id,
                               False, "stop_unconfirmed")
         finally:
             if process is not None and process.poll() is None:

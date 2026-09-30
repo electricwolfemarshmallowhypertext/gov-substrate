@@ -99,13 +99,15 @@ class DockerConformanceBackend:
         self.env = artifact["env"]
         self.compose = artifact["compose"]
         self.supervisor = DockerRuntimeSupervisor(
-            self.compose, None, self.project, service="probe"
+            self.compose, None, self.project, service="probe",
+            runtime_name=self.name,
         )
         self._targets = []
 
     def new_supervisor(self):
         return DockerRuntimeSupervisor(
-            self.compose, None, self.project, service="probe"
+            self.compose, None, self.project, service="probe",
+            runtime_name=self.name,
         )
 
     def _inspect(self, identity):
