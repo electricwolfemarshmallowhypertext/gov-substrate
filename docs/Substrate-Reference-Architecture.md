@@ -1,6 +1,6 @@
 # Governance Substrate Reference Architecture
 
-This document describes the working v0.5.0 reference implementation of the paper's distinction: policy declares what should happen; the substrate and execution boundary decide which **managed transitions and capability executions** become real.
+This document describes the working reference implementation of the paper's distinction: policy declares what should happen; the substrate and execution boundary decide which **managed transitions and capability executions** become real. Governance Substrate v0.5.0 is the latest release; post-release evidence on current `main` is identified explicitly.
 
 > Governance as Substrate has a working reference implementation whose tested runtime boundary enforced capabilities independently of model behavior across local and hosted models.
 
@@ -19,7 +19,7 @@ The complete execution path is:
 
 The substrate checks the circuit breaker before authorization and again before execution. A policy decision and a completed action are separate audit events. An allowance records what the substrate admitted; an outcome records what happened afterward.
 
-| Component | Treatment in v0.5.0 |
+| Component | Treatment |
 | --- | --- |
 | Agent, model, and worker | Untrusted. Their requested actions and generated content do not create authority. |
 | Substrate and loaded capability registry | Trusted policy and state boundary. A registry change against an existing database fails closed. |
@@ -27,11 +27,11 @@ The substrate checks the circuit breaker before authorization and again before e
 | Host-side provider adapter | Trusted to send only the sealed inputs it claims and to return provider output to the substrate. Provider credentials remain here. |
 | Operator credentials | Trusted and unavailable to agents, workers, and provider calls. Separate credentials control ordinary operations and the emergency circuit. |
 | SQLite state and audit store | Inside the trusted host boundary. Hash chaining and triggers detect ordinary tampering, but a database owner can rewrite both data and chain. |
-| Docker/OCI runtime, host kernel, and isolation configuration | Enforcement dependencies for the current reference deployment. Their guarantees must be tested in the actual environment. |
+| OCI runtime, host kernel, and isolation configuration | Enforcement dependencies for the tested deployments. Their guarantees must be tested in each actual environment. |
 | Hosted-provider internals | External. The substrate can record what it sent and accepted back but cannot attest to hidden provider context, retention, or internal execution. |
 | Fully compromised trusted host or kernel | Outside the current boundary. It can bypass process-local enforcement, steal credentials, or rewrite local evidence. |
 
-The substrate API is independent of Docker. Docker/OCI is the only runtime backend with real acceptance evidence in v0.5.0; future backends require the same level of runtime-specific proof before equivalent claims are made.
+The substrate API is independent of Docker. The v0.5.0 release evidence used Docker/OCI. Current `main` adds post-release evidence from rootless Podman and gVisor under recorded configurations. Any other backend requires the same level of runtime-specific proof before equivalent claims are made.
 
 ## Managed state boundary (Milestone 1)
 
@@ -141,7 +141,7 @@ claim is revoked but shutdown remains unconfirmed. Reset is blocked while
 shutdown remains unconfirmed. Startup reconciliation must verify the relevant
 runtime empty before the substrate admits new actions.
 
-`DockerRuntimeSupervisor` is the current Docker/OCI backend. The trusted host
+`DockerRuntimeSupervisor` is the reference Docker/OCI supervisor. The trusted host
 configures a unique project ID per substrate deployment and passes the same
 supervisor instance to `Substrate` and `run_local_generation`. Each run receives
 a stable name and deployment/generation labels. The backend addresses the
@@ -154,12 +154,24 @@ Separate host processes need a trusted supervisor service to share that
 control; an agent never receives Docker access or the control credential.
 Already sent hosted-provider requests cannot be recalled.
 
-Governance Substrate defines the boundary. Docker/OCI is the current reference
-enforcement backend, not a product requirement. WASI/Wasm is the next portable
+The same supervisor now reports the selected OCI runtime identity and has been
+exercised with both native `runc` and gVisor `runsc`. A separate
+`PodmanRuntimeSupervisor` implements the unchanged contract against a local
+rootless Podman engine. It uses an automatic user namespace, a read-only root,
+zero live capability masks, no network, explicit private `/tmp` and `/dev/shm`
+tmpfs mounts, and deployment/generation labels for exact shutdown and orphan
+reconciliation. The Podman CI job stops Docker and containerd first and verifies
+that Docker is unavailable.
+
+Governance Substrate defines the boundary. Docker/OCI is the reference
+enforcement backend, not a product requirement. Rootless Podman and gVisor
+`runsc` have passed the same real conformance and enforcement assertions on
+recorded Ubuntu 24.04 environments. WASI/Wasm is the next portable
 constrained backend candidate; a native desktop supervisor is a future local
 agent backend; and a Kubernetes/OCI supervisor is a future server backend.
-None is implemented here. Each would implement the same supervisor contract
-without adding runtime-specific concepts to the substrate API.
+Those later backends are not implemented here. Each would implement the same
+supervisor contract without adding runtime-specific concepts to the substrate
+API.
 
 ### Backend-neutral runtime conformance
 
@@ -180,10 +192,11 @@ substrate and `RuntimeSupervisor`. The assertions are grouped deliberately:
   choosing to attempt an escape.
 
 The Rust source under `runtime-probe/` has no third-party dependencies and is
-compiled for Linux, Windows, and `wasm32-wasip1`. Docker/OCI currently executes
-the real suite. Windows and WASI compilation demonstrate that the same probe
-source can target those platforms; they do not establish runtime enforcement
-until native and WASI supervisor backends run the shared tests. See
+compiled for Linux, Windows, and `wasm32-wasip1`. Native Docker/containerd,
+rootless Podman/crun, and gVisor/runsc execute the real Linux suite. Windows and
+WASI compilation demonstrate that the same probe source can target those
+platforms; they do not establish runtime enforcement until native and WASI
+supervisor backends run the shared tests. See
 [Runtime Conformance](Runtime-Conformance.md).
 
 ### Hosted-provider transfer boundary
@@ -240,11 +253,11 @@ enforces them:
   and publication path with live provider APIs. It does not attest to provider
   internals.
 
-| Claim | Implemented boundary | Evidence in v0.5.0 | Limit |
+| Claim | Implemented boundary | Current evidence | Limit |
 | --- | --- | --- | --- |
 | Governed state and audit integrity | Transactional state gate, append-only audit triggers, hash chain, and state snapshots | Unit and deterministic adversarial tests | SQLite and its host remain trusted; a database owner can rewrite local evidence |
-| Network and filesystem confinement | Networkless agent container, substrate-owned adapters, scoped workspace, and path controls | Real Docker isolation tests and environment probes | Applies to the tested container settings and granted mounts or sockets |
-| Execution authority and emergency stop | One-use grants, execution-time circuit checks, runtime supervisor, and orphan reconciliation | Unit tests plus real Docker worker stop, removal, late-completion rejection, and restart reconciliation | Docker/OCI is the only runtime backend with acceptance evidence |
+| Network and filesystem confinement | Networkless agent container, substrate-owned adapters, scoped workspace, and path controls | Real Docker environment probes plus the shared hostile-worker suite under native Docker, rootless Podman, and gVisor | Applies to the recorded runtime settings and granted mounts or sockets |
+| Execution authority and emergency stop | One-use grants, execution-time circuit checks, runtime supervisor, and orphan reconciliation | Unit tests plus real native Docker, rootless Podman, and gVisor worker stop, removal, late-completion rejection, and restart reconciliation | A different backend or host configuration requires its own real evidence |
 | Local generated-output provenance | Sealed governed context, isolated local worker, inherited classification, and governed output object | Real Qwen and Phi inference through the same Docker worker | Establishes boundary behavior, not model quality or arbitrary backend equivalence |
 | Hosted transfer and generated-output provenance | Provider classification grants, sealed inputs, host-side credentials, governed return path, and publication gate | Bounded live OpenAI, Anthropic, Gemini, and pinned OpenRouter runs | The substrate cannot attest to hidden provider context, retention, or execution |
 

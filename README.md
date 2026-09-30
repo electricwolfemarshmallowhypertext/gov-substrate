@@ -18,7 +18,7 @@ In the tested reference configuration:
 - state, file, network, publication, and provider-transfer requests passed through the substrate;
 - one-use execution grants bound authorization to the exact actor, session, action, inputs, policy, and capability;
 - an operator circuit breaker revoked authority and stopped supervised workers;
-- Docker reported stopped workers removed, and supervisor restart removed labeled orphans;
+- each tested OCI supervisor reported stopped workers removed, and supervisor restart removed labeled orphans;
 - classified model output inherited the highest classification of its sealed governed inputs;
 - private generated output could not be published, while clean public output could be published.
 
@@ -51,7 +51,14 @@ The project reports five kinds of evidence separately:
 - **Model integration** uses real Qwen inference through the same sealed-input and governed-output path, separately from the hostile-worker proof.
 - **Hosted validation** verifies the governed request and output path with external providers. It does not attest to a provider's internal runtime.
 
-[Runtime conformance](docs/Runtime-Conformance.md) defines the shared contract and evidence rules. Docker/OCI currently passes the real suite. The same hostile probe source builds for Linux, Windows, and WASI, but compilation alone is not runtime proof for backends that have not run the suite.
+[Runtime conformance](docs/Runtime-Conformance.md) defines the shared contract and evidence rules. Native Ubuntu Docker/containerd, rootless Podman/crun, and gVisor/runsc each pass the same real suite. Docker/OCI remains the reference backend. The same hostile probe source builds for Linux, Windows, and WASI, but compilation alone is not runtime proof for backends that have not run the suite.
+
+Current `main` Phase 3 OCI evidence:
+
+- native Ubuntu Docker/containerd: **3 conformance + 2 runtime-enforcement tests passed**;
+- rootless Podman/crun with the Docker daemon unavailable: **3 + 2 passed**;
+- gVisor `runsc` release `release-20260921.0`: **3 + 2 passed**;
+- [Phase 3 CI and runtime manifests](https://github.com/electricwolfemarshmallowhypertext/gov-substrate/actions/runs/36726237973).
 
 Release verification for v0.5.0:
 
@@ -96,7 +103,7 @@ Earlier evaluations document the failures that motivated scoped authority, persi
 
 The evidence applies to the documented reference configuration and tested scenarios. It does not establish universal AI confinement or prove every runtime backend.
 
-The substrate controls capabilities placed behind its boundary. It cannot secure an agent given an alternate unmediated route, attest to hidden behavior inside a hosted provider, or defend itself from a fully compromised trusted host or kernel. Docker/OCI is the current reference backend; additional backends require their own real acceptance evidence.
+The substrate controls capabilities placed behind its boundary. It cannot secure an agent given an alternate unmediated route, attest to hidden behavior inside a hosted provider, or defend itself from a fully compromised trusted host or kernel. Docker/OCI is the reference backend. Rootless Podman and gVisor have separate real acceptance evidence; untested backends require the same proof before equivalent claims are made.
 
 ## License
 

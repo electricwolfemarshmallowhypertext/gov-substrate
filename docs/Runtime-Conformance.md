@@ -1,6 +1,6 @@
 # Runtime Conformance
 
-Phase 2 separates the runtime boundary from model behavior. A backend must
+Phases 2 and 3 separate the runtime boundary from model behavior. A backend must
 implement the same supervisor contract and pass the same real assertions before
 the project describes it as conformant.
 
@@ -51,7 +51,7 @@ attempts against:
 - prior-worker files in `/tmp` and `/dev/shm`; and
 - fresh private temporary and shared-memory storage.
 
-The expected granted surface in the Docker/OCI fixture is the sealed standard
+The expected granted surface in each tested OCI fixture is the sealed standard
 input plus private `/tmp` and `/dev/shm` storage. The fixture has no network and
 no bind mounts. Each attempt returns:
 
@@ -75,10 +75,26 @@ The conformance assertions prove:
 10. forbidden network, filesystem, process, IPC, socket, secret, and persistence paths fail under real OS calls; and
 11. explicitly granted input and private temporary storage remain usable.
 
-The Docker/OCI backend currently passes three supervisor-conformance tests and
-two runtime-enforcement tests. Docker/OCI is the only backend with runtime
-enforcement evidence. WASI and Windows are compile targets until their runtime
-backends execute this suite.
+## Phase 3 OCI matrix
+
+The same Linux probe image and the same five assertions ran in each row. No
+backend-specific assertion was removed. Each job uploaded a sanitized manifest
+recording the source commit, runner image, kernel, cgroups, seccomp/AppArmor
+state, engine, and OCI runtime versions.
+
+| Backend | Recorded environment | Conformance | Runtime enforcement |
+| --- | --- | ---: | ---: |
+| Native Docker/containerd | Ubuntu 24.04.5, Linux 6.17 Azure kernel, Docker 28.0.4, containerd 2.3.5, runc 1.5.1, cgroup v2, AppArmor and seccomp | 3 passed | 2 passed |
+| Rootless Podman | Ubuntu 24.04.5, Linux 6.17 Azure kernel, Podman 4.9.3, crun 1.14.1, rootless user namespace, cgroup v2, seccomp; Docker daemon unavailable | 3 passed | 2 passed |
+| gVisor | Same native Ubuntu Docker host with the worker explicitly assigned to `runsc` release `release-20260921.0` | 3 passed | 2 passed |
+
+The [Phase 3 CI run](https://github.com/electricwolfemarshmallowhypertext/gov-substrate/actions/runs/36726237973)
+contains the completed jobs and downloadable environment manifests. Docker/OCI
+remains the reference deployment. Podman and gVisor are additional conformant
+OCI environments under the recorded configurations.
+
+Windows and WASI remain compile targets until their runtime backends execute
+the shared suite.
 
 ## Separate model proof
 
@@ -104,6 +120,12 @@ python -m pytest -q tests/acceptance/conformance -m runtime_enforcement
 $env:GENERATION_MODEL_BLOB = 'C:\path\to\Qwen3-0.6B-Q8_0.gguf'
 python -m pytest -q tests/acceptance/test_local_runtime.py -m model_integration
 ```
+
+CI selects an additional backend with `RUNTIME_CONFORMANCE_BACKEND=podman` or
+`RUNTIME_CONFORMANCE_BACKEND=gvisor`. Podman must be local and rootless. The
+Podman job proves the Docker daemon is unavailable. The gVisor job installs a
+pinned official release, verifies its archive SHA-256, registers `runsc` with
+Docker, and verifies each worker's assigned runtime through Docker inspect.
 
 The normal unit suite remains:
 
