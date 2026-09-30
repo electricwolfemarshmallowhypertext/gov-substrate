@@ -62,6 +62,7 @@ def conformance_image(acceptance_enabled):
         if backend == "docker":
             docker_command("compose", "-f", str(COMPOSE), "build", "probe", env=env)
         else:
+            image = f"localhost/{image}"
             info = json.loads(
                 podman_command("info", "--format", "json", env=env)
             )
@@ -227,7 +228,11 @@ class PodmanConformanceBackend:
     def _assert_runtime_shape(self, info):
         assert info["ImageName"] == self.image
         assert info["Config"]["User"] == "65534:65534"
-        assert info["Config"]["Entrypoint"][:2] == ["/usr/bin/env", "-i"]
+        assert info["Path"] == "/usr/bin/env"
+        assert info["Args"] == [
+            "-i", "PATH=/usr/local/bin:/usr/bin:/bin", "HOME=/tmp",
+            "/usr/local/bin/gov-runtime-probe",
+        ]
         host = info["HostConfig"]
         assert host["NetworkMode"] == "none"
         assert host["ReadonlyRootfs"] is True
@@ -258,8 +263,7 @@ class PodmanConformanceBackend:
         raise AssertionError("conformance worker did not start")
 
     def launch_orphan(self, generation_id, sealed_context):
-        command = self.supervisor._run_command(generation_id)
-        command.insert(-1, "-d")
+        command = self.supervisor._run_command(generation_id, detached=True)
         result = subprocess.run(
             command, cwd=ROOT, env=self.env, input=sealed_context,
             capture_output=True, text=True, encoding="utf-8",

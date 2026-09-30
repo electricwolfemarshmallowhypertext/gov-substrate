@@ -77,9 +77,9 @@ class PodmanRuntimeSupervisor:
             raise RuntimeError("Podman worker must not restart")
         return info
 
-    def _run_command(self, generation_id: str) -> list[str]:
+    def _run_command(self, generation_id: str, detached: bool = False) -> list[str]:
         name = self._name(generation_id)
-        return [
+        command = [
             "podman", "run", "--name", name,
             "--label", f"{_MANAGED_LABEL}=true",
             "--label", f"{_GENERATION_LABEL}={generation_id}",
@@ -89,7 +89,14 @@ class PodmanRuntimeSupervisor:
             "--read-only-tmpfs=false", "--cap-drop=ALL",
             "--security-opt=no-new-privileges", "--pids-limit=32",
             "--tmpfs", "/tmp:rw,nodev,nosuid,noexec,size=16m",
-            "--shm-size=16m", "-i", self.image,
+            "--shm-size=16m", "-i",
+        ]
+        if detached:
+            command.append("-d")
+        return command + [
+            self.image, "/usr/bin/env", "-i",
+            "PATH=/usr/local/bin:/usr/bin:/bin", "HOME=/tmp",
+            "/usr/local/bin/gov-runtime-probe",
         ]
 
     def run(self, generation_id: str, sealed_context: str) -> str:

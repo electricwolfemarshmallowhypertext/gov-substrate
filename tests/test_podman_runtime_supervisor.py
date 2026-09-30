@@ -87,8 +87,21 @@ def test_run_uses_fixed_rootless_isolation_shape(monkeypatch):
         "--security-opt=no-new-privileges", "--pids-limit=32",
     ):
         assert option in command
-    assert command[-1] == "gov-substrate-runtime-probe:test"
+    image_index = command.index("gov-substrate-runtime-probe:test")
+    assert "-d" not in command
+    assert command[image_index + 1:] == [
+        "/usr/bin/env", "-i", "PATH=/usr/local/bin:/usr/bin:/bin",
+        "HOME=/tmp", "/usr/local/bin/gov-runtime-probe",
+    ]
     assert not engine.containers
+
+
+def test_detached_run_places_flag_before_image():
+    command = supervisor()._run_command("3" * 32, detached=True)
+    image_index = command.index("gov-substrate-runtime-probe:test")
+
+    assert command[image_index - 1] == "-d"
+    assert command[image_index + 1] == "/usr/bin/env"
 
 
 def test_stop_targets_exact_container_and_reports_podman():
