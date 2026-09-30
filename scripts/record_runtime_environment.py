@@ -10,10 +10,22 @@ from pathlib import Path
 
 
 def command(*args, required=True):
-    result = subprocess.run(
-        args, capture_output=True, text=True, encoding="utf-8",
-        errors="replace", timeout=30,
-    )
+    try:
+        result = subprocess.run(
+            args, capture_output=True, text=True, encoding="utf-8",
+            errors="replace", timeout=30,
+        )
+    except FileNotFoundError:
+        if required:
+            raise RuntimeError(
+                f"environment command unavailable: {args[0]}"
+            ) from None
+        return {
+            "command": list(args),
+            "returncode": 127,
+            "stdout": "",
+            "stderr": "command unavailable",
+        }
     if required and result.returncode:
         raise RuntimeError(f"environment command failed: {args[0]}")
     return {
@@ -37,7 +49,19 @@ def docker_manifest():
     if info.get("OSType") != "linux":
         raise RuntimeError("native Linux Docker runtime required")
     return {
-        "docker_info": info,
+        "docker_info": {
+            "server_version": info.get("ServerVersion"),
+            "storage_driver": info.get("Driver"),
+            "cgroup_driver": info.get("CgroupDriver"),
+            "cgroup_version": info.get("CgroupVersion"),
+            "kernel_version": info.get("KernelVersion"),
+            "operating_system": info.get("OperatingSystem"),
+            "os_type": info.get("OSType"),
+            "architecture": info.get("Architecture"),
+            "security_options": info.get("SecurityOptions"),
+            "available_runtimes": sorted((info.get("Runtimes") or {}).keys()),
+            "default_runtime": info.get("DefaultRuntime"),
+        },
         "docker_version": json.loads(command(
             "docker", "version", "--format", "{{json .}}"
         )["stdout"]),
@@ -54,7 +78,16 @@ def podman_manifest():
     if info["host"].get("serviceIsRemote", False):
         raise RuntimeError("local Podman runtime required")
     return {
-        "podman_info": info,
+        "podman_info": {
+            "arch": info["host"].get("arch"),
+            "cgroup_manager": info["host"].get("cgroupManager"),
+            "cgroup_version": info["host"].get("cgroupVersion"),
+            "network_backend": info["host"].get("networkBackend"),
+            "rootless": security.get("rootless"),
+            "service_is_remote": info["host"].get("serviceIsRemote", False),
+            "security": security,
+            "oci_runtime": info["host"].get("ociRuntime"),
+        },
         "podman_version": json.loads(command(
             "podman", "version", "--format", "json"
         )["stdout"]),

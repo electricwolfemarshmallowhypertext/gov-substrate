@@ -237,7 +237,7 @@ class PodmanConformanceBackend:
         assert host["NetworkMode"] == "none"
         assert host["ReadonlyRootfs"] is True
         assert host["Privileged"] is False
-        assert info.get("BoundingCaps", []) == []
+        assert info.get("BoundingCaps") in (None, [])
         assert any(
             option in ("no-new-privileges", "no-new-privileges=true")
             for option in host.get("SecurityOpt", [])
@@ -247,6 +247,17 @@ class PodmanConformanceBackend:
         mappings = host.get("IDMappingsOptions") or {}
         assert mappings.get("AutoUserNs") is True
         pid = info["State"]["Pid"]
+        status = Path(f"/proc/{pid}/status").read_text(encoding="utf-8")
+        capability_masks = {
+            line.split(":", 1)[0]: line.split(":", 1)[1].strip()
+            for line in status.splitlines()
+            if line.startswith(("CapInh:", "CapPrm:", "CapEff:",
+                                "CapBnd:", "CapAmb:"))
+        }
+        assert set(capability_masks) == {
+            "CapInh", "CapPrm", "CapEff", "CapBnd", "CapAmb",
+        }
+        assert all(int(mask, 16) == 0 for mask in capability_masks.values())
         uid_map = Path(f"/proc/{pid}/uid_map").read_text(encoding="utf-8")
         first_mapping = [int(value) for value in uid_map.splitlines()[0].split()]
         assert first_mapping[:2] != [0, 0], uid_map

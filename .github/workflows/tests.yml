@@ -50,8 +50,8 @@ jobs:
           --target '${{ matrix.target }}'
 
   runtime-conformance:
-    name: Docker/OCI runtime conformance
-    runs-on: ubuntu-latest
+    name: Native Ubuntu Docker/containerd conformance
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -59,6 +59,10 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m pip install -e '.[test]'
+      - name: Record native Docker environment
+        run: >-
+          python scripts/record_runtime_environment.py --backend docker
+          --output "$RUNNER_TEMP/runtime-evidence/docker.json"
       - name: Supervisor conformance (real workers, no model)
         env:
           RUN_ACCEPTANCE_TESTS: '1'
@@ -67,6 +71,13 @@ jobs:
         env:
           RUN_ACCEPTANCE_TESTS: '1'
         run: python -m pytest -q tests/acceptance/conformance -m runtime_enforcement
+      - name: Upload native Docker evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: runtime-environment-docker-${{ github.sha }}
+          path: ${{ runner.temp }}/runtime-evidence/docker.json
+          if-no-files-found: error
 
   runtime-conformance-podman:
     name: Rootless Podman runtime conformance
