@@ -648,8 +648,6 @@ class NativeWindowsRuntimeSupervisor:
             process = None
             attribute_buffer = None
             attribute_list = None
-            original_token = wintypes.HANDLE()
-            restricted_token = wintypes.HANDLE()
             info = PROCESS_INFORMATION()
             try:
                 (profile_name, sid, sid_text, run_root, private_tmp,
@@ -665,18 +663,6 @@ class NativeWindowsRuntimeSupervisor:
                     if not self.api.kernel32.SetHandleInformation(
                             parent_handle, self.api.HANDLE_FLAG_INHERIT, 0):
                         raise self.api._win_error("limit inherited pipe handles")
-
-                if not self.api.advapi32.OpenProcessToken(
-                        self.api.kernel32.GetCurrentProcess(),
-                        self.api.TOKEN_ASSIGN_PRIMARY | self.api.TOKEN_DUPLICATE |
-                        self.api.TOKEN_QUERY,
-                        ctypes.byref(original_token)):
-                    raise self.api._win_error("open supervisor process token")
-                if not self.api.advapi32.CreateRestrictedToken(
-                        original_token, self.api.DISABLE_MAX_PRIVILEGE,
-                        0, None, 0, None, 0, None,
-                        ctypes.byref(restricted_token)):
-                    raise self.api._win_error("create restricted worker token")
 
                 attribute_size = SIZE_T()
                 self.api.kernel32.InitializeProcThreadAttributeList(
@@ -729,7 +715,7 @@ class NativeWindowsRuntimeSupervisor:
                     self.api.CREATE_UNICODE_ENVIRONMENT
                 )
                 if not self.api.advapi32.CreateProcessAsUserW(
-                        restricted_token, str(copied_worker), command_line,
+                        None, str(copied_worker), command_line,
                         None, None, True, flags, environment, str(run_root),
                         ctypes.cast(ctypes.byref(startup),
                                     ctypes.POINTER(STARTUPINFOW)),
@@ -796,8 +782,6 @@ class NativeWindowsRuntimeSupervisor:
                     self.api.advapi32.FreeSid(sid)
                 self.api.close(info.hThread)
                 self.api.close(info.hProcess)
-                self.api.close(restricted_token)
-                self.api.close(original_token)
                 for handle in handles:
                     self.api.close(handle)
 

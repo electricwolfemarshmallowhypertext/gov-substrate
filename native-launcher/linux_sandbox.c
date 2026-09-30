@@ -411,8 +411,8 @@ int main(int argc, char **argv) {
     if (child == 0) {
         close(ready_pipe[0]);
         configure_child_mounts();
-        drop_privileges();
         configure_landlock(worker);
+        drop_privileges();
         configure_seccomp();
         if (write(ready_pipe[1], "1", 1) != 1) {
             fail("signal sandbox readiness");
