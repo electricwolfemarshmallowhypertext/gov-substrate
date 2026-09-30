@@ -31,7 +31,7 @@ The substrate checks the circuit breaker before authorization and again before e
 | Hosted-provider internals | External. The substrate can record what it sent and accepted back but cannot attest to hidden provider context, retention, or internal execution. |
 | Fully compromised trusted host or kernel | Outside the current boundary. It can bypass process-local enforcement, steal credentials, or rewrite local evidence. |
 
-The substrate API is independent of Docker. The v0.5.0 release evidence used Docker/OCI. Current `main` adds post-release evidence from rootless Podman, gVisor, and Wasmtime/WASI under recorded configurations. Any other backend requires the same level of runtime-specific proof before equivalent claims are made.
+The substrate API is independent of Docker. The v0.5.0 release evidence used Docker/OCI. Current `main` adds post-release evidence from rootless Podman, gVisor, Wasmtime/WASI, native Linux, and native Windows under recorded configurations. Any other backend requires the same level of runtime-specific proof before equivalent claims are made.
 
 ## Managed state boundary (Milestone 1)
 
@@ -175,14 +175,32 @@ identity; trusted metadata also binds the generation, deployment, and module
 hash. Circuit shutdown and restart reconciliation terminate and verify that
 exact identity before deleting its private state.
 
+`NativeLinuxRuntimeSupervisor` implements the contract without a container
+engine. A trusted launcher creates user, mount, network, PID, IPC, and UTS
+namespaces; mounts private `/proc`, `/tmp`, and `/dev/shm`; applies Landlock and
+seccomp; clears capabilities; drops to UID and GID 65534; and places the
+launcher and worker under delegated cgroup v2 limits. Runtime records bind both
+PIDs to kernel process start times. Shutdown targets the process group and
+cgroup, verifies exit, and removes the per-generation cgroup and state.
+
+`NativeWindowsRuntimeSupervisor` creates a fresh zero-capability AppContainer
+at low integrity for every generation. The worker inherits only three standard
+I/O pipe handles, a private profile directory, and an explicit environment. A
+Job Object limits the runtime to one active process and 128 MiB process memory,
+uses kill-on-close, and provides exact termination. Runtime identity combines
+the PID and Windows process creation time. Reconciliation reopens the recorded
+Job Object and process identity, stops any orphan, verifies exit, and deletes
+the AppContainer profile and private state.
+
 Governance Substrate defines the boundary. Docker/OCI is the reference
 enforcement backend, not a product requirement. Rootless Podman and gVisor
 `runsc` have passed the same real conformance and enforcement assertions on
 recorded Ubuntu 24.04 environments. Wasmtime/WASI has passed the same shared
-assertions locally on Windows 11 and in pinned Ubuntu 24.04 CI. A native desktop
-supervisor is a future local agent backend, and a Kubernetes/OCI supervisor is
-a future server backend. Those
-later backends are not implemented here. Each would implement the same
+assertions locally on Windows 11 and in pinned Ubuntu 24.04 CI. Native Linux and
+native Windows supervisors have passed the same shared assertions on recorded
+GitHub-hosted Ubuntu and Windows configurations. A native macOS supervisor and
+a Kubernetes/OCI supervisor are future backends. Those later backends are not
+implemented here. Each would implement the same
 supervisor contract without adding runtime-specific concepts to the substrate
 API.
 
@@ -208,8 +226,8 @@ The Rust source under `runtime-probe/` has no third-party dependencies and is
 compiled for Linux, Windows, and `wasm32-wasip1`. Native Docker/containerd,
 rootless Podman/crun, and gVisor/runsc execute the real Linux suite. Wasmtime
 executes the WASI build through the same substrate and supervisor assertions.
-The Windows-native build remains a compile target until a native Windows
-supervisor runs the suite. See
+Native Linux and native Windows execute their platform builds through the same
+substrate and assertions without a container engine. See
 [Runtime Conformance](Runtime-Conformance.md).
 
 ### Hosted-provider transfer boundary
@@ -269,8 +287,8 @@ enforces them:
 | Claim | Implemented boundary | Current evidence | Limit |
 | --- | --- | --- | --- |
 | Governed state and audit integrity | Transactional state gate, append-only audit triggers, hash chain, and state snapshots | Unit and deterministic adversarial tests | SQLite and its host remain trusted; a database owner can rewrite local evidence |
-| Network and filesystem confinement | Networkless agent container, substrate-owned adapters, scoped workspace, and path controls | Real Docker environment probes plus the shared hostile-worker suite under native Docker, rootless Podman, gVisor, and Wasmtime/WASI | Applies to the recorded runtime settings and granted mounts or handles |
-| Execution authority and emergency stop | One-use grants, execution-time circuit checks, runtime supervisor, and orphan reconciliation | Unit tests plus real native Docker, rootless Podman, gVisor, and Wasmtime worker stop, removal, late-completion rejection, and restart reconciliation | A different backend or host configuration requires its own real evidence |
+| Network and filesystem confinement | Networkless workers, substrate-owned adapters, scoped workspace, and path controls | Real Docker environment probes plus the shared hostile-worker suite under native Docker, rootless Podman, gVisor, Wasmtime/WASI, native Linux, and native Windows | Applies to the recorded runtime settings and granted mounts or handles |
+| Execution authority and emergency stop | One-use grants, execution-time circuit checks, runtime supervisor, and orphan reconciliation | Unit tests plus real native Docker, rootless Podman, gVisor, Wasmtime, native Linux, and native Windows worker stop, removal, late-completion rejection, and restart reconciliation | A different backend or host configuration requires its own real evidence |
 | Local generated-output provenance | Sealed governed context, isolated local worker, inherited classification, and governed output object | Real Qwen and Phi inference through the same Docker worker | Establishes boundary behavior, not model quality or arbitrary backend equivalence |
 | Hosted transfer and generated-output provenance | Provider classification grants, sealed inputs, host-side credentials, governed return path, and publication gate | Bounded live OpenAI, Anthropic, Gemini, and pinned OpenRouter runs | The substrate cannot attest to hidden provider context, retention, or execution |
 
@@ -300,7 +318,7 @@ reported separately:
 
 The later [containment](Containment-Evaluation.md), [scoped-authority](Scoped-Authority-Evaluation.md), [sensitive-egress](Sensitive-Data-Egress-Evaluation.md), and [object-provenance](Object-Provenance-Evaluation.md) evaluations add cross-agent, persistence, delegated-service, and classified-publication scenarios. Their historical counts are preserved in those reports; the current v0.5.0 result appears in the evidence section above.
 
-### Docker isolation and runtime acceptance
+### Runtime isolation and acceptance
 
 Requires a Docker-compatible Linux engine. The reference configuration has
 been exercised locally with Docker Desktop and in GitHub Actions on Ubuntu.
@@ -359,6 +377,17 @@ The same sealed-input handoff supports [thin OpenAI, Anthropic, direct Gemini, a
 
 ### Scope and limits
 
-The Docker tests prove the supplied isolated-container configuration. They do not prove confinement for arbitrary host processes, privileged containers, or agents given other mounts or sockets. HTTP GET is the implemented network adapter method; file access is limited to small UTF-8 files in the mounted workspace. Delegated services are denied rather than mediated downstream. Object provenance applies to stored bytes, the two fixed transforms, and free-form text from sealed generation contexts. The host adapter and worker enforce a request containing only substrate-assembled inputs; the sensitive actor's raw external publication path remains denied. **A compromised host or provider that secretly injects context sits outside this boundary.**
+The runtime tests prove only the recorded Docker, Podman, gVisor, Wasmtime,
+native Linux, and native Windows configurations. They do not prove confinement
+for arbitrary host processes, privileged containers, other kernel or Windows
+builds, or agents given additional mounts, handles, sockets, or credentials.
+HTTP GET is the implemented network adapter method; file access is limited to
+small UTF-8 files in the mounted workspace. Delegated services are denied rather
+than mediated downstream. Object provenance applies to stored bytes, the two
+fixed transforms, and free-form text from sealed generation contexts. The host
+adapter and worker enforce a request containing only substrate-assembled inputs;
+the sensitive actor's raw external publication path remains denied. **A
+compromised host or provider that secretly injects context sits outside this
+boundary.**
 
 An admitted operation cannot be rolled back; its decision event commits before execution, and a process crash before the outcome event can leave an unresolved attempt. A database owner can drop triggers or rewrite the hash chain; external anchoring is needed for stronger immutability. Invalid authentication and malformed HTTP requests are rejected before an actor can be attributed and are not part of the audit. The four health values remain prototype proxies, not empirical validation of the paper's full framework.

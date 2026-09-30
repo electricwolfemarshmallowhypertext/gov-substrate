@@ -1,6 +1,6 @@
 # Runtime Conformance
 
-Phases 2 through 4 separate the runtime boundary from model behavior. A backend must
+Phases 2, 3, 4, and 6 separate the runtime boundary from model behavior. A backend must
 implement the same supervisor contract and pass the same real assertions before
 the project describes it as conformant.
 
@@ -119,6 +119,39 @@ before execution and uploaded the sanitized environment manifest for source
 commit `3499280165a62a4eaabd59ee0ce58886855d59f7`. See the
 [Wasmtime/WASI runtime evaluation](Wasmtime-Runtime-Evaluation.md).
 
+## Phase 6 native operating-system supervisors
+
+Phase 6 implements the unchanged supervisor contract directly with Linux and
+Windows security primitives. Both backends execute the same hostile Rust probe
+used by the OCI and WASI matrix. Neither native supervisor depends on Docker.
+
+`NativeLinuxRuntimeSupervisor` launches through a small trusted root helper. It
+creates fresh user, mount, network, PID, IPC, and UTS namespaces; mounts private
+`/proc`, `/tmp`, and `/dev/shm`; restricts filesystem and network access with
+Landlock; installs a seccomp filter; clears Linux capability sets; drops to UID
+and GID 65534; and applies CPU, memory, and process limits through a delegated
+cgroup v2 subtree. Runtime identity binds the launcher and worker PIDs to their
+kernel process start times. Circuit shutdown targets the process group and
+cgroup, verifies exit, and removes its state. Reconciliation treats exited
+zombies as terminated while still requiring the recorded live identities to
+be stopped before cleanup.
+
+`NativeWindowsRuntimeSupervisor` creates one zero-capability AppContainer per
+generation with low integrity, an explicit three-handle standard-I/O allowlist,
+a fresh private profile directory, and an explicit environment. A Job Object
+enforces one active process, a 128 MiB process-memory limit, kill-on-close, and
+verified termination. Runtime identity binds the PID to its Windows creation
+time. The hostile worker receives no network capability, workspace, provider
+credential, prior history, or ambient inherited handle. Private temporary and
+shared-memory directories are fresh for every generation and explicitly named
+in its allowlisted environment.
+
+The [Phase 6 CI run](https://github.com/electricwolfemarshmallowhypertext/gov-substrate/actions/runs/36756130136)
+passed **3 conformance and 2 runtime-enforcement tests** on each native backend.
+The jobs ran on GitHub-hosted Ubuntu 24.04 and Windows runners and uploaded a
+sanitized environment manifest for each. See the
+[native operating-system runtime evaluation](Native-OS-Runtime-Evaluation.md).
+
 ## Separate model proof
 
 Model integration is not a prerequisite for the hostile-worker suite. The
@@ -144,8 +177,9 @@ $env:GENERATION_MODEL_BLOB = 'C:\path\to\Qwen3-0.6B-Q8_0.gguf'
 python -m pytest -q tests/acceptance/test_local_runtime.py -m model_integration
 ```
 
-CI selects an additional backend with `RUNTIME_CONFORMANCE_BACKEND=podman` or
-`RUNTIME_CONFORMANCE_BACKEND=gvisor`. Wasmtime uses
+CI selects an additional backend with `RUNTIME_CONFORMANCE_BACKEND=podman`,
+`RUNTIME_CONFORMANCE_BACKEND=gvisor`, `RUNTIME_CONFORMANCE_BACKEND=native-linux`,
+or `RUNTIME_CONFORMANCE_BACKEND=native-windows`. Wasmtime uses
 `RUNTIME_CONFORMANCE_BACKEND=wasmtime` with pinned `WASMTIME_BIN` and
 `WASMTIME_MODULE` paths. Podman must be local and rootless. The
 Podman job proves the Docker daemon is unavailable. The gVisor job installs a
@@ -165,5 +199,8 @@ still prove its own isolation properties. Wasmtime does not implement Linux
 process namespaces or Unix-domain sockets, so those probe rows are explicitly
 recorded as unsupported rather than presented as OS attempts. Network, DNS,
 filesystem, environment, lifecycle, and fresh-storage checks execute against
-the real WASI guest. A fully compromised host, kernel, runtime engine, or trusted
+the real WASI guest. The native results apply to the recorded Ubuntu and
+Windows runner configurations; they do not establish equivalence for other
+kernel versions, Windows builds, policies, or launch contexts. macOS has no
+native supervisor. A fully compromised host, kernel, runtime engine, or trusted
 supervisor remains outside this boundary.
