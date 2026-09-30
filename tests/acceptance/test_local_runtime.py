@@ -95,6 +95,7 @@ def assert_stopped_and_removed(container_id, since, env):
     assert inspection.returncode != 0, "Docker still reports the worker container"
 
 
+@pytest.mark.model_integration
 def test_real_inference_returns_governed_private_object(lab):
     substrate, client, runtime, _, _ = lab
     prompt = imported(substrate, "public", "Complete this sentence: The garden is")

@@ -219,6 +219,33 @@ def test_launch_names_and_labels_container_before_accepting_output(tmp_path, mon
     assert not engine.containers
 
 
+def test_model_free_service_uses_same_supervisor_contract(tmp_path, monkeypatch):
+    compose = tmp_path / "compose.yaml"
+    compose.write_text("services: {}")
+    runtime = DockerRuntimeSupervisor(compose, None, "testproject", service="probe")
+    engine = FakeEngine()
+    generation_id = "8" * 32
+    runtime._inspect = engine.inspect
+    runtime._docker = engine.docker
+    commands = []
+
+    class Process:
+        returncode = 0
+
+        def __init__(self, command, **kwargs):
+            commands.append(command)
+            engine.add(generation_id)
+
+        def communicate(self, input, timeout):
+            engine.containers[f"gov-substrate-{generation_id}"]["State"]["Running"] = False
+            return '{"text":"probe result"}', ""
+
+    monkeypatch.setattr("docker_runtime_supervisor.subprocess.Popen", Process)
+    assert runtime.run(generation_id, '{"inputs": []}') == '{"text":"probe result"}'
+    assert commands[0][-1] == "probe"
+    assert "GENERATION_MODEL_BLOB" not in runtime._environment
+
+
 def test_inspect_rejects_other_deployment_identity(tmp_path, monkeypatch):
     runtime = supervisor(tmp_path)
     generation_id = "1" * 32

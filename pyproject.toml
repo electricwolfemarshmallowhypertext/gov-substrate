@@ -15,7 +15,12 @@ llm = ["openai>=2,<3"]
 anthropic = ["anthropic>=0.111,<1"]
 
 [tool.setuptools]
-py-modules = ["substrate", "network_adapter", "filesystem_adapter", "governed_objects", "generation_adapter", "hosted_generation_adapters", "runtime_supervisor", "docker_runtime_supervisor"]
+py-modules = ["substrate", "network_adapter", "filesystem_adapter", "governed_objects", "generation_adapter", "hosted_generation_adapters", "runtime_supervisor", "runtime_conformance", "docker_runtime_supervisor"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "conformance: backend-neutral supervisor behavior against a real runtime",
+    "runtime_enforcement: real operating-system and runtime capability attempts",
+    "model_integration: actual model inference through the governed path",
+]

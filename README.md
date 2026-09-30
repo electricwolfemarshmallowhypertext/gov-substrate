@@ -43,11 +43,15 @@ Generation is model- and provider-agnostic. The optional local worker and the Op
 
 ## Evidence
 
-The project reports three kinds of evidence separately:
+The project reports five kinds of evidence separately:
 
 - **Unit tests** verify policy and control logic. Fakes and mocks are allowed here; these tests do not prove runtime isolation.
-- **Acceptance tests** use the real Docker daemon, real containers, the real substrate and supervisor, and real local inference.
+- **Runtime conformance** uses real workers to verify the backend-neutral supervisor contract: launch, exact identity, verified stop, late-completion rejection, and orphan reconciliation.
+- **Runtime enforcement** uses a model-independent hostile Rust worker to make real OS and runtime attempts against forbidden and granted paths.
+- **Model integration** uses real Qwen inference through the same sealed-input and governed-output path, separately from the hostile-worker proof.
 - **Hosted validation** verifies the governed request and output path with external providers. It does not attest to a provider's internal runtime.
+
+[Runtime conformance](docs/Runtime-Conformance.md) defines the shared contract and evidence rules. Docker/OCI currently passes the real suite. The same hostile probe source builds for Linux, Windows, and WASI, but compilation alone is not runtime proof for backends that have not run the suite.
 
 Release verification for v0.5.0:
 
@@ -62,6 +66,7 @@ Local model evidence uses pinned, hash-verified official Qwen and Microsoft Phi 
 
 ## Evaluation reports
 
+- [Runtime conformance](docs/Runtime-Conformance.md)
 - [Environment skeleton](docs/Environment-Skeleton-Evaluation.md)
 - [Local-model runtime matrix](docs/Local-Model-Matrix-Evaluation.md)
 - [Free-form output provenance](docs/Free-Form-Output-Provenance.md)

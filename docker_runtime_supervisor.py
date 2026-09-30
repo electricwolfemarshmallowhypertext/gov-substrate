@@ -11,24 +11,29 @@ from runtime_supervisor import StopResult
 
 
 _GENERATION_ID = re.compile(r"[0-9a-f]{32}\Z")
+_SERVICE = re.compile(r"[a-z0-9][a-z0-9_-]{0,62}\Z")
 _MANAGED_LABEL = "gov.substrate.managed"
 _GENERATION_LABEL = "gov.substrate.generation_id"
 _OWNER_LABEL = "gov.substrate.owner"
 
 
 class DockerRuntimeSupervisor:
-    def __init__(self, compose_file: str | Path, model_blob: str | Path,
-                 project: str):
+    def __init__(self, compose_file: str | Path, model_blob: str | Path | None,
+                 project: str, service: str = "generator"):
         self.compose_file = Path(compose_file).resolve(strict=True)
-        self.model_blob = Path(model_blob).resolve(strict=True)
-        if not self.model_blob.is_file():
-            raise ValueError("local model artifact must be one file")
-        with self.model_blob.open("rb") as model_file:
-            if model_file.read(4) != b"GGUF":
-                raise ValueError("local model artifact must be GGUF")
+        self.model_blob = None if model_blob is None else Path(model_blob).resolve(strict=True)
+        if self.model_blob is not None:
+            if not self.model_blob.is_file():
+                raise ValueError("local model artifact must be one file")
+            with self.model_blob.open("rb") as model_file:
+                if model_file.read(4) != b"GGUF":
+                    raise ValueError("local model artifact must be GGUF")
         if not isinstance(project, str) or not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,62}", project):
             raise ValueError("unique lowercase runtime project required")
+        if not isinstance(service, str) or not _SERVICE.fullmatch(service):
+            raise ValueError("valid lowercase Compose service required")
         self.project = project
+        self.service = service
         self._lock = threading.RLock()
         self._running: dict[str, subprocess.Popen] = {}
         self._cancelled: set[str] = set()
@@ -37,7 +42,8 @@ class DockerRuntimeSupervisor:
                              if not any(word in name.upper() for word in
                                         ("API_KEY", "TOKEN", "SECRET", "PASSWORD"))
                              and not name.startswith(("OPENAI_", "ANTHROPIC_", "OPENROUTER_"))}
-        self._environment["GENERATION_MODEL_BLOB"] = str(self.model_blob)
+        if self.model_blob is not None:
+            self._environment["GENERATION_MODEL_BLOB"] = str(self.model_blob)
 
     @staticmethod
     def _name(generation_id: str) -> str:
@@ -86,7 +92,7 @@ class DockerRuntimeSupervisor:
                             "--label", f"{_MANAGED_LABEL}=true",
                             "--label", f"{_GENERATION_LABEL}={generation_id}",
                             "--label", f"{_OWNER_LABEL}={self.project}",
-                            "-T", "--no-deps", "generator"])
+                            "-T", "--no-deps", self.service])
             process = subprocess.Popen(command, stdin=subprocess.PIPE,
                                        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                        text=True, encoding="utf-8", errors="replace",

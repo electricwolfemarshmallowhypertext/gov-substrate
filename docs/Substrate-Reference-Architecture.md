@@ -161,6 +161,31 @@ agent backend; and a Kubernetes/OCI supervisor is a future server backend.
 None is implemented here. Each would implement the same supervisor contract
 without adding runtime-specific concepts to the substrate API.
 
+### Backend-neutral runtime conformance
+
+The reusable conformance layer is defined in `runtime_conformance.py` and
+exercised under `tests/acceptance/conformance/`. A backend fixture supplies
+runtime-specific discovery and cleanup while shared assertions drive the real
+substrate and `RuntimeSupervisor`. The assertions are grouped deliberately:
+
+- **Conformance** verifies real worker launch, sealed context delivery,
+  governed output with exact classification and parents, altered and replayed
+  grant rejection, exact circuit-breaker shutdown, verified removal, rejected
+  late completion, and orphan reconciliation after supervisor restart.
+- **Runtime enforcement** runs a purpose-built Rust hostile probe inside the
+  backend. It makes real network, filesystem, process, IPC, socket, secret, and
+  persistence attempts and verifies both denied and deliberately granted paths.
+- **Model integration** runs real Qwen3-0.6B Q8_0 inference through the sealed
+  generation path. It is separate because conformance cannot depend on a model
+  choosing to attempt an escape.
+
+The Rust source under `runtime-probe/` has no third-party dependencies and is
+compiled for Linux, Windows, and `wasm32-wasip1`. Docker/OCI currently executes
+the real suite. Windows and WASI compilation demonstrate that the same probe
+source can target those platforms; they do not establish runtime enforcement
+until native and WASI supervisor backends run the shared tests. See
+[Runtime Conformance](Runtime-Conformance.md).
+
 ### Hosted-provider transfer boundary
 
 A hosted generation request names a registered provider before generation. The
@@ -204,10 +229,13 @@ enforces them:
 - **Unit tests** exercise policy, state, audit, adapter, grant, circuit, and
   supervisor logic. They may use fakes or mocks and do not establish runtime
   isolation.
-- **Acceptance tests** use the real Docker daemon, real containers, the real
-  substrate and supervisor, and real local inference.
-- **Environment probes** make forbidden operating-system and network attempts
-  from a real worker configuration and record the observed result.
+- **Runtime conformance** uses real workers to test the common supervisor
+  contract and lifecycle guarantees.
+- **Runtime enforcement** makes forbidden and granted operating-system attempts
+  from a purpose-built hostile worker and records the observed result.
+- **Model integration** uses a real model through the same sealed-input and
+  governed-output path without making model behavior part of the isolation
+  proof.
 - **Hosted validation** checks the governed transfer, generation, provenance,
   and publication path with live provider APIs. It does not attest to provider
   internals.
@@ -265,23 +293,27 @@ The filesystem test uses `compose.filesystem.yaml` and a substrate-only workspac
 python -m pytest -q tests/test_filesystem_isolation.py --basetemp .pytest_tmp_filesystem
 ```
 
-The v0.5.0 acceptance suite uses a pinned, hash-verified Qwen or Phi GGUF file,
-the real Docker daemon, the real substrate and supervisor, and the real local
-generation worker. Only `GENERATION_MODEL_BLOB` changes between the model runs:
+The backend-neutral conformance suite uses the real Docker daemon, the real
+substrate and supervisor, and the model-independent hostile Rust worker:
+
+```powershell
+$env:RUN_ACCEPTANCE_TESTS = '1'
+python -m pytest -q tests/acceptance/conformance -m conformance
+python -m pytest -q tests/acceptance/conformance -m runtime_enforcement
+```
+
+The separate model-integration check uses the pinned, hash-verified Qwen GGUF
+file and the same sealed-input and governed-output path:
 
 ```powershell
 $env:RUN_ACCEPTANCE_TESTS = '1'
 $env:GENERATION_MODEL_BLOB = 'C:\path\to\Qwen3-0.6B-Q8_0.gguf'
-python -m pytest -q tests/acceptance --ignore=tests/acceptance/environment
-python -m pytest -q tests/acceptance/environment
+python -m pytest -q tests/acceptance/test_local_runtime.py -m model_integration
 ```
 
-The first command checks governed local inference, inherited classification,
-verified circuit-breaker shutdown and removal, late-completion rejection,
-orphan reconciliation, and reachable-but-unauthorized network scope. The
-environment suite attempts forbidden network, filesystem, socket, process,
-IPC, mount, environment, proxy, and state-carryover paths from the real worker
-configuration while confirming the deliberately granted paths still work.
+The broader v0.5.0 Qwen and Phi acceptance and environment results remain
+release evidence. Phi is not part of the backend-conformance matrix; this phase
+tests runtime diversity rather than adding another model.
 
 Set `RUN_LIVE_NETWORK_TESTS=1` as well to exercise an explicitly allowed `https://example.com/` request through the adapter. That check requires external internet access and is excluded from the default Docker test. Deterministic tests are the reproducible evidence.
 
