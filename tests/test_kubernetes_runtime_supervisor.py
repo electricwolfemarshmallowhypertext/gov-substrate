@@ -60,6 +60,18 @@ def test_manifest_has_restricted_one_shot_shape(tmp_path, monkeypatch):
         "capabilities": {"drop": ["ALL"]},
         "seccompProfile": {"type": "RuntimeDefault"},
     }
+    assert worker["resources"] == {
+        "requests": {
+            "cpu": "50m",
+            "memory": "52Mi",
+            "ephemeral-storage": "10Mi",
+        },
+        "limits": {
+            "cpu": "500m",
+            "memory": "128Mi",
+            "ephemeral-storage": "10Mi",
+        },
+    }
     assert "env" not in worker and "envFrom" not in worker
     assert "HOST_API_KEY" not in json.dumps(manifest)
     assert {volume["name"] for volume in spec["volumes"]} == {

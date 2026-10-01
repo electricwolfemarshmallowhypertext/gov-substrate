@@ -211,14 +211,14 @@ class KubernetesRuntimeSupervisor:
                     },
                     "resources": {
                         "requests": {
-                            "cpu": "10m",
-                            "memory": "16Mi",
-                            "ephemeral-storage": "1Mi",
+                            "cpu": "50m",
+                            "memory": "52Mi",
+                            "ephemeral-storage": "10Mi",
                         },
                         "limits": {
                             "cpu": "500m",
                             "memory": "128Mi",
-                            "ephemeral-storage": "32Mi",
+                            "ephemeral-storage": "10Mi",
                         },
                     },
                     "volumeMounts": mounts,
