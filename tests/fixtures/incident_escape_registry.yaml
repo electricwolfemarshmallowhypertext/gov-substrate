@@ -1,0 +1,24 @@
+actors:
+  - id: agent-a
+    token_env: AGENT_A_TOKEN
+    data:
+      sensitive_access: true
+    network:
+      allowed: true
+      services:
+        - origin: http://fixture:8000
+          mode: terminal
+          egress: internal
+          paths: [/]
+        - origin: http://relay:8001
+          mode: delegated
+          egress: internal
+    filesystem:
+      scopes:
+        session: {read: true, write: true}
+        actor: {read: true, write: true}
+        shared: {read: false, write: false, channels: []}
+    tools: {shell: false, external_api: false}
+    persistence: {session: true, cross_session: false}
+    shared_channels: []
+operator_token_env: GOV_SUBSTRATE_OPERATOR_TOKEN

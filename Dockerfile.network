@@ -12,6 +12,7 @@ COPY tests/egress_probe.py /app/egress_probe.py
 COPY tests/object_probe.py /app/object_probe.py
 COPY tests/object_tool.py /app/object_tool.py
 COPY tests/containment_tool.py /app/containment_tool.py
+COPY tests/incident_escape_probe.py /app/incident_escape_probe.py
 COPY tests/fixtures/generation_worker.py /app/generation_worker.py
 
 ENV PYTHONDONTWRITEBYTECODE=1

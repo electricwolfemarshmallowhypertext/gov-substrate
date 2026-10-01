@@ -43,13 +43,14 @@ Generation is model- and provider-agnostic. The optional local worker and the Op
 
 ## Evidence
 
-The project reports five kinds of evidence separately:
+The project reports six kinds of evidence separately:
 
 - **Unit tests** verify policy and control logic. Fakes and mocks are allowed here; these tests do not prove runtime isolation.
 - **Runtime conformance** uses real workers to verify the backend-neutral supervisor contract: launch, exact identity, verified stop, late-completion rejection, and orphan reconciliation.
 - **Runtime enforcement** uses a model-independent hostile Rust worker to make real OS and runtime attempts against forbidden and granted paths.
 - **Model integration** uses real Qwen inference through the same sealed-input and governed-output path, separately from the hostile-worker proof.
 - **Hosted validation** verifies the governed request and output path with external providers. It does not attest to a provider's internal runtime.
+- **Incident-derived acceptance** replays documented proxy, authorization, side-channel, persistence, redirect, and exfiltration failure classes against local services and isolated workers.
 
 [Runtime conformance](docs/Runtime-Conformance.md) defines the shared contract and evidence rules. Native Ubuntu Docker/containerd, rootless Podman/crun, gVisor/runsc, Wasmtime/WASI, native Linux, native Windows, Kind/Calico, and GKE Autopilot use the same real suite. Docker/OCI remains the reference backend. Each result comes from the hostile probe running in the named backend rather than from configuration inspection alone.
 
@@ -87,6 +88,7 @@ Local model evidence uses pinned, hash-verified official Qwen and Microsoft Phi 
 - [Wasmtime/WASI runtime evaluation](docs/Wasmtime-Runtime-Evaluation.md)
 - [Environment skeleton](docs/Environment-Skeleton-Evaluation.md)
 - [Local-model runtime matrix](docs/Local-Model-Matrix-Evaluation.md)
+- [Incident-derived escape evaluation](docs/Incident-Derived-Escape-Evaluation.md)
 - [Free-form output provenance](docs/Free-Form-Output-Provenance.md)
 - [Generation adapters](docs/Generation-Adapters.md)
 - [Hosted OpenAI validation](docs/Hosted-Object-Validation.md)

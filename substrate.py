@@ -923,6 +923,8 @@ class Substrate:
                 return "deny", "invalid_scope", None
             return "allow", "capability_granted", namespace
         if kind == "network.request":
+            if set(action) != {"kind", "url"}:
+                return "deny", "invalid_network_request", None
             network = caps["network"]
             if not network["allowed"]:
                 return "deny", "network_disabled", None
@@ -1148,7 +1150,8 @@ class Substrate:
             if (action.get("kind") == "state.write" and action.get("scope") == "shared" and
                     self.actors[actor].get("data", {}).get("sensitive_access") is True):
                 logged_action = {"kind": "state.write", "scope": "shared",
-                                 "channel": action.get("channel"), "key": action.get("key"),
+                                 "channel_sha256": digest(action.get("channel")),
+                                 "key_sha256": digest(action.get("key")),
                                  "value_sha256": digest(action.get("value"))}
             if action.get("kind") == "filesystem.write" and isinstance(action.get("content"), str):
                 content = action["content"].encode("utf-8")
@@ -1158,6 +1161,13 @@ class Substrate:
                     logged_action["scope"] = action.get("scope", "session")
                     if "channel" in action:
                         logged_action["channel"] = action["channel"]
+                if self.actors[actor].get("data", {}).get("sensitive_access") is True:
+                    logged_action.pop("path", None)
+                    logged_action["path_sha256"] = digest(action.get("path"))
+                    if "channel" in logged_action:
+                        logged_action["channel_sha256"] = digest(logged_action.pop("channel"))
+            if rule == "unknown_action":
+                logged_action = {"kind": "unknown", "action_sha256": digest(action)}
             event_id = self._append(db, actor, logged_action, {"rule": rule}, decision, before, after,
                                     elapsed_ms=(time.perf_counter() - started) * 1000)
             db.commit()

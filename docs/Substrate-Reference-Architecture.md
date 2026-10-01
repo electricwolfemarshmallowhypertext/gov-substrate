@@ -302,6 +302,7 @@ enforces them:
 | Execution authority and emergency stop | One-use grants, execution-time circuit checks, runtime supervisor, and orphan reconciliation | Unit tests plus real native Docker, rootless Podman, gVisor, Wasmtime, native Linux, native Windows, Kind/Calico, and GKE Autopilot worker stop, removal, late-completion rejection, and restart reconciliation | A different backend or host configuration requires its own real evidence |
 | Local generated-output provenance | Sealed governed context, isolated local worker, inherited classification, and governed output object | Real Qwen and Phi inference through the same Docker worker | Establishes boundary behavior, not model quality or arbitrary backend equivalence |
 | Hosted transfer and generated-output provenance | Provider classification grants, sealed inputs, host-side credentials, governed return path, and publication gate | Bounded live OpenAI, Anthropic, Gemini, and pinned OpenRouter runs | The substrate cannot attest to hidden provider context, retention, or execution |
+| Incident-derived escape resistance | Exact request shapes and routes, denied delegated services, scoped state, inherited classification, execution-time revocation, and audit redaction | Deterministic policy checks plus a real networkless Docker agent with reachable relay and third-party fixtures | Covers the named incident classes and recorded configurations, not unknown exploits or all parser/protocol variants |
 
 The v0.5.0 release was verified with **91 passing unit tests and 10 opt-in
 skips**, **4 passing Qwen acceptance tests**, **4 passing Phi acceptance tests**,
@@ -310,6 +311,13 @@ and **5 passing environment tests**. The
 passed the unit, Qwen acceptance, and environment jobs. The separate
 [local-model matrix run](https://github.com/electricwolfemarshmallowhypertext/gov-substrate/actions/runs/36617457396)
 passed the same acceptance path with Qwen and Phi.
+
+Post-release Phase 8 evidence is recorded in the [incident-derived escape
+evaluation](Incident-Derived-Escape-Evaluation.md). Its focused deterministic
+suite passed **5/5**, and its real Docker replay passed **1/1**. The replay
+proved the relay and downstream service were reachable to the substrate while
+the networkless agent remained denied from proxying, alternate request fields,
+lookalike origins, and URL-based exfiltration paths.
 
 ## Adversarial evaluation
 

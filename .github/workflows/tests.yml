@@ -492,6 +492,21 @@ jobs:
           RUN_ACCEPTANCE_TESTS: '1'
         run: python -m pytest -q tests/acceptance/environment
 
+  incident-escape-acceptance:
+    name: Incident-derived escape acceptance
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -e '.[test]'
+      - name: Real networkless agent and reachable delegated services
+        env:
+          RUN_ACCEPTANCE_TESTS: '1'
+        run: python -m pytest -q tests/acceptance/incidents
+
   acceptance-phi:
     if: github.event_name == 'workflow_dispatch' && inputs.run_phi
     runs-on: ubuntu-latest

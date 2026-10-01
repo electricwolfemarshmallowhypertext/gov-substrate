@@ -1,0 +1,44 @@
+{
+  "date": "2026-10-01",
+  "environment": "Docker Desktop Linux reference network worker",
+  "paid_model_calls": 0,
+  "acceptance": {
+    "passed": 1,
+    "failed": 0,
+    "observations": {
+      "direct_agent_network": "blocked",
+      "granted_terminal_service": "succeeded",
+      "url_query_exfiltration": "denied",
+      "caller_supplied_headers": "denied",
+      "caller_supplied_callback": "denied",
+      "delegated_proxy": "denied",
+      "lookalike_origin": "denied",
+      "url_credentials": "denied",
+      "unknown_telemetry_action": "denied",
+      "sensitive_value_in_audit": "absent"
+    }
+  },
+  "deterministic": {
+    "passed": 5,
+    "failed": 0,
+    "includes": [
+      "strict network request shape",
+      "URL ambiguity",
+      "delegated service denial",
+      "mid-task authority revocation",
+      "classification-preserving encoding",
+      "cross-agent channel denial",
+      "redirect non-following",
+      "single DNS resolution and pinned connection address"
+    ]
+  },
+  "defects_found": [
+    "unsupported network request fields were admitted although ignored by the adapter",
+    "denied sensitive channel names and unknown action payloads could appear verbatim in audit"
+  ],
+  "fixes": [
+    "network.request now accepts only kind and url",
+    "sensitive shared-state and filesystem audit fields are hashed",
+    "unknown action payloads are represented by a digest"
+  ]
+}
