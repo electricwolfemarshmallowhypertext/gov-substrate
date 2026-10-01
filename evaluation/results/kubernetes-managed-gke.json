@@ -1,0 +1,110 @@
+{
+  "backend": "kubernetes",
+  "host": {
+    "apparmor_enabled": null,
+    "apparmor_version": {
+      "command": [
+        "apparmor_parser",
+        "--version"
+      ],
+      "returncode": 127,
+      "stderr": "command unavailable",
+      "stdout": ""
+    },
+    "cgroup_controllers": null,
+    "libseccomp_version": {
+      "command": [
+        "dpkg-query",
+        "-W",
+        "-f=${Version}",
+        "libseccomp2"
+      ],
+      "returncode": 127,
+      "stderr": "command unavailable",
+      "stdout": ""
+    },
+    "machine": "AMD64",
+    "os_release": null,
+    "process_status": {},
+    "release": "11",
+    "system": "Windows",
+    "version": "10.0.26200"
+  },
+  "recorded_at": "2026-10-01T16:47:51.134064+00:00",
+  "runner_image": {
+    "name": null,
+    "version": null
+  },
+  "runtime": {
+    "calico_nodes": [],
+    "current_context": "gke_<redacted-project>_us-central1_gov-substrate-phase7",
+    "default_deny_policy": {
+      "podSelector": {},
+      "policyTypes": [
+        "Ingress",
+        "Egress"
+      ]
+    },
+    "kubectl_version": {
+      "clientVersion": {
+        "buildDate": "2025-09-09T19:44:50Z",
+        "compiler": "gc",
+        "gitCommit": "93248f9ae092f571eb870b7664c534bfc7d00f03",
+        "gitTreeState": "clean",
+        "gitVersion": "v1.34.1",
+        "goVersion": "go1.24.6",
+        "major": "1",
+        "minor": "34",
+        "platform": "windows/amd64"
+      },
+      "kustomizeVersion": "v5.7.1",
+      "serverVersion": {
+        "buildDate": "2026-08-20T20:25:20Z",
+        "compiler": "gc",
+        "emulationMajor": "1",
+        "emulationMinor": "35",
+        "gitCommit": "18c2b7950b3a6eff3e5da2c3f29657b7e18c986f",
+        "gitTreeState": "clean",
+        "gitVersion": "v1.35.8-gke.1225000",
+        "goVersion": "go1.26.5-X:boringcrypto",
+        "major": "1",
+        "minCompatibilityMajor": "1",
+        "minCompatibilityMinor": "34",
+        "minor": "35",
+        "platform": "linux/amd64"
+      }
+    },
+    "namespace": "gov-substrate-conformance",
+    "namespace_labels": {
+      "kubernetes.io/metadata.name": "gov-substrate-conformance",
+      "pod-security.kubernetes.io/audit": "restricted",
+      "pod-security.kubernetes.io/enforce": "restricted",
+      "pod-security.kubernetes.io/enforce-version": "v1.35",
+      "pod-security.kubernetes.io/warn": "restricted"
+    },
+    "nodes": [
+      {
+        "container_runtime": "containerd://2.2.7",
+        "kernel_version": "6.12.94+",
+        "kubelet_version": "v1.35.8-gke.1225000",
+        "name": "<redacted-managed-node>",
+        "os_image": "Container-Optimized OS from Google"
+      }
+    ],
+    "probe_image": "us-central1-docker.pkg.dev/<redacted-project>/gov-substrate-phase7/runtime-probe@sha256:0620e9c8f516c40efc948ab9d3b0eba63ac47ae3a27b450f0b176cb7e3771a8b"
+  },
+  "schema": 1,
+  "source_commit": "5a30f704bc8ab06e58747226989dba7fd084a628",
+  "managed_service": {
+    "provider": "Google Kubernetes Engine Autopilot",
+    "region": "us-central1",
+    "identifiers_redacted": true,
+    "teardown_verified": true
+  },
+  "results": {
+    "supervisor_conformance": "3 passed",
+    "runtime_enforcement": "2 passed",
+    "initial_fail_closed_result": "3 failed before worker execution because GKE Autopilot adjusted the requested resource block",
+    "verified_fix": "request the exact GKE-admitted resource values and retain exact post-admission validation"
+  }
+}

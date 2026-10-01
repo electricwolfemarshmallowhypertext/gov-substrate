@@ -175,8 +175,19 @@ hostile Linux probe and shared assertions as the other backends, uploaded a
 sanitized environment manifest, and removed the cluster afterward. See the
 [Kubernetes runtime evaluation](Kubernetes-Runtime-Evaluation.md).
 
-This is disposable-cluster evidence. The same suite has not yet been repeated
-on a managed Kubernetes service.
+The unchanged suite was also repeated on a disposable managed GKE Autopilot
+cluster running Kubernetes `1.35.8-gke.1225000`. It passed **3 conformance and
+2 runtime-enforcement tests**. The managed run used the same digest-pinned
+hostile probe, restricted namespace, default-deny NetworkPolicy, substrate,
+supervisor, and assertions. Its sanitized environment record is
+`evaluation/results/kubernetes-managed-gke.json`.
+
+The first managed attempt failed closed before worker execution because GKE
+Autopilot adjusted resource requests and limits after admission. The supervisor
+still required exact equality. The fix requests the exact managed-compatible
+values up front and retains exact post-admission validation; no isolation field
+or assertion was ignored. The clean retry passed, and the cluster and registry
+were deleted afterward.
 
 ## Separate model proof
 
@@ -231,8 +242,8 @@ filesystem, environment, lifecycle, and fresh-storage checks execute against
 the real WASI guest. The native results apply to the recorded Ubuntu and
 Windows runner configurations; they do not establish equivalence for other
 kernel versions, Windows builds, policies, or launch contexts. The Kubernetes
-result applies to the recorded Kind/Calico cluster and does not establish
-equivalence for a managed control plane, different CNI, admission stack,
+results apply to the recorded Kind/Calico and GKE Autopilot configurations and
+do not establish equivalence for another managed service, CNI, admission stack,
 service mesh, node policy, or cloud identity configuration. macOS has no native
 supervisor. A fully compromised host, kernel, runtime engine, cluster control
 plane, or trusted supervisor remains outside this boundary.
