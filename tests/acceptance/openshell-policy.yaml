@@ -6,7 +6,7 @@ filesystem_policy:
     - /lib
     - /lib64
     - /etc/ld.so.cache
-    - /proc/self
+    - /proc
     - /dev/urandom
   read_write:
     - /tmp

@@ -16,6 +16,11 @@ use std::time::Duration;
 const MAX_CONTEXT_BYTES: usize = 32_768;
 const CONFIG_PREFIX: &str = "GOV_PROBE_CONFIG\n";
 
+#[cfg(target_os = "linux")]
+unsafe extern "C" {
+    fn kill(pid: i32, signal: i32) -> i32;
+}
+
 struct Attempt {
     name: String,
     allowed: bool,
@@ -370,11 +375,28 @@ fn linux_attempts(rows: &mut Vec<Attempt>, config: &BTreeMap<String, String>) {
         .unwrap_or_default();
     rows.push(Attempt {
         name: "unrelated_processes".to_string(),
-        allowed: visible_pids.iter().any(|pid| *pid != std::process::id()),
+        allowed: visible_pids
+            .iter()
+            .any(|pid| *pid != std::process::id() && *pid != 1),
         result: format!(
             "container_pids={visible_pids:?};self={}",
             std::process::id()
         ),
+    });
+    attempt(rows, "sandbox_leader_signal", || {
+        if std::process::id() == 1 {
+            return Err("worker is namespace leader".to_string());
+        }
+        if unsafe { kill(1, 0) } == 0 {
+            Ok("sandbox leader signal check succeeded".to_string())
+        } else {
+            let error = io::Error::last_os_error();
+            Err(format!(
+                "{}:errno={}",
+                error.kind(),
+                error.raw_os_error().unwrap_or(-1)
+            ))
+        }
     });
     for (name, path) in [
         ("private_ipc_namespace", "/proc/self/ns/ipc"),
@@ -569,6 +591,7 @@ fn linux_attempts(rows: &mut Vec<Attempt>, config: &BTreeMap<String, String>) {
         "proc_pid1_secrets",
         "unrelated_host_pid",
         "unrelated_processes",
+        "sandbox_leader_signal",
         "private_ipc_namespace",
         "private_mount_namespace",
     ] {
@@ -618,6 +641,7 @@ fn linux_attempts(rows: &mut Vec<Attempt>, config: &BTreeMap<String, String>) {
         "proc_pid1_secrets",
         "unrelated_host_pid",
         "unrelated_processes",
+        "sandbox_leader_signal",
         "private_ipc_namespace",
         "private_mount_namespace",
     ] {

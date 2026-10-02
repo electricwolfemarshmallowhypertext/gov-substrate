@@ -113,6 +113,7 @@ def test_ungranted_paths_are_physically_blocked_and_grants_still_work(
         "unexpected_mount:/workspace", "unexpected_mount:/run/secrets",
         "unexpected_mount:/model", "environment_secrets", "proc_self_secrets",
         "proc_pid1_secrets", "unrelated_host_pid", "unrelated_processes",
+        "sandbox_leader_signal",
         "previous_worker:/tmp", "previous_worker:/dev/shm",
     }
     assert required_forbidden <= rows.keys()
