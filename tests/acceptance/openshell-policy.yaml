@@ -1,0 +1,20 @@
+version: 1
+filesystem_policy:
+  include_workdir: false
+  read_only:
+    - /usr
+    - /lib
+    - /lib64
+    - /etc
+    - /proc
+    - /dev/urandom
+  read_write:
+    - /tmp
+    - /dev/shm
+    - /dev/null
+landlock:
+  compatibility: hard_requirement
+process:
+  run_as_user: "65534"
+  run_as_group: "65534"
+network_policies: {}

@@ -218,11 +218,42 @@ def kubernetes_manifest(namespace, probe_image):
     }
 
 
+def openshell_manifest(cli, gateway, policy, probe_image):
+    policy = Path(policy).resolve(strict=True)
+    gateway_info = json.loads(command(
+        cli, "--gateway", gateway, "--color", "never",
+        "gateway", "info", "--output", "json",
+    )["stdout"])
+    image = json.loads(command(
+        "docker", "image", "inspect", probe_image
+    )["stdout"])[0]
+    return {
+        "openshell_version": command(cli, "--version")["stdout"],
+        "gateway": gateway_info,
+        "compute_driver": "docker",
+        "policy_sha256": sha256(policy),
+        "policy_path": policy.name,
+        "probe_image": probe_image,
+        "probe_image_id": image.get("Id"),
+        "sandbox_configuration": {
+            "one_sandbox_per_generation": True,
+            "providers_attached": [],
+            "automatic_providers": False,
+            "filesystem_default": "deny",
+            "network_default": "deny",
+            "process_uid": 65534,
+            "process_gid": 65534,
+            "landlock": "hard_requirement",
+        },
+        **docker_manifest(),
+    }
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--backend", choices=(
         "docker", "podman", "gvisor", "wasmtime", "native-linux",
-        "native-windows", "kubernetes",
+        "native-windows", "kubernetes", "openshell",
     ),
                         required=True)
     parser.add_argument("--output", type=Path, required=True)
@@ -233,6 +264,9 @@ def main():
     parser.add_argument("--cgroup-root")
     parser.add_argument("--kube-namespace")
     parser.add_argument("--probe-image")
+    parser.add_argument("--openshell-cli", default="openshell")
+    parser.add_argument("--openshell-gateway")
+    parser.add_argument("--openshell-policy")
     args = parser.parse_args()
 
     if args.backend == "podman":
@@ -257,6 +291,15 @@ def main():
                 "Kubernetes evidence requires namespace and probe image"
             )
         backend = kubernetes_manifest(args.kube_namespace, args.probe_image)
+    elif args.backend == "openshell":
+        if not args.openshell_gateway or not args.openshell_policy or not args.probe_image:
+            raise RuntimeError(
+                "OpenShell evidence requires gateway, policy, and probe image"
+            )
+        backend = openshell_manifest(
+            args.openshell_cli, args.openshell_gateway,
+            args.openshell_policy, args.probe_image,
+        )
     else:
         backend = docker_manifest()
     if args.backend == "gvisor":

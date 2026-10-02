@@ -17,6 +17,7 @@ from docker_runtime_supervisor import DockerRuntimeSupervisor
 from kubernetes_runtime_supervisor import KubernetesRuntimeSupervisor
 from native_linux_runtime_supervisor import NativeLinuxRuntimeSupervisor
 from native_windows_runtime_supervisor import NativeWindowsRuntimeSupervisor
+from openshell_runtime_supervisor import OpenShellRuntimeSupervisor
 from podman_runtime_supervisor import PodmanRuntimeSupervisor
 from runtime_conformance import ReachableTarget, RuntimeIdentity
 from wasmtime_runtime_supervisor import WasmtimeRuntimeSupervisor
@@ -62,7 +63,7 @@ def conformance_image(acceptance_enabled):
     backend = os.environ.get("RUNTIME_CONFORMANCE_BACKEND", "docker")
     assert backend in (
         "docker", "gvisor", "podman", "wasmtime", "native-linux",
-        "native-windows", "kubernetes",
+        "native-windows", "kubernetes", "openshell",
     ), "unsupported conformance backend"
     if backend == "kubernetes":
         yield {
@@ -95,6 +96,15 @@ def conformance_image(acceptance_enabled):
             "backend": backend,
             "wasmtime": Path(os.environ["WASMTIME_BIN"]).resolve(strict=True),
             "module": Path(os.environ["WASMTIME_MODULE"]).resolve(strict=True),
+        }
+        return
+    if backend == "openshell":
+        yield {
+            "backend": backend,
+            "cli": os.environ.get("OPENSHELL_CLI", "openshell"),
+            "gateway": os.environ["OPENSHELL_GATEWAY_NAME"],
+            "image": os.environ["OPENSHELL_PROBE_IMAGE"],
+            "policy": Path(os.environ["OPENSHELL_POLICY"]).resolve(strict=True),
         }
         return
     compose = GVISOR_COMPOSE if backend == "gvisor" else COMPOSE
@@ -894,6 +904,97 @@ class KubernetesConformanceBackend:
                 process.wait(timeout=5)
 
 
+class OpenShellConformanceBackend:
+    name = "openshell"
+    probe_target = "linux"
+    granted_attempts = {
+        "sealed_context_stdin", "private_ipc_namespace",
+        "private_mount_namespace", "private_storage:/tmp",
+        "private_storage:/dev/shm",
+    }
+
+    def __init__(self, artifact):
+        self.project = "govconformance" + uuid.uuid4().hex[:10]
+        self.cli = artifact["cli"]
+        self.gateway = artifact["gateway"]
+        self.image = artifact["image"]
+        self.policy = artifact["policy"]
+        self.supervisor = self.new_supervisor()
+        self._targets = []
+        self._processes = []
+        self._identities = {}
+
+    def new_supervisor(self):
+        return OpenShellRuntimeSupervisor(
+            self.image, self.policy, self.project, self.gateway, self.cli
+        )
+
+    def wait_running(self, generation_id):
+        deadline = time.monotonic() + 90
+        while time.monotonic() < deadline:
+            item = self.supervisor._inspect_generation(generation_id)
+            if item is not None and item.get("phase") == "Ready":
+                runtime_id = item["id"]
+                status = self.supervisor.security_state(generation_id)
+                assert {int(value) for value in status["Uid"].split()} == {65534}
+                assert status["NoNewPrivs"] == "1"
+                assert status["Seccomp"] == "2"
+                assert all(
+                    int(status[name], 16) == 0
+                    for name in ("CapInh", "CapPrm", "CapEff", "CapBnd", "CapAmb")
+                )
+                self._identities[runtime_id] = generation_id
+                return RuntimeIdentity(runtime_id, True)
+            time.sleep(0.2)
+        raise AssertionError("OpenShell conformance worker did not start")
+
+    def launch_orphan(self, generation_id, sealed_context):
+        process = subprocess.Popen(
+            self.supervisor._create_command(generation_id), cwd=ROOT,
+            env=self.supervisor._environment, stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            encoding="utf-8", errors="replace",
+        )
+        process.stdin.write(sealed_context)
+        process.stdin.close()
+        self._processes.append(process)
+        return self.wait_running(generation_id)
+
+    def assert_terminated(self, runtime_id):
+        generation_id = self._identities[runtime_id]
+        assert self.supervisor.runtime_identity(generation_id) is None
+
+    def start_reachable_target(self):
+        name = "gov-openshell-target-" + uuid.uuid4().hex[:10]
+        container_id = docker_command(
+            "run", "-d", "--name", name, "--network", "bridge",
+            "python:3.12-slim", "python", "-m", "http.server", "8002",
+            "--bind", "0.0.0.0",
+        )
+        self._targets.append(container_id)
+        address = docker_command(
+            "inspect", "-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}",
+            container_id,
+        )
+        gateway = docker_command(
+            "network", "inspect", "bridge", "-f",
+            "{{(index .IPAM.Config 0).Gateway}}",
+        )
+        return ReachableTarget(address, gateway)
+
+    def cleanup(self):
+        self.supervisor.reconcile()
+        for process in self._processes:
+            if process.poll() is None:
+                process.kill()
+                process.wait(timeout=5)
+        for target in self._targets:
+            subprocess.run(
+                ["docker", "container", "rm", "-f", target], cwd=ROOT,
+                env=clean_environment(), capture_output=True, timeout=20,
+            )
+
+
 @pytest.fixture
 def conformance_backend(conformance_image, tmp_path):
     if conformance_image["backend"] == "podman":
@@ -910,6 +1011,8 @@ def conformance_backend(conformance_image, tmp_path):
         )
     elif conformance_image["backend"] == "kubernetes":
         backend = KubernetesConformanceBackend(conformance_image)
+    elif conformance_image["backend"] == "openshell":
+        backend = OpenShellConformanceBackend(conformance_image)
     else:
         backend = DockerConformanceBackend(conformance_image)
     try:

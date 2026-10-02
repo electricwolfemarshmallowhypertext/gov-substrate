@@ -463,6 +463,132 @@ jobs:
           fi
           docker image rm gov-substrate-runtime-probe:kubernetes || true
 
+  runtime-conformance-openshell:
+    name: NVIDIA OpenShell Docker conformance
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -e '.[test]'
+      - name: Install pinned official OpenShell release
+        shell: bash
+        run: |
+          set -euo pipefail
+          deb="$RUNNER_TEMP/openshell_0.1.2_amd64.deb"
+          curl -fsSLo "$deb" \
+            https://github.com/NVIDIA/OpenShell/releases/download/v0.1.2/openshell_0.1.2-1_amd64.deb
+          echo "1f5416ea08f32fdc621f20a2cc0324298e60aba8bbe996459d9e3b44195f23df  $deb" | sha256sum -c -
+          sudo apt-get install -y "$deb"
+          openshell --version | grep -Fx 'openshell 0.1.2'
+          openshell-gateway --version | grep -Fx 'openshell-gateway 0.1.2'
+      - name: Start authenticated OpenShell Docker gateway
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/openshell"
+          mkdir -p "$root" "$HOME/.config/openshell/gateways/phase5/mtls"
+          openshell-gateway generate-certs --output-dir "$root/tls" \
+            --server-san host.openshell.internal >/dev/null
+          cp "$root/tls/ca.crt" "$HOME/.config/openshell/gateways/phase5/mtls/ca.crt"
+          cp "$root/tls/client/tls.crt" "$HOME/.config/openshell/gateways/phase5/mtls/tls.crt"
+          cp "$root/tls/client/tls.key" "$HOME/.config/openshell/gateways/phase5/mtls/tls.key"
+          cat > "$root/gateway.toml" <<EOF
+          [openshell]
+          version = 2
+
+          [openshell.gateway]
+          compute_driver = "docker"
+          guest_tls_ca = "$root/tls/ca.crt"
+          guest_tls_cert = "$root/tls/client/tls.crt"
+          guest_tls_key = "$root/tls/client/tls.key"
+
+          [openshell.gateway.tls]
+          cert_path = "$root/tls/server/tls.crt"
+          key_path = "$root/tls/server/tls.key"
+          client_ca_path = "$root/tls/ca.crt"
+
+          [openshell.gateway.mtls_auth]
+          enabled = true
+
+          [openshell.gateway.gateway_jwt]
+          signing_key_path = "$root/tls/jwt/signing.pem"
+          public_key_path = "$root/tls/jwt/public.pem"
+          kid_path = "$root/tls/jwt/kid"
+          gateway_id = "gov-substrate-phase5"
+          ttl_secs = 3600
+          EOF
+          nohup env OPENSHELL_GRPC_ENDPOINT=https://host.openshell.internal:18670 \
+            OPENSHELL_DOCKER_TLS_CA="$root/tls/ca.crt" \
+            OPENSHELL_DOCKER_TLS_CERT="$root/tls/client/tls.crt" \
+            OPENSHELL_DOCKER_TLS_KEY="$root/tls/client/tls.key" \
+            openshell-gateway --name gov-substrate-phase5 \
+            --bind-address 127.0.0.1 --port 18670 \
+            --db-url "sqlite:$root/gateway.db" --config "$root/gateway.toml" \
+            >"$root/gateway.log" 2>&1 &
+          echo $! > "$root/gateway.pid"
+          for _ in $(seq 1 90); do
+            if nc -z 127.0.0.1 18670; then break; fi
+            if ! kill -0 "$(cat "$root/gateway.pid")" 2>/dev/null; then
+              cat "$root/gateway.log"
+              exit 1
+            fi
+            sleep 1
+          done
+          openshell gateway remove phase5 >/dev/null 2>&1 || true
+          openshell gateway add https://127.0.0.1:18670 --local --name phase5
+          openshell gateway select phase5
+          openshell status --output json
+          echo "OPENSHELL_GATEWAY_NAME=phase5" >> "$GITHUB_ENV"
+          echo "OPENSHELL_POLICY=$GITHUB_WORKSPACE/tests/acceptance/openshell-policy.yaml" >> "$GITHUB_ENV"
+      - name: Build immutable hostile-probe image
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="gov-substrate-runtime-probe:openshell-${GITHUB_SHA}"
+          docker build --file Dockerfile.conformance --tag "$image" .
+          echo "OPENSHELL_PROBE_IMAGE=$image" >> "$GITHUB_ENV"
+      - name: Record OpenShell environment
+        run: >-
+          python scripts/record_runtime_environment.py --backend openshell
+          --openshell-gateway "$OPENSHELL_GATEWAY_NAME"
+          --openshell-policy "$OPENSHELL_POLICY"
+          --probe-image "$OPENSHELL_PROBE_IMAGE"
+          --output "$RUNNER_TEMP/runtime-evidence/openshell.json"
+      - name: Supervisor conformance (real OpenShell sandboxes)
+        env:
+          RUN_ACCEPTANCE_TESTS: '1'
+          RUNTIME_CONFORMANCE_BACKEND: openshell
+        run: python -m pytest -q tests/acceptance/conformance -m conformance
+      - name: Runtime enforcement (real OpenShell sandbox attempts)
+        env:
+          RUN_ACCEPTANCE_TESTS: '1'
+          RUNTIME_CONFORMANCE_BACKEND: openshell
+        run: python -m pytest -q tests/acceptance/conformance -m runtime_enforcement
+      - name: Upload OpenShell evidence and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: runtime-environment-openshell-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/runtime-evidence/openshell.json
+            ${{ runner.temp }}/openshell/gateway.log
+          if-no-files-found: error
+      - name: Remove OpenShell test resources
+        if: always()
+        shell: bash
+        run: |
+          openshell sandbox list --selector gov.substrate.managed=true \
+            --names 2>/dev/null | xargs --no-run-if-empty openshell sandbox delete || true
+          if [[ -f "$RUNNER_TEMP/openshell/gateway.pid" ]]; then
+            kill "$(cat "$RUNNER_TEMP/openshell/gateway.pid")" 2>/dev/null || true
+          fi
+          if [[ -n "${OPENSHELL_PROBE_IMAGE:-}" ]]; then
+            docker image rm "$OPENSHELL_PROBE_IMAGE" || true
+          fi
+
   acceptance-qwen:
     runs-on: ubuntu-latest
     timeout-minutes: 90
