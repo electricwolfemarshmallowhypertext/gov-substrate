@@ -36,11 +36,10 @@ def test_create_command_seals_identity_policy_and_environment(tmp_path):
 
     assert command[:5] == ["openshell", "--gateway", "testgateway", "--color", "never"]
     assert ["--name", "gs-" + "a" * 16] == command[command.index("--name"):command.index("--name") + 2]
-    assert "--no-auto-providers" in command and "--detach" in command
+    assert "--no-auto-providers" in command and "--no-keep" in command
     assert "gov.substrate.generation_id=" + generation_id in command
-    assert command[-6:] == [
-        "/usr/bin/env", "-i", "PATH=/usr/local/bin:/usr/bin:/bin", "HOME=/tmp",
-        "/bin/sleep", "3600",
+    assert command[-2:] == [
+        "gov-runtime-probe", f"/tmp/gov-input-{generation_id}/input.json",
     ]
 
 
