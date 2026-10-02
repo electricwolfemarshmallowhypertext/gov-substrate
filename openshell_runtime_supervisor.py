@@ -163,6 +163,21 @@ class OpenShellRuntimeSupervisor:
             for line in output.splitlines() if ":" in line
         }
 
+    @staticmethod
+    def _worker_output(output: str) -> str:
+        candidates = []
+        for line in output.splitlines():
+            try:
+                value = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if (isinstance(value, dict) and set(value) == {"text"}
+                    and isinstance(value["text"], str)):
+                candidates.append(line)
+        if len(candidates) != 1:
+            raise RuntimeError("OpenShell worker output is missing or ambiguous")
+        return candidates[0]
+
     def run(self, generation_id: str, sealed_context: str) -> str:
         self._name(generation_id)
         process = None
@@ -184,7 +199,7 @@ class OpenShellRuntimeSupervisor:
                     self.stop((generation_id,))
                     raise RuntimeError("local generation stopped or failed")
             self._wait_absent(generation_id)
-            return stdout
+            return self._worker_output(stdout)
         finally:
             with self._lock:
                 self._running.pop(generation_id, None)

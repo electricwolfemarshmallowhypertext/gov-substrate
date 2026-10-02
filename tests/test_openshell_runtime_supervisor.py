@@ -104,3 +104,11 @@ def test_list_parser_accepts_collection_and_rejects_other_shapes(tmp_path):
     assert runtime._items(json.dumps({"next_page_token": "", "sandboxes": []})) == []
     with pytest.raises(RuntimeError, match="unexpected OpenShell list response"):
         runtime._items("{}")
+
+
+def test_worker_output_ignores_cli_status_and_rejects_ambiguity(tmp_path):
+    runtime = supervisor(tmp_path)
+    output = runtime._worker_output('Created sandbox\n{"text":"governed"}\nCompleted\n')
+    assert json.loads(output) == {"text": "governed"}
+    with pytest.raises(RuntimeError, match="missing or ambiguous"):
+        runtime._worker_output('{"text":"one"}\n{"text":"two"}\n')
