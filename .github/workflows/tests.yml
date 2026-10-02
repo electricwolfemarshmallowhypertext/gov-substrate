@@ -488,6 +488,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq socat
           root="$RUNNER_TEMP/openshell"
           mkdir -p "$root" "$HOME/.config/openshell/gateways/phase5/mtls"
           openshell-gateway generate-certs --output-dir "$root/tls" \
@@ -520,7 +522,7 @@ jobs:
           gateway_id = "gov-substrate-phase5"
           ttl_secs = 3600
           EOF
-          nohup env OPENSHELL_GRPC_ENDPOINT=https://host.openshell.internal:18670 \
+          nohup env OPENSHELL_GRPC_ENDPOINT=https://host.openshell.internal:18671 \
             OPENSHELL_DOCKER_TLS_CA="$root/tls/ca.crt" \
             OPENSHELL_DOCKER_TLS_CERT="$root/tls/client/tls.crt" \
             OPENSHELL_DOCKER_TLS_KEY="$root/tls/client/tls.key" \
@@ -537,6 +539,10 @@ jobs:
             fi
             sleep 1
           done
+          bridge_ip="$(docker network inspect bridge -f '{{(index .IPAM.Config 0).Gateway}}')"
+          nohup socat "TCP-LISTEN:18671,bind=$bridge_ip,reuseaddr,fork" \
+            TCP:127.0.0.1:18670 >"$root/bridge-proxy.log" 2>&1 &
+          echo $! > "$root/bridge-proxy.pid"
           openshell gateway remove phase5 >/dev/null 2>&1 || true
           openshell gateway add https://127.0.0.1:18670 --local --name phase5
           openshell gateway select phase5
@@ -575,6 +581,7 @@ jobs:
           path: |
             ${{ runner.temp }}/runtime-evidence/openshell.json
             ${{ runner.temp }}/openshell/gateway.log
+            ${{ runner.temp }}/openshell/bridge-proxy.log
           if-no-files-found: error
       - name: Remove OpenShell test resources
         if: always()
@@ -584,6 +591,9 @@ jobs:
             --names 2>/dev/null | xargs --no-run-if-empty openshell sandbox delete || true
           if [[ -f "$RUNNER_TEMP/openshell/gateway.pid" ]]; then
             kill "$(cat "$RUNNER_TEMP/openshell/gateway.pid")" 2>/dev/null || true
+          fi
+          if [[ -f "$RUNNER_TEMP/openshell/bridge-proxy.pid" ]]; then
+            kill "$(cat "$RUNNER_TEMP/openshell/bridge-proxy.pid")" 2>/dev/null || true
           fi
           if [[ -n "${OPENSHELL_PROBE_IMAGE:-}" ]]; then
             docker image rm "$OPENSHELL_PROBE_IMAGE" || true
