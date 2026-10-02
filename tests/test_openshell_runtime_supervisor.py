@@ -102,5 +102,6 @@ def test_control_failure_never_reports_confirmed_shutdown(tmp_path):
 def test_list_parser_accepts_collection_and_rejects_other_shapes(tmp_path):
     runtime = supervisor(tmp_path)
     assert runtime._items(json.dumps([item("f" * 32)]))[0]["id"].startswith("sandbox-")
+    assert runtime._items(json.dumps({"next_page_token": "", "sandboxes": []})) == []
     with pytest.raises(RuntimeError, match="unexpected OpenShell list response"):
         runtime._items("{}")

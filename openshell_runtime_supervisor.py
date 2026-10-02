@@ -73,6 +73,8 @@ class OpenShellRuntimeSupervisor:
             return value
         if isinstance(value, dict) and isinstance(value.get("items"), list):
             return value["items"]
+        if isinstance(value, dict) and isinstance(value.get("sandboxes"), list):
+            return value["sandboxes"]
         raise RuntimeError("unexpected OpenShell list response")
 
     def _list(self, selector: str) -> list[dict]:
