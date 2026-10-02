@@ -8,7 +8,7 @@ Can NVIDIA OpenShell implement the shared runtime-supervisor contract while Gove
 
 The evaluation pins NVIDIA OpenShell `v0.1.2` from NVIDIA's official GitHub release and verifies the Debian package SHA-256 before installation. The authoritative run uses the OpenShell Docker driver on an Ubuntu 24.04 GitHub-hosted runner.
 
-Each generation receives one OpenShell sandbox. The supervisor binds the complete generation identifier and owner to sandbox labels, supplies sealed context over standard input, disables automatic providers, and applies a default-deny policy with:
+Each generation receives one OpenShell sandbox. The supervisor binds the complete generation identifier and owner to sandbox labels, disables automatic providers, and applies a default-deny policy with:
 
 - no network policy grants;
 - read-only system paths;
@@ -16,6 +16,8 @@ Each generation receives one OpenShell sandbox. The supervisor binds the complet
 - Landlock as a hard requirement;
 - UID and GID `65534`;
 - an empty worker environment except `PATH` and `HOME`.
+
+The trusted supervisor uploads the sealed manifest through OpenShell's authenticated control plane to a private per-generation path under `/tmp`. The canonical worker waits for that file and consumes it through standard input. The worker receives no upload credential, provider access, prior conversation, or alternate context channel.
 
 The gateway requires an authenticated operator connection and a gateway launch token. The worker receives neither gateway credentials nor a control path.
 
@@ -36,7 +38,18 @@ The backend uses the unchanged runtime conformance suite:
 
 The suite also reads `/proc/self/status` inside the real sandbox and requires UID `65534`, `NoNewPrivs=1`, seccomp filtering, and zero inheritable, permitted, effective, bounding, and ambient Linux capabilities.
 
+OpenShell retains a protected sandbox namespace leader at PID 1. The hostile probe therefore distinguishes that runtime process from unrelated application processes and makes a real `kill(1, 0)` attempt. OpenShell's signal mediator denied the attempt, and the probe found no unrelated application process.
+
 The CI run records the OpenShell version, Docker driver, policy hash, hostile-probe image identity, host, and sandbox configuration as an uploaded evidence artifact.
+
+## Result
+
+At source commit `ee0c41e68a2bd834d94407787ddd73c807d25674`, the [authoritative Phase 5 CI run](https://github.com/electricwolfemarshmallowhypertext/gov-substrate/actions/runs/37021722123) passed:
+
+- **3/3 supervisor-conformance tests**;
+- **2/2 runtime-enforcement tests**.
+
+The real sandbox blocked the tested direct network and DNS paths, filesystem and socket paths, ambient secrets, persistence channels, unrelated processes, and namespace-leader control. Sealed input, private temporary storage, exact sandbox termination, late-completion rejection, and orphan reconciliation remained functional.
 
 ## Negative environment result retained
 

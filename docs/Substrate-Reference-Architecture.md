@@ -31,7 +31,7 @@ The substrate checks the circuit breaker before authorization and again before e
 | Hosted-provider internals | External. The substrate can record what it sent and accepted back but cannot attest to hidden provider context, retention, or internal execution. |
 | Fully compromised trusted host or kernel | Outside the current boundary. It can bypass process-local enforcement, steal credentials, or rewrite local evidence. |
 
-The substrate API is independent of Docker. The v0.5.0 release evidence used Docker/OCI. Current `main` adds post-release evidence from rootless Podman, gVisor, Wasmtime/WASI, native Linux, native Windows, a disposable Kind/Calico cluster, and a disposable managed GKE Autopilot cluster under recorded configurations. Any other backend requires the same level of runtime-specific proof before equivalent claims are made.
+The substrate API is independent of Docker. The v0.5.0 release evidence used Docker/OCI. Current `main` adds post-release evidence from rootless Podman, gVisor, Wasmtime/WASI, NVIDIA OpenShell, native Linux, native Windows, a disposable Kind/Calico cluster, and a disposable managed GKE Autopilot cluster under recorded configurations. Any other backend requires the same level of runtime-specific proof before equivalent claims are made.
 
 ## Managed state boundary (Milestone 1)
 
@@ -202,6 +202,8 @@ size-limited temporary volumes, and an optional read-only model PVC. Runtime
 identity is the exact Pod UID. Stop and reconciliation use a UID deletion
 precondition, verify removal, and reject name reuse.
 
+`OpenShellRuntimeSupervisor` creates one NVIDIA OpenShell sandbox per generation. It binds the full generation and deployment owner to trusted labels, uploads the sealed manifest through OpenShell's authenticated control plane, and runs one canonical worker without providers, credentials, prior history, or alternate context. The checked-in policy defaults to no network grants, requires Landlock, runs as UID and GID 65534, and limits writable storage to private `/tmp` and `/dev/shm` paths. Circuit shutdown deletes and verifies the exact sandbox; restart reconciliation selects only substrate-owned managed sandboxes. OpenShell's protected namespace leader remains visible as PID 1, so the hostile probe separately verifies that the worker cannot signal it and finds no unrelated application process.
+
 Governance Substrate defines the boundary. Docker/OCI is the reference
 enforcement backend, not a product requirement. Rootless Podman and gVisor
 `runsc` have passed the same real conformance and enforcement assertions on
@@ -211,7 +213,7 @@ native Windows supervisors have passed the same shared assertions on recorded
 GitHub-hosted Ubuntu and Windows configurations. Kubernetes has passed the same
 shared assertions in a recorded disposable Kind 0.33.0 cluster running
 Kubernetes 1.36.4 and Calico 3.32.2 and in a disposable managed GKE Autopilot
-cluster running Kubernetes 1.35.8. A native macOS supervisor remains
+cluster running Kubernetes 1.35.8. NVIDIA OpenShell v0.1.2 with its Docker driver has passed the same assertions on recorded Ubuntu 24.04 CI. A native macOS supervisor remains
 unimplemented.
 
 ### Backend-neutral runtime conformance
@@ -298,8 +300,8 @@ enforces them:
 | Claim | Implemented boundary | Current evidence | Limit |
 | --- | --- | --- | --- |
 | Governed state and audit integrity | Transactional state gate, append-only audit triggers, hash chain, and state snapshots | Unit and deterministic adversarial tests | SQLite and its host remain trusted; a database owner can rewrite local evidence |
-| Network and filesystem confinement | Networkless workers, substrate-owned adapters, scoped workspace, and path controls | Real Docker environment probes plus the shared hostile-worker suite under native Docker, rootless Podman, gVisor, Wasmtime/WASI, native Linux, native Windows, disposable Kind/Calico, and disposable GKE Autopilot | Applies to the recorded runtime settings and granted mounts or handles |
-| Execution authority and emergency stop | One-use grants, execution-time circuit checks, runtime supervisor, and orphan reconciliation | Unit tests plus real native Docker, rootless Podman, gVisor, Wasmtime, native Linux, native Windows, Kind/Calico, and GKE Autopilot worker stop, removal, late-completion rejection, and restart reconciliation | A different backend or host configuration requires its own real evidence |
+| Network and filesystem confinement | Networkless workers, substrate-owned adapters, scoped workspace, and path controls | Real Docker environment probes plus the shared hostile-worker suite under native Docker, rootless Podman, gVisor, Wasmtime/WASI, NVIDIA OpenShell, native Linux, native Windows, disposable Kind/Calico, and disposable GKE Autopilot | Applies to the recorded runtime settings and granted mounts or handles |
+| Execution authority and emergency stop | One-use grants, execution-time circuit checks, runtime supervisor, and orphan reconciliation | Unit tests plus real native Docker, rootless Podman, gVisor, Wasmtime, NVIDIA OpenShell, native Linux, native Windows, Kind/Calico, and GKE Autopilot worker stop, removal, late-completion rejection, and restart reconciliation | A different backend or host configuration requires its own real evidence |
 | Local generated-output provenance | Sealed governed context, isolated local worker, inherited classification, and governed output object | Real Qwen and Phi inference through the same Docker worker | Establishes boundary behavior, not model quality or arbitrary backend equivalence |
 | Hosted transfer and generated-output provenance | Provider classification grants, sealed inputs, host-side credentials, governed return path, and publication gate | Bounded live OpenAI, Anthropic, Gemini, and pinned OpenRouter runs | The substrate cannot attest to hidden provider context, retention, or execution |
 | Incident-derived escape resistance | Exact request shapes and routes, denied delegated services, scoped state, inherited classification, execution-time revocation, and audit redaction | Deterministic policy checks plus a real networkless Docker agent with reachable relay and third-party fixtures | Covers the named incident classes and recorded configurations, not unknown exploits or all parser/protocol variants |
@@ -397,7 +399,8 @@ The same sealed-input handoff supports [thin OpenAI, Anthropic, direct Gemini, a
 ### Scope and limits
 
 The runtime tests prove only the recorded Docker, Podman, gVisor, Wasmtime,
-native Linux, native Windows, Kind/Calico, and GKE Autopilot configurations.
+NVIDIA OpenShell v0.1.2 Docker-driver, native Linux, native Windows,
+Kind/Calico, and GKE Autopilot configurations.
 They do not prove confinement for arbitrary host processes, privileged
 containers, other managed Kubernetes services, other CNIs, admission stacks,
 service meshes, kernel or Windows builds, or agents given additional mounts,

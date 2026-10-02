@@ -1,6 +1,6 @@
 # Runtime Conformance
 
-Phases 2, 3, 4, 6, and 7 separate the runtime boundary from model behavior. A backend must
+Phases 2, 3, 4, 5, 6, and 7 separate the runtime boundary from model behavior. A backend must
 implement the same supervisor contract and pass the same real assertions before
 the project describes it as conformant.
 
@@ -47,7 +47,7 @@ attempts against:
 - Docker, containerd, substrate, and ungranted Unix sockets;
 - workspace, host, secret, IPC, and model paths;
 - its process environment and `/proc` environments;
-- host and unrelated process IDs;
+- host and unrelated process IDs, plus control attempts against a distinct runtime namespace leader;
 - prior-worker files in `/tmp` and `/dev/shm`; and
 - fresh private temporary and shared-memory storage.
 
@@ -118,6 +118,18 @@ passed the same **3 + 2** assertions on Ubuntu 24.04.5 with Linux
 before execution and uploaded the sanitized environment manifest for source
 commit `3499280165a62a4eaabd59ee0ce58886855d59f7`. See the
 [Wasmtime/WASI runtime evaluation](Wasmtime-Runtime-Evaluation.md).
+
+## Phase 5 NVIDIA OpenShell backend
+
+`OpenShellRuntimeSupervisor` implements the unchanged contract with one NVIDIA OpenShell sandbox per generation. It binds the complete generation and owner to trusted labels, uploads the sealed manifest through OpenShell's authenticated control plane, and starts one canonical worker with no providers, credentials, prior history, or alternate context. The checked-in policy defaults to no network grants, runs as UID and GID 65534, requires Landlock, exposes only required read-only system paths, and supplies private writable `/tmp` and `/dev/shm` paths.
+
+The gateway remains on loopback. CI exposes a bridge-only authenticated callback path to the Docker driver without making the gateway a public listener. The supervisor records the exact sandbox identity, deletes and verifies that sandbox on a circuit trip, rejects late completion, and reconciles only sandboxes carrying the substrate owner and managed labels.
+
+OpenShell retains a protected namespace leader at PID 1. The hostile probe excludes that runtime process from unrelated application-process enumeration and separately attempts `kill(1, 0)`. OpenShell's signal mediator denied the attempt; no unrelated application process was visible.
+
+The [Phase 5 CI run](https://github.com/electricwolfemarshmallowhypertext/gov-substrate/actions/runs/37021722123) passed **3 conformance and 2 runtime-enforcement tests** with OpenShell `v0.1.2`, its Docker driver, and the shared hostile Linux probe on Ubuntu 24.04. See the [OpenShell runtime evaluation](OpenShell-Runtime-Evaluation.md).
+
+The earlier WSL2 attempt is retained as a negative compatibility result: the gateway created the sandbox, but the Docker Desktop boundary prevented the supervisor callback and the worker never executed. It is not counted as runtime evidence.
 
 ## Phase 6 native operating-system supervisors
 
