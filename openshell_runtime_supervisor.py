@@ -4,6 +4,7 @@ import json
 import os
 import re
 import subprocess
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -104,12 +105,41 @@ class OpenShellRuntimeSupervisor:
         return self._command(
             "sandbox", "create", "--name", name,
             "--from", self.image, "--policy", str(self.policy),
-            "--no-auto-providers", "--no-keep", "--no-tty",
+            "--no-auto-providers", "--detach", "--no-tty",
             "--label", f"{_MANAGED_LABEL}=true",
             "--label", f"{_GENERATION_LABEL}={generation_id}",
             "--label", f"{_OWNER_LABEL}={self.project}", "--",
             "/usr/bin/env", "-i", "PATH=/usr/local/bin:/usr/bin:/bin",
-            "HOME=/tmp", "/usr/local/bin/gov-runtime-probe",
+            "HOME=/tmp", "/bin/sleep", "3600",
+        )
+
+    def launch(self, generation_id: str) -> None:
+        self._name(generation_id)
+        self._openshell(*self._create_command(generation_id)[5:], timeout=120)
+
+    def start_worker(self, generation_id: str, sealed_context: str) -> subprocess.Popen:
+        name = self._name(generation_id)
+        remote_directory = f"/tmp/gov-input-{generation_id}"
+        with tempfile.TemporaryDirectory(prefix="gov-openshell-") as temporary:
+            source = Path(temporary) / f"gov-input-{generation_id}"
+            source.mkdir()
+            context = source / "input.json"
+            context.write_text(sealed_context, encoding="utf-8")
+            context.chmod(0o644)
+            self._openshell(
+                "sandbox", "upload", name, str(source), "/tmp", timeout=60
+            )
+        command = self._command(
+            "sandbox", "exec", "--name", name, "--no-login-shell", "--no-tty",
+            "/bin/sh", "-c",
+            'exec /usr/bin/env -i PATH=/usr/local/bin:/usr/bin:/bin HOME=/tmp '
+            '/usr/local/bin/gov-runtime-probe < "$1"',
+            "gov-runtime-probe", f"{remote_directory}/input.json",
+        )
+        return subprocess.Popen(
+            command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, text=True, encoding="utf-8",
+            errors="replace", env=self._environment,
         )
 
     def runtime_identity(self, generation_id: str) -> str | None:
@@ -130,19 +160,17 @@ class OpenShellRuntimeSupervisor:
 
     def run(self, generation_id: str, sealed_context: str) -> str:
         self._name(generation_id)
-        with self._lock:
-            if generation_id in self._started or generation_id in self._cancelled:
-                raise RuntimeError("generation already running or revoked")
-            self._started.add(generation_id)
-            process = subprocess.Popen(
-                self._create_command(generation_id), stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-                encoding="utf-8", errors="replace", env=self._environment,
-            )
-            self._running[generation_id] = process
+        process = None
         try:
+            with self._lock:
+                if generation_id in self._started or generation_id in self._cancelled:
+                    raise RuntimeError("generation already running or revoked")
+                self._started.add(generation_id)
+                self.launch(generation_id)
+                process = self.start_worker(generation_id, sealed_context)
+                self._running[generation_id] = process
             try:
-                stdout, _ = process.communicate(input=sealed_context, timeout=180)
+                stdout, _ = process.communicate(timeout=180)
             except subprocess.TimeoutExpired:
                 self.stop((generation_id,))
                 raise RuntimeError("OpenShell generation timed out") from None
@@ -150,11 +178,13 @@ class OpenShellRuntimeSupervisor:
                 if generation_id in self._cancelled or process.returncode:
                     self.stop((generation_id,))
                     raise RuntimeError("local generation stopped or failed")
+            self._openshell("sandbox", "delete", self._name(generation_id), timeout=30)
             self._wait_absent(generation_id)
             return stdout
         finally:
             with self._lock:
                 self._running.pop(generation_id, None)
+            self.stop((generation_id,))
 
     def _wait_absent(self, generation_id: str, timeout: float = 45) -> None:
         deadline = time.monotonic() + timeout

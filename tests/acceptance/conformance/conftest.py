@@ -949,14 +949,8 @@ class OpenShellConformanceBackend:
         raise AssertionError("OpenShell conformance worker did not start")
 
     def launch_orphan(self, generation_id, sealed_context):
-        process = subprocess.Popen(
-            self.supervisor._create_command(generation_id), cwd=ROOT,
-            env=self.supervisor._environment, stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-            encoding="utf-8", errors="replace",
-        )
-        process.stdin.write(sealed_context)
-        process.stdin.close()
+        self.supervisor.launch(generation_id)
+        process = self.supervisor.start_worker(generation_id, sealed_context)
         self._processes.append(process)
         return self.wait_running(generation_id)
 
