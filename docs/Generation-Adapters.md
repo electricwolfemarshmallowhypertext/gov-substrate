@@ -20,6 +20,14 @@ a new governed object with the sealed parents and label. The adapter cannot
 set its own classification or parents. Publication still requires a governed
 `public` object.
 
+Phase 9 adds a strict gateway mode without removing the direct adapter
+interface. A strict provider registration seals the model, upstream, fallback,
+collection, ZDR, and retention fields and can require operator approval at a
+classification threshold. `run_with_gateway` passes the sealed claim to a
+separate gateway. The gateway verifies a per-actor, per-generation credential,
+owns the provider credential, and returns the text with a signed response
+receipt. The substrate verifies that receipt before creating the output object.
+
 ## Add to an existing agent stack
 
 Keep the agent's provider key and the substrate operator credential in the
@@ -134,6 +142,28 @@ providers:
   openai: {max_classification: public}
 ```
 
+A provider executed through the separate gateway uses the stricter shape:
+
+```yaml
+providers:
+  strict-provider:
+    max_classification: private
+    approval_required_at: private
+    gateway_required: true
+    gateway_secret_env: GOV_SUBSTRATE_STRICT_PROVIDER_GATEWAY_SECRET
+    request:
+      model: fixed-model
+      upstream: fixed-upstream
+      allow_fallbacks: false
+      data_collection: deny
+      zdr: true
+      retention: none
+```
+
+The gateway secret is resolved from the host environment and is excluded from
+the registry and audit. Only a digest of each short-lived gateway credential is
+stored. The worker receives neither that credential nor the provider secret.
+
 The labels are ordered `public < internal < private < restricted`. With no
 `providers` mapping, every hosted request is denied. The registry is sealed
 by the existing integrity check; changing grants on an initialized database
@@ -166,9 +196,12 @@ classification, registry hash, provider, and expiry. The claim consumes it and
 records the use. An operator circuit trigger revokes affected unclaimed and
 claimed runs. The host must not make a provider call after a denied claim.
 
-The substrate can verify the context it supplied and the output object it
-records. It cannot attest to a hosted provider's internal runtime, retention,
-or any context that provider might add internally. The optional local worker
+The direct adapters rely on their trusted host process to preserve the sealed
+request. Strict gateway mode detects host-adapter changes to governed inputs,
+provider policy, or returned bytes after sealing. The substrate still cannot
+attest to a hosted provider's internal runtime, undisclosed retention, or hidden
+context. A compromised kernel can also steal local client credentials or alter
+observations before they reach the external witness. The optional local worker
 provides a stronger runtime boundary in the documented container setup.
 
 API request shapes follow the official [OpenAI Responses API](https://developers.openai.com/api/docs/guides/text),

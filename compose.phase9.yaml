@@ -1,0 +1,67 @@
+services:
+  provider:
+    build:
+      context: .
+      dockerfile: Dockerfile.phase9
+    image: gov-substrate-phase9:${LAB_IMAGE_TAG:-dev}
+    command: ["python", "/app/service.py", "provider"]
+    environment:
+      PORT: "8080"
+      PROVIDER_CREDENTIAL: "phase9-fixture-provider-credential"
+    networks: [provider]
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+
+  gateway:
+    image: gov-substrate-phase9:${LAB_IMAGE_TAG:-dev}
+    command: ["python", "/app/service.py", "gateway"]
+    environment:
+      PORT: "8443"
+      PROVIDER_URL: "http://provider:8080/generate"
+      PROVIDER_CREDENTIAL: "phase9-fixture-provider-credential"
+      GATEWAY_SIGNING_SECRET: "phase-9-test-gateway-secret"
+    volumes:
+      - ${PHASE9_CERTS}:/certs:ro
+    ports: ["127.0.0.1::8443"]
+    networks: [control, provider]
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    depends_on: [provider]
+
+  witness:
+    image: gov-substrate-phase9:${LAB_IMAGE_TAG:-dev}
+    command: ["python", "/app/service.py", "witness"]
+    user: "0:0"
+    environment:
+      PORT: "8444"
+      WITNESS_PATH: "/data/witness.json"
+    volumes:
+      - ${PHASE9_CERTS}:/certs:ro
+      - witness-data:/data
+    ports: ["127.0.0.1::8444"]
+    networks: [control]
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+
+  worker:
+    image: gov-substrate-phase9:${LAB_IMAGE_TAG:-dev}
+    command: ["python", "/app/worker_probe.py"]
+    network_mode: none
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+
+networks:
+  control: {}
+  provider:
+    internal: true
+
+volumes:
+  witness-data: {}

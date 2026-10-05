@@ -20,5 +20,25 @@ actors:
 operator_token_env: GOV_SUBSTRATE_OPERATOR_TOKEN
 circuit_operator_token_env: GOV_SUBSTRATE_CIRCUIT_OPERATOR_TOKEN
 # Hosted generation defaults to deny. An audited registry migration is required
-# before adding a grant, for example: openai: {max_classification: public}.
+# before adding a grant. A strict gateway grant can bind the model, upstream,
+# privacy settings, high-risk approval threshold, and external verification key:
+# strict-provider:
+#   max_classification: private
+#   approval_required_at: private
+#   gateway_required: true
+#   gateway_secret_env: GOV_SUBSTRATE_STRICT_PROVIDER_GATEWAY_SECRET
+#   request:
+#     model: fixed-model
+#     upstream: fixed-upstream
+#     allow_fallbacks: false
+#     data_collection: deny
+#     zdr: true
+#     retention: none
 providers: {}
+
+# Optional automatic containment uses denied attempts only. Enabling it also
+# requires circuit_operator_token_env above.
+# monitoring:
+#   window_seconds: 60
+#   actor_denials: 10
+#   cross_actor_denials: 3

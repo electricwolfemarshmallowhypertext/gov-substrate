@@ -38,6 +38,7 @@ The circuit breaker is checked before authorization and again before execution. 
 - **Object provenance:** transforms and generated text retain exact parents and inherit the highest input classification. Lowering classification requires an audited operator action.
 - **Hosted transfer:** external model providers are denied by default and must be registered for the classifications they may receive.
 - **Execution control:** one-use grants, scoped emergency stops, verified worker shutdown, and orphan reconciliation.
+- **Compromised-adapter controls:** exact provider request identities, short-lived gateway credentials, request-bound operator approval, signed completion receipts, independent audit witnessing, and anomaly-triggered containment.
 
 Generation is model- and provider-agnostic. The optional local worker and the OpenAI, Anthropic, Gemini, and OpenRouter adapters use the same sealed-input and governed-output path.
 
@@ -51,6 +52,7 @@ The project reports six kinds of evidence separately:
 - **Model integration** uses real Qwen inference through the same sealed-input and governed-output path, separately from the hostile-worker proof.
 - **Hosted validation** verifies the governed request and output path with external providers. It does not attest to a provider's internal runtime.
 - **Incident-derived acceptance** replays documented proxy, authorization, side-channel, persistence, redirect, and exfiltration failure classes against local services and isolated workers.
+- **Compromised-host/provider evaluation** separates detectable adapter or provider contradictions from behavior that remains outside the observable boundary.
 
 [Runtime conformance](docs/Runtime-Conformance.md) defines the shared contract and evidence rules. Native Ubuntu Docker/containerd, rootless Podman/crun, gVisor/runsc, Wasmtime/WASI, NVIDIA OpenShell, native Linux, native Windows, Kind/Calico, and GKE Autopilot use the same real suite. Docker/OCI remains the reference backend. Each result comes from the hostile probe running in the named backend rather than from configuration inspection alone.
 
@@ -92,6 +94,7 @@ Local model evidence uses pinned, hash-verified official Qwen and Microsoft Phi 
 - [Environment skeleton](docs/Environment-Skeleton-Evaluation.md)
 - [Local-model runtime matrix](docs/Local-Model-Matrix-Evaluation.md)
 - [Incident-derived escape evaluation](docs/Incident-Derived-Escape-Evaluation.md)
+- [Compromised host/provider evaluation](docs/Compromised-Host-Provider-Evaluation.md)
 - [Free-form output provenance](docs/Free-Form-Output-Provenance.md)
 - [Generation adapters](docs/Generation-Adapters.md)
 - [Hosted OpenAI validation](docs/Hosted-Object-Validation.md)

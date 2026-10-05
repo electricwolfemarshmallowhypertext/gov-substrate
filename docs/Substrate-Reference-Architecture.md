@@ -24,7 +24,9 @@ The substrate checks the circuit breaker before authorization and again before e
 | Agent, model, and worker | Untrusted. Their requested actions and generated content do not create authority. |
 | Substrate and loaded capability registry | Trusted policy and state boundary. A registry change against an existing database fails closed. |
 | Runtime supervisor | Trusted enforcement component. It launches substrate-owned workers, targets exact runtime identities, verifies shutdown, and reconciles orphans. |
-| Host-side provider adapter | Trusted to send only the sealed inputs it claims and to return provider output to the substrate. Provider credentials remain here. |
+| Host-side provider adapter | Untrusted for strict gateway deployments. It can carry a sealed request and signed receipt but cannot alter either without detection. Legacy direct adapters remain inside the trusted host boundary. |
+| Provider gateway | Trusted external execution boundary for strict providers. It verifies a short-lived request credential, owns the provider credential, enforces the sealed request profile, and signs the exact response identity. |
+| Independent audit witness | Optional external append-only observer reached with mutual TLS. Missing or divergent witness state makes transitions and audit reads fail closed. |
 | Operator credentials | Trusted and unavailable to agents, workers, and provider calls. Separate credentials control ordinary operations and the emergency circuit. |
 | SQLite state and audit store | Inside the trusted host boundary. Hash chaining and triggers detect ordinary tampering, but a database owner can rewrite both data and chain. |
 | Runtime engine, host kernel, and isolation configuration | Enforcement dependencies for the tested deployments. Their guarantees must be tested in each actual environment. |
@@ -251,6 +253,12 @@ and SHA-256 hashes, calculates the highest classification, and checks whether
 that provider may receive that classification. Unknown providers and inputs
 above the provider's grant are denied before an API call.
 
+A strict provider registration also seals the model, upstream, fallback,
+collection, ZDR, and retention fields. Providers can require exact operator
+approval at a classification threshold. That approval is short-lived, one use,
+and bound to the actor, session, request, input manifest, provider,
+classification, and current registry policy.
+
 An admitted request issues a one-use claim bound to the actor, session,
 generation manifest, provider, policy digest, and expiry. The trusted host-side
 adapter claims that exact manifest once. It may send only those resolved inputs;
@@ -258,6 +266,15 @@ the adapters do not accept an additional prompt, prior conversation, agent
 tools, or agent-held provider credentials. Provider output returns through the
 adapter and becomes an immutable governed object whose parents are the sealed
 inputs and whose classification is their highest classification.
+
+For `gateway_required` providers, the claim is also a signed, short-lived,
+one-use gateway credential. The separate gateway is the only component holding
+the provider credential. It validates the sealed request identity and returns a
+signed receipt covering the generation, provider, request identity, exact
+response hash, and credential. The substrate rejects missing, altered, replayed,
+expired, cross-generation, or circuit-revoked receipts. The reference Docker
+acceptance gives the worker no network and proves only the gateway can reach the
+provider fixture.
 
 The OpenRouter adapter additionally pins the model and upstream, disables
 fallback providers, and verifies the reported upstream. Direct-provider and
@@ -305,6 +322,7 @@ enforces them:
 | Local generated-output provenance | Sealed governed context, isolated local worker, inherited classification, and governed output object | Real Qwen and Phi inference through the same Docker worker | Establishes boundary behavior, not model quality or arbitrary backend equivalence |
 | Hosted transfer and generated-output provenance | Provider classification grants, sealed inputs, host-side credentials, governed return path, and publication gate | Bounded live OpenAI, Anthropic, Gemini, and pinned OpenRouter runs | The substrate cannot attest to hidden provider context, retention, or execution |
 | Incident-derived escape resistance | Exact request shapes and routes, denied delegated services, scoped state, inherited classification, execution-time revocation, and audit redaction | Deterministic policy checks plus a real networkless Docker agent with reachable relay and third-party fixtures | Covers the named incident classes and recorded configurations, not unknown exploits or all parser/protocol variants |
+| Compromised adapter/provider resistance | Sealed provider profile, request-bound approval, signed one-use gateway credential and completion receipt, external witness, and automatic scoped containment | Deterministic malicious-adapter tests, real Docker mTLS gateway/witness acceptance, and a disposable Kind/Calico package-mirror blast-radius replay | A hostile kernel and unobservable provider internals remain outside the proof |
 
 The v0.5.0 release was verified with **91 passing unit tests and 10 opt-in
 skips**, **4 passing Qwen acceptance tests**, **4 passing Phi acceptance tests**,
@@ -410,8 +428,10 @@ small UTF-8 files in the mounted workspace. Delegated services are denied rather
 than mediated downstream. Object provenance applies to stored bytes, the two
 fixed transforms, and free-form text from sealed generation contexts. The host
 adapter and worker enforce a request containing only substrate-assembled inputs;
-the sensitive actor's raw external publication path remains denied. **A
-compromised host or provider that secretly injects context sits outside this
-boundary.**
+the sensitive actor's raw external publication path remains denied. A strict
+provider gateway detects changes to the sealed inputs or provider request and
+binds the accepted response bytes to that request. **A fully compromised host
+kernel or provider behavior not exposed in verifiable metadata remains outside
+this boundary.**
 
 An admitted operation cannot be rolled back; its decision event commits before execution, and a process crash before the outcome event can leave an unresolved attempt. A database owner can drop triggers or rewrite the hash chain; external anchoring is needed for stronger immutability. Invalid authentication and malformed HTTP requests are rejected before an actor can be attributed and are not part of the audit. The four health values remain prototype proxies, not empirical validation of the paper's full framework.

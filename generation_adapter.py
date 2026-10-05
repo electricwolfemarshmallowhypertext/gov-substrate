@@ -17,41 +17,75 @@ class SealedInput:
     content: bytes
 
 
+@dataclass(frozen=True)
+class SealedGeneration:
+    generation_id: str
+    provider: str | None
+    inputs: tuple[SealedInput, ...]
+    input_ids: tuple[str, ...]
+    input_hashes: tuple[str, ...]
+    provider_request: dict | None
+    request_hash: str | None
+    gateway_credential: str | None
+
+
 class GenerationAdapter(Protocol):
     service_id: str | None
     def generate(self, inputs: tuple[SealedInput, ...]) -> str: ...
 
 
-def claim_sealed_inputs(client, generation_id: str,
-                        operator_token: str, execution_token: str,
-                        service_id: str | None = None) -> tuple[SealedInput, ...]:
+class GatewayGenerationAdapter(Protocol):
+    service_id: str
+    def generate_gateway(self, claim: SealedGeneration) -> tuple[str, dict]: ...
+
+
+def claim_generation_context(client, generation_id: str,
+                             operator_token: str, execution_token: str,
+                             service_id: str | None = None) -> SealedGeneration:
     headers = {"Authorization": f"Bearer {operator_token}"}
     request = {"generation_id": generation_id, "execution_token": execution_token}
     if service_id is not None:
         request["provider"] = service_id
-    claim = client.post("/generations/claim", headers=headers,
-                        json=request)
-    if claim.status_code != 200 or claim.json().get("decision") != "allow":
+    response = client.post("/generations/claim", headers=headers, json=request)
+    if response.status_code != 200 or response.json().get("decision") != "allow":
         raise RuntimeError("Sealed generation context could not be claimed")
-    if claim.json().get("provider") != service_id:
+    claim = response.json()
+    if claim.get("provider") != service_id:
         raise RuntimeError("Sealed generation provider mismatch")
 
     inputs: list[SealedInput] = []
-    for source in claim.json()["inputs"]:
+    ids: list[str] = []
+    hashes: list[str] = []
+    for source in claim["inputs"]:
         payload = base64.b64decode(source["content_base64"], validate=True)
         if hashlib.sha256(payload).hexdigest() != source["sha256"]:
             raise RuntimeError("Sealed generation input hash mismatch")
         inputs.append(SealedInput(source["media_type"], payload))
-    return tuple(inputs)
+        ids.append(source["id"])
+        hashes.append(source["sha256"])
+    return SealedGeneration(
+        generation_id, service_id, tuple(inputs), tuple(ids), tuple(hashes),
+        claim.get("provider_request"), claim.get("request_hash"),
+        claim.get("gateway_credential"))
+
+
+def claim_sealed_inputs(client, generation_id: str,
+                        operator_token: str, execution_token: str,
+                        service_id: str | None = None) -> tuple[SealedInput, ...]:
+    return claim_generation_context(client, generation_id, operator_token,
+                                    execution_token, service_id).inputs
 
 
 def complete_generated_text(client, generation_id: str,
-                            operator_token: str, text: str) -> dict:
+                            operator_token: str, text: str,
+                            receipt: dict | None = None) -> dict:
     if type(text) is not str or not text.strip():
         raise RuntimeError("Generation adapter returned no text")
     headers = {"Authorization": f"Bearer {operator_token}"}
-    completion = client.post("/generations/complete", headers=headers,
-                             json={"generation_id": generation_id, "text": text})
+    request = {"generation_id": generation_id, "text": text}
+    if receipt is not None:
+        request["receipt"] = receipt
+    completion = client.post("/generations/complete", headers=headers, json=request)
     if completion.status_code != 200 or completion.json().get("decision") != "succeeded":
         raise RuntimeError("Sealed generation completion was denied")
     return completion.json()
@@ -65,6 +99,16 @@ def run_with_adapter(client, generation_id: str, operator_token: str,
                                  adapter.service_id)
     return complete_generated_text(client, generation_id, operator_token,
                                    adapter.generate(inputs))
+
+
+def run_with_gateway(client, generation_id: str, operator_token: str,
+                     adapter: GatewayGenerationAdapter, execution_token: str) -> dict:
+    claim = claim_generation_context(client, generation_id, operator_token,
+                                     execution_token, adapter.service_id)
+    if claim.gateway_credential is None or claim.request_hash is None:
+        raise RuntimeError("Generation did not require the provider gateway")
+    text, receipt = adapter.generate_gateway(claim)
+    return complete_generated_text(client, generation_id, operator_token, text, receipt)
 
 
 class SubprocessGenerationAdapter:

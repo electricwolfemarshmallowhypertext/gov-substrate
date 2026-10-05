@@ -1,7 +1,7 @@
 FROM python:3.12-slim
 
 WORKDIR /app
-COPY pyproject.toml substrate.py network_adapter.py filesystem_adapter.py governed_objects.py generation_adapter.py hosted_generation_adapters.py runtime_supervisor.py docker_runtime_supervisor.py ./
+COPY pyproject.toml substrate.py network_adapter.py filesystem_adapter.py governed_objects.py generation_adapter.py hosted_generation_adapters.py provider_gateway.py audit_witness.py runtime_supervisor.py docker_runtime_supervisor.py ./
 RUN pip install --no-cache-dir .
 COPY tests/network_probe.py /app/network_probe.py
 COPY tests/filesystem_probe.py /app/filesystem_probe.py

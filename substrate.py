@@ -20,11 +20,13 @@ from urllib.parse import parse_qsl, quote
 
 import yaml
 from fastapi import FastAPI, Header, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
+from audit_witness import AuditWitness, MTLSAuditWitness
 from filesystem_adapter import MAX_CONTENT, check_target, parts_of, read_text, workspace_snapshot, write_text
 from governed_objects import CLASSIFICATIONS, transform
 from network_adapter import fetch, origin_and_target
+from provider_gateway import issue_gateway_credential, request_identity, verify_receipt
 from runtime_supervisor import RuntimeSupervisor, StopResult
 
 
@@ -61,14 +63,32 @@ def load_registry(path: str | Path) -> dict[str, Any]:
     if control_token is not None and (not control_token or control_token in tokens or
                                       control_token == operator_token):
         raise ValueError("circuit operator token must be distinct and nonempty")
+    providers = copy.deepcopy(data.get("providers", {}))
+    gateway_secrets = {}
+    if not isinstance(providers, dict):
+        raise ValueError("providers must be a mapping")
+    for name, grant in providers.items():
+        if not isinstance(grant, dict):
+            raise ValueError("provider grants must be mappings")
+        secret_env = grant.pop("gateway_secret_env", None)
+        if secret_env is not None:
+            if not isinstance(secret_env, str) or not secret_env:
+                raise ValueError("invalid provider gateway secret environment")
+            secret = os.environ[secret_env]
+            if not secret:
+                raise ValueError("provider gateway secret must be nonempty")
+            gateway_secrets[name] = secret.encode()
     return {"actors": actors, "tokens": tokens, "operator_token": operator_token,
-            "circuit_operator_token": control_token, "providers": data.get("providers", {})}
+            "circuit_operator_token": control_token, "providers": providers,
+            "gateway_secrets": gateway_secrets, "monitoring": data.get("monitoring")}
 
 
 class Substrate:
     def __init__(self, db_path: str | Path, registry: dict[str, Any],
                  workspace_root: str | Path | None = None,
-                 runtime_supervisor: RuntimeSupervisor | None = None):
+                 runtime_supervisor: RuntimeSupervisor | None = None,
+                 audit_witness: AuditWitness | None = None,
+                 gateway_secrets: dict[str, bytes] | None = None):
         self.db_path = str(db_path)
         self._execution_lock = threading.RLock()
         self.actors = copy.deepcopy(registry["actors"])
@@ -82,14 +102,43 @@ class Substrate:
                 self.circuit_operator_token in self.tokens):
             raise ValueError("circuit operator token must be distinct and nonempty")
         self.runtime_supervisor = runtime_supervisor
+        self.audit_witness = audit_witness
+        self.gateway_secrets = dict(gateway_secrets or {})
         self.providers = copy.deepcopy(registry.get("providers", {}))
         if not isinstance(self.providers, dict):
             raise ValueError("provider registry must be a mapping")
+        provider_keys = {"max_classification", "request", "approval_required_at",
+                         "gateway_required"}
+        request_keys = {"model", "upstream", "allow_fallbacks", "data_collection",
+                        "zdr", "retention"}
         for name, grant in self.providers.items():
+            request = grant.get("request") if isinstance(grant, dict) else None
             if (not isinstance(name, str) or not 1 <= len(name) <= 64 or
-                    not isinstance(grant, dict) or set(grant) != {"max_classification"} or
-                    grant["max_classification"] not in CLASSIFICATIONS):
+                    not isinstance(grant, dict) or set(grant) - provider_keys or
+                    grant.get("max_classification") not in CLASSIFICATIONS or
+                    (request is not None and (
+                        not isinstance(request, dict) or set(request) != request_keys or
+                        not all(isinstance(request[key], str) and request[key]
+                                for key in ("model", "upstream", "data_collection", "retention")) or
+                        type(request["allow_fallbacks"]) is not bool or
+                        type(request["zdr"]) is not bool)) or
+                    (grant.get("approval_required_at") is not None and
+                     grant["approval_required_at"] not in CLASSIFICATIONS) or
+                    type(grant.get("gateway_required", False)) is not bool):
                 raise ValueError("invalid provider transfer grant")
+            if grant.get("gateway_required") and (
+                    request is None or not isinstance(self.gateway_secrets.get(name), bytes) or
+                    not self.gateway_secrets[name]):
+                raise ValueError("gateway-required provider needs a verification secret")
+        self.monitoring = copy.deepcopy(registry.get("monitoring"))
+        if self.monitoring is not None:
+            if (not isinstance(self.monitoring, dict) or
+                    set(self.monitoring) != {"window_seconds", "actor_denials",
+                                             "cross_actor_denials"} or
+                    any(type(self.monitoring[key]) is not int or self.monitoring[key] <= 0
+                        for key in self.monitoring) or
+                    self.circuit_operator_token is None):
+                raise ValueError("invalid anomaly monitoring policy")
         self.workspace_root = Path(workspace_root).resolve(strict=True) if workspace_root else None
         if self.workspace_root is not None and not self.workspace_root.is_dir():
             raise ValueError("workspace root must be a directory")
@@ -164,6 +213,8 @@ class Substrate:
                 self.circuit_operator_token.encode()).hexdigest()
         if self.providers:
             registry_material["providers"] = self.providers
+        if self.monitoring is not None:
+            registry_material["monitoring"] = self.monitoring
         if self.workspace_root is not None:
             registry_material["workspace_root"] = str(self.workspace_root)
         self.registry_hash = digest(registry_material)
@@ -192,6 +243,21 @@ class Substrate:
                 CREATE TABLE IF NOT EXISTS generation_providers (
                     generation_id TEXT PRIMARY KEY, provider TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS generation_transfers (
+                    generation_id TEXT PRIMARY KEY, request TEXT NOT NULL,
+                    request_hash TEXT NOT NULL, approval_id TEXT
+                );
+                CREATE TABLE IF NOT EXISTS generation_receipts (
+                    generation_id TEXT PRIMARY KEY, challenge_hash TEXT NOT NULL,
+                    expires_at REAL NOT NULL, status TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS transfer_approvals (
+                    id TEXT PRIMARY KEY, actor TEXT NOT NULL, session_id TEXT NOT NULL,
+                    action_hash TEXT NOT NULL, manifest_hash TEXT NOT NULL,
+                    provider TEXT NOT NULL, classification TEXT NOT NULL,
+                    token_hash TEXT UNIQUE, expires_at REAL, status TEXT NOT NULL,
+                    reason TEXT
+                );
                 CREATE TABLE IF NOT EXISTS execution_grants (
                     id TEXT PRIMARY KEY, token_hash TEXT NOT NULL UNIQUE,
                     actor TEXT NOT NULL, session_id TEXT NOT NULL,
@@ -203,6 +269,11 @@ class Substrate:
                     scope TEXT NOT NULL, target TEXT NOT NULL,
                     active INTEGER NOT NULL, shutdown_confirmed INTEGER NOT NULL,
                     PRIMARY KEY (scope, target)
+                );
+                CREATE TABLE IF NOT EXISTS anomaly_signals (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp REAL NOT NULL,
+                    actor TEXT NOT NULL, capability TEXT NOT NULL,
+                    fingerprint TEXT NOT NULL, event_id INTEGER NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS events (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -246,6 +317,8 @@ class Substrate:
                            "WHERE action_hash=? AND status='issued'",
                            (digest({"kind": "generation.execute",
                                     "generation_id": item.generation_id}),))
+                db.execute("UPDATE generation_receipts SET status='revoked' "
+                           "WHERE generation_id=? AND status='issued'", (item.generation_id,))
             db.execute("UPDATE circuit_stops SET shutdown_confirmed=1 "
                        "WHERE active=1 AND shutdown_confirmed=0")
             after = self._snapshot(db)
@@ -279,10 +352,18 @@ class Substrate:
         generations = [dict(row) for row in db.execute("SELECT * FROM generations ORDER BY id")]
         generation_providers = [dict(row) for row in db.execute(
             "SELECT * FROM generation_providers ORDER BY generation_id")]
+        generation_transfers = [dict(row) for row in db.execute(
+            "SELECT * FROM generation_transfers ORDER BY generation_id")]
+        generation_receipts = [dict(row) for row in db.execute(
+            "SELECT * FROM generation_receipts ORDER BY generation_id")]
+        approvals = [dict(row) for row in db.execute(
+            "SELECT * FROM transfer_approvals ORDER BY id")]
         grants = [dict(row) for row in db.execute(
             "SELECT * FROM execution_grants ORDER BY id")]
         stops = [dict(row) for row in db.execute(
             "SELECT * FROM circuit_stops ORDER BY scope,target")]
+        signals = [dict(row) for row in db.execute(
+            "SELECT * FROM anomaly_signals ORDER BY id")]
         snapshot = {"state": state, "sessions": sessions}
         if objects:
             snapshot["objects"] = objects
@@ -290,10 +371,18 @@ class Substrate:
             snapshot["generations"] = generations
         if generation_providers:
             snapshot["generation_providers"] = generation_providers
+        if generation_transfers:
+            snapshot["generation_transfers"] = generation_transfers
+        if generation_receipts:
+            snapshot["generation_receipts"] = generation_receipts
+        if approvals:
+            snapshot["transfer_approvals_sha256"] = digest(approvals)
         if grants:
             snapshot["execution_grants_sha256"] = digest(grants)
         if stops:
             snapshot["circuit_stops"] = stops
+        if signals:
+            snapshot["anomaly_signals_sha256"] = digest(signals)
         if self.workspace_root is not None:
             snapshot["workspace"] = workspace_snapshot(self.workspace_root)
         return snapshot
@@ -314,10 +403,17 @@ class Substrate:
             if json.loads(row["policy"]).get("registry_hash") != self.registry_hash:
                 raise IntegrityError("capability registry changed without an audited migration")
             previous = row["event_hash"]
-            if row["decision"] in ("allow", "override", "succeeded"):
+            if row["decision"] in ("allow", "override", "succeeded", "escalate"):
                 expected = json.loads(row["state_after"])
         if expected is None:
             raise IntegrityError("audit genesis missing")
+        if self.audit_witness is not None:
+            try:
+                witnessed = self.audit_witness.verify(row["id"], row["event_hash"])
+            except Exception as exc:
+                raise IntegrityError("independent audit witness unavailable") from exc
+            if not witnessed:
+                raise IntegrityError("independent audit witness diverged")
         return expected
 
     def _append(self, db, actor, action, policy, decision, before, after,
@@ -330,13 +426,19 @@ class Substrate:
             "override_of": override_of, "elapsed_ms": elapsed_ms,
             "prev_hash": previous[0] if previous else "0" * 64,
         }
+        event_hash = digest(fields)
         cursor = db.execute(
             "INSERT INTO events (timestamp,actor,action,policy,decision,state_before,"
             "state_after,override_of,elapsed_ms,prev_hash,event_hash) "
             "VALUES (:timestamp,:actor,:action,:policy,:decision,:state_before,"
             ":state_after,:override_of,:elapsed_ms,:prev_hash,:event_hash)",
-            {**fields, "event_hash": digest(fields)},
+            {**fields, "event_hash": event_hash},
         )
+        if self.audit_witness is not None:
+            try:
+                self.audit_witness.append(cursor.lastrowid, event_hash, fields["prev_hash"])
+            except Exception as exc:
+                raise IntegrityError("independent audit witness rejected event") from exc
         return cursor.lastrowid
 
     def authenticate(self, token: str) -> str | None:
@@ -347,6 +449,89 @@ class Substrate:
 
     def is_operator(self, token: str) -> bool:
         return hmac.compare_digest(token, self.operator_token)
+
+    @staticmethod
+    def _transfer_action(action: dict[str, Any]) -> dict[str, Any]:
+        return {key: value for key, value in action.items() if key != "approval_token"}
+
+    def approve_transfer(self, token: str, request_id: str,
+                         reason: str) -> dict[str, Any]:
+        if not self.is_operator(token):
+            raise PermissionError("invalid operator credential")
+        if (not isinstance(request_id, str) or len(request_id) != 32 or
+                not isinstance(reason, str) or not reason.strip()):
+            raise ValueError("invalid transfer approval")
+        with self._execution_lock, self._db() as db:
+            db.execute("BEGIN IMMEDIATE")
+            expected = self._verify(db)
+            before = self._snapshot(db)
+            row = db.execute("SELECT * FROM transfer_approvals WHERE id=?",
+                             (request_id,)).fetchone()
+            if before != expected:
+                raise IntegrityError("state integrity failed")
+            if row is None or row["status"] != "pending":
+                raise ValueError("transfer approval request is unavailable")
+            if not db.execute("SELECT 1 FROM sessions WHERE id=? AND actor=? AND active=1",
+                              (row["session_id"], row["actor"])).fetchone():
+                raise ValueError("transfer approval session is unavailable")
+            approval_token = secrets.token_urlsafe(32)
+            expires_at = time.time() + 120
+            db.execute("UPDATE transfer_approvals SET token_hash=?,expires_at=?,status='issued',"
+                       "reason=? WHERE id=?",
+                       (hashlib.sha256(approval_token.encode()).hexdigest(), expires_at,
+                        reason.strip(), request_id))
+            after = self._snapshot(db)
+            event_id = self._append(
+                db, "human-operator",
+                {"kind": "provider.transfer.approve", "request_id": request_id,
+                 "actor": row["actor"], "provider": row["provider"],
+                 "classification": row["classification"], "expires_at": expires_at},
+                {"rule": "exact_transfer_approved", "reason": reason.strip()},
+                "allow", before, after)
+            db.commit()
+        return {"event_id": event_id, "decision": "allow",
+                "approval_token": approval_token, "expires_at": expires_at}
+
+    def _record_denial_signal(self, actor: str, capability: str,
+                              fingerprint: str, source_event_id: int) -> None:
+        if self.monitoring is None:
+            return
+        trigger = None
+        with self._execution_lock, self._db() as db:
+            db.execute("BEGIN IMMEDIATE")
+            expected = self._verify(db)
+            before = self._snapshot(db)
+            if before != expected:
+                raise IntegrityError("state integrity failed")
+            now = time.time()
+            db.execute("INSERT INTO anomaly_signals(timestamp,actor,capability,fingerprint,event_id) "
+                       "VALUES (?,?,?,?,?)", (now, actor, capability, fingerprint, source_event_id))
+            cutoff = now - self.monitoring["window_seconds"]
+            actor_count = db.execute(
+                "SELECT COUNT(*) FROM anomaly_signals WHERE actor=? AND timestamp>=?",
+                (actor, cutoff)).fetchone()[0]
+            actors = db.execute(
+                "SELECT COUNT(DISTINCT actor) FROM anomaly_signals "
+                "WHERE capability=? AND fingerprint=? AND timestamp>=?",
+                (capability, fingerprint, cutoff)).fetchone()[0]
+            if actors >= self.monitoring["cross_actor_denials"]:
+                trigger = ("capability", capability, "automatic_cross_actor_anomaly")
+            elif actor_count >= self.monitoring["actor_denials"]:
+                trigger = ("actor", actor, "automatic_resource_abuse")
+            after = self._snapshot(db)
+            self._append(db, "security-monitor",
+                         {"kind": "anomaly.observe", "actor": actor,
+                          "capability": capability, "fingerprint": fingerprint,
+                          "source_event_id": source_event_id},
+                         {"rule": "anomaly_signal_recorded"}, "allow", before, after)
+            db.commit()
+        if trigger is not None:
+            try:
+                self.set_circuit(self.circuit_operator_token, *trigger[:2], True,
+                                 reason=trigger[2])
+            except ValueError as exc:
+                if "already" not in str(exc):
+                    raise
 
     @staticmethod
     def _capability(action: dict[str, Any]) -> str:
@@ -485,6 +670,16 @@ class Substrate:
                         db.execute("UPDATE execution_grants SET status='revoked' WHERE id=?",
                                    (grant["id"],))
                         affected.append(grant["actor"])
+                approvals = list(db.execute(
+                    "SELECT * FROM transfer_approvals WHERE status='issued'"))
+                for approval in approvals:
+                    if (scope == "global" or
+                            (scope == "actor" and approval["actor"] == target) or
+                            (scope == "capability" and target == "generation") or
+                            (scope == "provider" and approval["provider"] == target)):
+                        db.execute("UPDATE transfer_approvals SET status='revoked' WHERE id=?",
+                                   (approval["id"],))
+                        affected.append(approval["actor"])
                 runs = list(db.execute("SELECT g.id,g.actor,p.provider FROM generations g "
                                        "LEFT JOIN generation_providers p ON p.generation_id=g.id "
                                        "WHERE g.status IN ('prepared','claimed')"))
@@ -496,6 +691,8 @@ class Substrate:
                             (scope == "provider" and run["provider"] == target)):
                         db.execute("UPDATE generations SET status='revoked' WHERE id=?",
                                    (run["id"],))
+                        db.execute("UPDATE generation_receipts SET status='revoked' "
+                                   "WHERE generation_id=? AND status='issued'", (run["id"],))
                         affected.append(run["actor"])
                         stopped_runs.append(run["id"])
                 if scope == "global":
@@ -724,6 +921,8 @@ class Substrate:
             provider_row = db.execute("SELECT provider FROM generation_providers WHERE generation_id=?",
                                       (generation_id,)).fetchone()
             sealed_provider = provider_row["provider"] if provider_row else None
+            transfer = db.execute("SELECT * FROM generation_transfers WHERE generation_id=?",
+                                  (generation_id,)).fetchone()
             sources = self._generation_sources(db, run) if run and before == expected else None
             if before != expected:
                 rule = "state_integrity"
@@ -735,12 +934,18 @@ class Substrate:
                 rule = "generation_provider_mismatch"
             elif sources is None:
                 rule = "generation_manifest_invalid"
+            elif sealed_provider is not None and (
+                    transfer is None or transfer["request_hash"] != request_identity(
+                        generation_id, sealed_provider, json.loads(transfer["request"]),
+                        json.loads(run["input_ids"]), json.loads(run["input_hashes"]))):
+                rule = "provider_request_integrity"
             elif self._stopped(db, run["actor"], "generation", sealed_provider):
                 rule = "execution_unavailable"
             else:
                 rule = None
             action = {"kind": "generation.claim", "generation_id": generation_id,
-                      "provider": provider}
+                      "provider": provider,
+                      "request_hash": transfer["request_hash"] if transfer else None}
             if rule:
                 event_id = self._append(db, "trusted-generation-adapter", action,
                                         {"rule": rule}, "deny", before, before)
@@ -749,7 +954,8 @@ class Substrate:
             grant_action = {"kind": "generation.execute", "generation_id": generation_id}
             manifest_hash = digest({"ids": json.loads(run["input_ids"]),
                                     "hashes": json.loads(run["input_hashes"]),
-                                    "classification": run["classification"]})
+                                    "classification": run["classification"],
+                                    "request_hash": transfer["request_hash"] if transfer else None})
             grant = db.execute("SELECT session_id FROM execution_grants WHERE token_hash=?",
                                (hashlib.sha256(execution_token.encode()).hexdigest(),)
                                ).fetchone() if isinstance(execution_token, str) else None
@@ -764,6 +970,16 @@ class Substrate:
                 return {"event_id": event_id, "decision": "deny", "reason": grant_rule}
             before = self._snapshot(db)
             db.execute("UPDATE generations SET status='claimed' WHERE id=?", (generation_id,))
+            challenge = None
+            if sealed_provider is not None and self.providers[sealed_provider].get(
+                    "gateway_required", False):
+                expires_at = time.time() + 120
+                challenge = issue_gateway_credential(
+                    self.gateway_secrets[sealed_provider], run["actor"], generation_id,
+                    sealed_provider, transfer["request_hash"], expires_at)
+                db.execute("INSERT INTO generation_receipts VALUES (?,?,?,?)",
+                           (generation_id, hashlib.sha256(challenge.encode()).hexdigest(),
+                            expires_at, "issued"))
             after = self._snapshot(db)
             event_id = self._append(db, "trusted-generation-adapter", action,
                                     {"rule": "sealed_context_claimed", "subject_actor": run["actor"]},
@@ -774,9 +990,13 @@ class Substrate:
                        "content_base64": base64.b64encode(source["payload"]).decode("ascii")}
                       for source in sources]
         return {"event_id": event_id, "decision": "allow", "generation_id": generation_id,
-                "provider": sealed_provider, "inputs": inputs}
+                "provider": sealed_provider, "inputs": inputs,
+                "provider_request": json.loads(transfer["request"]) if transfer else None,
+                "request_hash": transfer["request_hash"] if transfer else None,
+                **({"gateway_credential": challenge} if challenge is not None else {})}
 
-    def complete_generation(self, generation_id: str, text: str) -> dict[str, Any]:
+    def complete_generation(self, generation_id: str, text: str,
+                            receipt: dict[str, Any] | None = None) -> dict[str, Any]:
         try:
             payload = text.encode("utf-8") if isinstance(text, str) else b""
         except UnicodeError:
@@ -787,6 +1007,11 @@ class Substrate:
             before = self._snapshot(db)
             run = db.execute("SELECT * FROM generations WHERE id=?", (generation_id,)).fetchone()
             sources = self._generation_sources(db, run) if run and before == expected else None
+            provider = self._generation_provider(db, generation_id) if run else None
+            transfer = db.execute("SELECT * FROM generation_transfers WHERE generation_id=?",
+                                  (generation_id,)).fetchone() if run else None
+            receipt_row = db.execute("SELECT * FROM generation_receipts WHERE generation_id=?",
+                                     (generation_id,)).fetchone() if run else None
             if before != expected:
                 rule = "state_integrity"
             elif run is None:
@@ -799,15 +1024,35 @@ class Substrate:
                 rule = "execution_unavailable"
             elif not payload or len(payload) > MAX_CONTENT:
                 rule = "invalid_generation_output"
+            elif provider is not None and self.providers[provider].get("gateway_required", False):
+                if (receipt_row is None or receipt_row["status"] != "issued" or
+                        receipt_row["expires_at"] <= time.time() or
+                        not verify_receipt(self.gateway_secrets[provider], receipt or {}) or
+                        receipt["generation_id"] != generation_id or
+                        receipt["provider"] != provider or
+                        transfer is None or receipt["request_hash"] != transfer["request_hash"] or
+                        receipt["response_hash"] != hashlib.sha256(payload).hexdigest() or
+                        hashlib.sha256(receipt["challenge"].encode()).hexdigest() !=
+                        receipt_row["challenge_hash"]):
+                    rule = "provider_receipt_invalid"
+                else:
+                    rule = None
+            elif receipt is not None:
+                rule = "provider_receipt_unexpected"
             else:
                 rule = None
-            action = {"kind": "generation.complete", "generation_id": generation_id}
+            action = {"kind": "generation.complete", "generation_id": generation_id,
+                      "provider": provider,
+                      "request_hash": transfer["request_hash"] if transfer else None}
             if rule:
                 event_id = self._append(db, "trusted-generation-adapter", action,
                                         {"rule": rule}, "deny", before, before)
                 db.commit()
                 return {"event_id": event_id, "decision": "deny", "reason": rule}
             input_ids = json.loads(run["input_ids"])
+            if receipt_row is not None:
+                db.execute("UPDATE generation_receipts SET status='used' WHERE generation_id=?",
+                           (generation_id,))
             object_id = self._insert_object(db, run["classification"], "text/plain",
                                             [run["actor"]], input_ids, "generate", payload)
             db.execute("UPDATE generations SET status='completed', output_id=? WHERE id=?",
@@ -830,8 +1075,9 @@ class Substrate:
         scope = action.get("scope")
         key = action.get("key")
         if kind == "generation.prepare":
-            if set(action) not in ({"kind", "input_ids"},
-                                   {"kind", "input_ids", "provider"}):
+            allowed_fields = {"kind", "input_ids", "provider", "provider_request",
+                              "approval_token"}
+            if set(action) - allowed_fields or not {"kind", "input_ids"}.issubset(action):
                 return "deny", "generation_fields_forbidden", None
             provider = action.get("provider")
             if "provider" in action and (
@@ -851,13 +1097,41 @@ class Substrate:
             classification = max((source["classification"] for source in sources),
                                  key=CLASSIFICATIONS.index)
             context = (input_ids, hashes, classification, provider)
+            if provider is None and ("provider_request" in action or "approval_token" in action):
+                return "deny", "provider_request_mismatch", context
             if provider is not None:
                 grant = self.providers.get(provider)
                 if grant is None:
                     return "deny", "provider_unregistered", context
+                expected_request = grant.get("request")
+                supplied_request = action.get("provider_request")
+                if expected_request != supplied_request:
+                    return "deny", "provider_request_mismatch", context
                 if CLASSIFICATIONS.index(classification) > CLASSIFICATIONS.index(
                         grant["max_classification"]):
                     return "deny", "provider_classification_denied", context
+                threshold = grant.get("approval_required_at")
+                if (threshold is not None and
+                        CLASSIFICATIONS.index(classification) >= CLASSIFICATIONS.index(threshold)):
+                    token_hash = hashlib.sha256(
+                        action.get("approval_token", "").encode()).hexdigest()
+                    approval = db.execute(
+                        "SELECT * FROM transfer_approvals WHERE token_hash=?",
+                        (token_hash,)).fetchone()
+                    manifest_hash = digest({"ids": input_ids, "hashes": hashes,
+                                            "classification": classification})
+                    normalized = self._transfer_action(action)
+                    if (approval is None or approval["status"] != "issued" or
+                            approval["expires_at"] <= time.time() or
+                            approval["actor"] != actor or approval["session_id"] != session_id or
+                            approval["action_hash"] != digest(normalized) or
+                            approval["manifest_hash"] != manifest_hash or
+                            approval["provider"] != provider or
+                            approval["classification"] != classification):
+                        return "escalate", "provider_approval_required", context
+                    db.execute("UPDATE transfer_approvals SET status='used' WHERE id=?",
+                               (approval["id"],))
+                    context = (*context, approval["id"])
             return "allow", "generation_context_sealed", context
         if kind in ("object.read", "object.transform", "object.publish"):
             object_id = action.get("object_id")
@@ -1059,6 +1333,9 @@ class Substrate:
             db.execute("BEGIN IMMEDIATE")
             expected = self._verify(db)
             before = self._snapshot(db)
+            provider = action.get("provider") if action.get("kind") == "generation.prepare" else None
+            capability = self._capability(action)
+            approval_request_id = None
             row = db.execute("SELECT id FROM sessions WHERE actor=? AND token_hash=? AND active=1",
                              (actor, hashlib.sha256(session_token.encode()).hexdigest())).fetchone()
             if before != expected:
@@ -1067,12 +1344,20 @@ class Substrate:
                 decision, rule, namespace = "deny", "invalid_session", None
             else:
                 session_id = row["id"]
-                provider = action.get("provider") if action.get("kind") == "generation.prepare" else None
-                capability = self._capability(action)
                 if self._stopped(db, actor, capability, provider):
                     decision, rule, namespace = "deny", "circuit_blocked", None
                 else:
                     decision, rule, namespace = self._decide(actor, action, session_id, db)
+                if decision == "escalate" and rule == "provider_approval_required":
+                    approval_request_id = secrets.token_hex(16)
+                    normalized = self._transfer_action(action)
+                    approval_manifest = digest({"ids": namespace[0], "hashes": namespace[1],
+                                                "classification": namespace[2]})
+                    db.execute(
+                        "INSERT INTO transfer_approvals VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                        (approval_request_id, actor, session_id, digest(normalized),
+                         approval_manifest, namespace[3], namespace[2], None, None,
+                         "pending", None))
                 if decision == "allow":
                     manifest_hash = self._manifest_hash(db, action, namespace)
                     if authorize_only or execution_token is None:
@@ -1101,7 +1386,8 @@ class Substrate:
                                             json.loads(parent["readers"]), [parent["id"]],
                                             action["operation"], transformed)
             elif decision == "allow" and not authorize_only and action["kind"] == "generation.prepare":
-                input_ids, hashes, classification, provider = namespace
+                input_ids, hashes, classification, provider = namespace[:4]
+                approval_id = namespace[4] if len(namespace) > 4 else None
                 value = secrets.token_hex(16)
                 db.execute("INSERT INTO generations VALUES (?,?,?,?,?,?,?)",
                            (value, actor, canonical(input_ids), canonical(hashes),
@@ -1109,8 +1395,16 @@ class Substrate:
                 if provider is not None:
                     db.execute("INSERT INTO generation_providers VALUES (?,?)",
                                (value, provider))
+                    request = self.providers[provider].get("request") or {}
+                    transfer_hash = request_identity(value, provider, request,
+                                                     input_ids, hashes)
+                    db.execute("INSERT INTO generation_transfers VALUES (?,?,?,?)",
+                               (value, canonical(request), transfer_hash, approval_id))
+                else:
+                    transfer_hash = None
                 generation_manifest = digest({"ids": input_ids, "hashes": hashes,
-                                              "classification": classification})
+                                              "classification": classification,
+                                              "request_hash": transfer_hash})
                 generation_token = self._issue_grant(
                     db, actor, session_id,
                     {"kind": "generation.execute", "generation_id": value},
@@ -1132,11 +1426,18 @@ class Substrate:
                         logged_action["content_sha256"] = "invalid_utf8"
             if action.get("kind") == "generation.prepare":
                 logged_action = {"kind": "generation.prepare",
-                                 "provider": action.get("provider")}
+                                  "provider": action.get("provider")}
                 if namespace is not None:
                     logged_action.update(input_ids=namespace[0],
                                          input_hashes=namespace[1],
-                                         classification=namespace[2])
+                                          classification=namespace[2])
+                    if action.get("provider") is not None:
+                        logged_action["provider_request_hash"] = digest(
+                            action.get("provider_request") or {})
+                    if len(namespace) > 4:
+                        logged_action["approval_id"] = namespace[4]
+                if approval_request_id is not None:
+                    logged_action["approval_request_id"] = approval_request_id
                 if decision == "allow":
                     logged_action["generation_id"] = value
             if action.get("kind") == "network.request" and "services" in self.actors[actor]["network"]:
@@ -1172,6 +1473,8 @@ class Substrate:
                                     elapsed_ms=(time.perf_counter() - started) * 1000)
             db.commit()
         result = {"event_id": event_id, "decision": decision, "reason": rule}
+        if approval_request_id is not None:
+            result["approval_request_id"] = approval_request_id
         if decision == "deny" and rule == "circuit_blocked":
             result["reason"] = "capability_unavailable"
         if decision == "allow" and authorize_only:
@@ -1188,8 +1491,10 @@ class Substrate:
                           media_type=namespace[2], parents=[namespace[0]["id"]])
         if decision == "allow" and action["kind"] == "generation.prepare":
             result.update(generation_id=value, classification=namespace[2],
-                          input_ids=namespace[0], provider=namespace[3],
-                          execution_token=generation_token)
+                           input_ids=namespace[0], provider=namespace[3],
+                           execution_token=generation_token)
+        if decision == "deny" and self.monitoring is not None and rule != "circuit_blocked":
+            self._record_denial_signal(actor, capability, digest(logged_action), event_id)
         if decision == "allow" and action["kind"] == "object.publish":
             parent, url, origin = namespace
             try:
@@ -1419,25 +1724,29 @@ class ObjectDeclassificationRequest(BaseModel):
 
 
 class GenerationClaimRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     generation_id: str
     execution_token: str
     provider: str | None = None
 
-    class Config:
-        extra = "forbid"
-
 
 class GenerationCompleteRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     generation_id: str
     text: str
-
-    class Config:
-        extra = "forbid"
+    receipt: dict[str, Any] | None = None
 
 
 class ExecutionRequest(BaseModel):
     action: dict[str, Any]
     execution_token: str
+
+
+class TransferApprovalRequest(BaseModel):
+    request_id: str
+    reason: str
 
 
 def create_app(substrate: Substrate) -> FastAPI:
@@ -1511,6 +1820,19 @@ def create_app(substrate: Substrate) -> FastAPI:
         except IntegrityError as exc:
             raise HTTPException(503, str(exc)) from exc
 
+    @app.post("/provider-transfers/approve")
+    def provider_transfer_approve(body: TransferApprovalRequest,
+                                  authorization: str | None = Header(default=None)):
+        token = (authorization or "").removeprefix("Bearer ")
+        try:
+            return substrate.approve_transfer(token, body.request_id, body.reason)
+        except PermissionError as exc:
+            raise HTTPException(401, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        except IntegrityError as exc:
+            raise HTTPException(503, str(exc)) from exc
+
     @app.post("/objects/declassify")
     def object_declassify(body: ObjectDeclassificationRequest,
                           authorization: str | None = Header(default=None)):
@@ -1544,7 +1866,7 @@ def create_app(substrate: Substrate) -> FastAPI:
         if not substrate.is_operator(token):
             raise HTTPException(401, "invalid trusted adapter token")
         try:
-            return substrate.complete_generation(body.generation_id, body.text)
+            return substrate.complete_generation(body.generation_id, body.text, body.receipt)
         except IntegrityError as exc:
             raise HTTPException(503, str(exc)) from exc
 
@@ -1568,8 +1890,18 @@ def create_app(substrate: Substrate) -> FastAPI:
 
 def app_from_env() -> FastAPI:
     registry = load_registry(os.environ.get("GOV_SUBSTRATE_REGISTRY", "registry.example.yaml"))
+    witness = None
+    witness_names = ("GOV_SUBSTRATE_WITNESS_URL", "GOV_SUBSTRATE_WITNESS_CA",
+                     "GOV_SUBSTRATE_WITNESS_CERT", "GOV_SUBSTRATE_WITNESS_KEY")
+    witness_values = [os.environ.get(name) for name in witness_names]
+    if any(witness_values):
+        if not all(witness_values):
+            raise ValueError("all mTLS audit witness settings are required")
+        witness = MTLSAuditWitness(*witness_values)
     return create_app(Substrate(os.environ.get("GOV_SUBSTRATE_DB", "substrate.db"), registry,
-                                os.environ.get("GOV_SUBSTRATE_WORKSPACE")))
+                                os.environ.get("GOV_SUBSTRATE_WORKSPACE"),
+                                audit_witness=witness,
+                                gateway_secrets=registry["gateway_secrets"]))
 
 
 app = app_from_env() if os.environ.get("GOV_SUBSTRATE_AUTOSTART") == "1" else FastAPI()

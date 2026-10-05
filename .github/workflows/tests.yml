@@ -410,6 +410,23 @@ jobs:
               "$ref" "$immutable_ref"
           done < <(kind get nodes --name gov-substrate)
           echo "KUBERNETES_PROBE_IMAGE=${immutable_ref}" >> "$GITHUB_ENV"
+      - name: Build and load the Phase 9 package-mirror fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="gov-substrate-phase9:kubernetes"
+          docker build --file Dockerfile.phase9 --tag "$image" .
+          kind load docker-image --name gov-substrate "$image"
+          ref="docker.io/library/$image"
+          digest=$(docker exec gov-substrate-worker ctr --namespace k8s.io \
+            images list | awk -v ref="$ref" '$1 == ref {print $3}')
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          immutable_ref="docker.io/library/gov-substrate-phase9@${digest}"
+          while read -r node; do
+            docker exec "$node" ctr --namespace k8s.io images tag \
+              "$ref" "$immutable_ref"
+          done < <(kind get nodes --name gov-substrate)
+          echo "KUBERNETES_PHASE9_IMAGE=${immutable_ref}" >> "$GITHUB_ENV"
       - name: Create restricted default-deny worker namespace
         shell: bash
         run: |
@@ -462,6 +479,7 @@ jobs:
             kind delete cluster --name gov-substrate || true
           fi
           docker image rm gov-substrate-runtime-probe:kubernetes || true
+          docker image rm gov-substrate-phase9:kubernetes || true
 
   runtime-conformance-openshell:
     name: NVIDIA OpenShell Docker conformance
@@ -642,6 +660,10 @@ jobs:
         env:
           RUN_ACCEPTANCE_TESTS: '1'
         run: python -m pytest -q tests/acceptance/incidents
+      - name: Real mTLS provider gateway and independent witness
+        env:
+          RUN_ACCEPTANCE_TESTS: '1'
+        run: python -m pytest -q tests/acceptance/phase9
 
   acceptance-phi:
     if: github.event_name == 'workflow_dispatch' && inputs.run_phi

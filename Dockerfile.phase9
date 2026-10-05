@@ -1,0 +1,9 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+COPY provider_gateway.py /app/provider_gateway.py
+COPY tests/acceptance/phase9/service.py /app/service.py
+COPY tests/acceptance/phase9/worker_probe.py /app/worker_probe.py
+RUN useradd --uid 65532 --no-create-home phase9
+USER 65532:65532
+ENV PYTHONDONTWRITEBYTECODE=1
