@@ -44,11 +44,16 @@ Generation is model- and provider-agnostic. The optional local worker and the Op
 
 ## Evidence
 
-The [Phase 10 evidence freeze](docs/Evidence-Freeze-2026-10-05.md) provides the
-canonical claim ledger, frozen environment manifests, structured raw results,
-negative results, source links, and SHA-256 artifact inventory.
+The [Phase 10 evidence freeze](docs/Evidence-Freeze-2026-10-05.md) is the
+canonical empirical baseline. Annotated tag `evidence-2026-10-05` identifies
+the evidence commit; runtime-tested commit `1d46d46` identifies the unchanged
+implementation under test. The freeze contains 24 SHA-256-identified artifacts,
+nine bounded claims, environment manifests, structured results, and preserved
+negative results. Its tag-aware verifier and the complete post-freeze
+[CI run](https://github.com/electricwolfemarshmallowhypertext/gov-substrate/actions/runs/37379254758)
+passed.
 
-The project reports six kinds of evidence separately:
+The project reports seven kinds of evidence separately:
 
 - **Unit tests** verify policy and control logic. Fakes and mocks are allowed here; these tests do not prove runtime isolation.
 - **Runtime conformance** uses real workers to verify the backend-neutral supervisor contract: launch, exact identity, verified stop, late-completion rejection, and orphan reconciliation.
@@ -60,7 +65,7 @@ The project reports six kinds of evidence separately:
 
 [Runtime conformance](docs/Runtime-Conformance.md) defines the shared contract and evidence rules. Native Ubuntu Docker/containerd, rootless Podman/crun, gVisor/runsc, Wasmtime/WASI, NVIDIA OpenShell, native Linux, native Windows, Kind/Calico, and GKE Autopilot use the same real suite. Docker/OCI remains the reference backend. Each result comes from the hostile probe running in the named backend rather than from configuration inspection alone.
 
-Current `main` runtime evidence:
+Frozen runtime evidence:
 
 - native Ubuntu Docker/containerd: **3 conformance + 2 runtime-enforcement tests passed**;
 - rootless Podman/crun with the Docker daemon unavailable: **3 + 2 passed**;

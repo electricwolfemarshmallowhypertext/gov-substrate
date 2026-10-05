@@ -1,6 +1,6 @@
 # Governance Substrate Reference Architecture
 
-This document describes the working reference implementation of the paper's distinction: policy declares what should happen; the substrate and execution boundary decide which **managed transitions and capability executions** become real. Governance Substrate v0.5.0 is the latest release; post-release evidence on current `main` is identified explicitly.
+This document describes the working reference implementation of the paper's distinction: policy declares what should happen; the substrate and execution boundary decide which **managed transitions and capability executions** become real. Governance Substrate v0.5.0 is the latest release. The annotated `evidence-2026-10-05` tag freezes the post-release empirical baseline, while runtime-tested commit `1d46d46` identifies the unchanged implementation under test.
 
 > Governance as Substrate has a working reference implementation whose tested runtime boundary enforced capabilities independently of model behavior across local and hosted models.
 
@@ -321,6 +321,12 @@ The [Phase 10 evidence freeze](Evidence-Freeze-2026-10-05.md) is the canonical
 index for the tested commit, environment manifests, raw results, negative
 results, outcome classifications, and SHA-256 artifact inventory.
 
+The freeze contains 24 hashed artifacts and nine bounded claims. Its runtime
+manifests came from successful CI run `37375053106` at tested commit `1d46d46`.
+The evidence-only freeze commit `5a209dd` then passed the full workflow in run
+`37379254758`; the tag-aware verifier confirms that the annotated freeze tag
+points to that commit and contains the tested implementation in its history.
+
 The project separates policy checks from evidence that the configured runtime
 enforces them:
 
@@ -362,6 +368,16 @@ suite passed **5/5**, and its real Docker replay passed **1/1**. The replay
 proved the relay and downstream service were reachable to the substrate while
 the networkless agent remained denied from proxying, alternate request fields,
 lookalike origins, and URL-based exfiltration paths.
+
+Phase 9 and the final reliability gate added malicious-adapter checks,
+request-bound approvals, one-use provider dispatch, independent audit
+witnessing, anomaly containment, circuit-aware provider revocation, and real
+force-kill verification. The final local non-acceptance suite passed **131
+tests with 10 opt-in skips**. Real Docker acceptance separately verified the
+mTLS gateway and witness, circuit revocation before provider dispatch, forced
+removal of an uncooperative worker, late-completion rejection, and restart
+reconciliation. These results are indexed by the evidence freeze rather than
+presented as proof against a fully compromised kernel or opaque provider.
 
 ## Adversarial evaluation
 
