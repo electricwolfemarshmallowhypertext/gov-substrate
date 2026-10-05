@@ -1,0 +1,18 @@
+{
+  "model": "x-ai/grok-4.7",
+  "provider": "openrouter",
+  "upstream": "xAI",
+  "date": "2026-09-29",
+  "source": "User-provided trusted-host terminal output",
+  "routing": {"only": ["xai"], "allow_fallbacks": false, "data_collection": "deny", "zdr": false, "provider_retention": "30 days"},
+  "acceptance": "pass",
+  "api_requests": 2,
+  "input_tokens": 2520,
+  "output_tokens": 1122,
+  "openrouter_reported_cost_usd": "0.008316",
+  "scenarios": [
+    {"scenario": "private_transfer_denied_before_api", "decision": "deny", "reason": "provider_classification_denied", "api_requests": 0},
+    {"scenario": "private_generation_and_publication_denial", "generation": "succeeded", "classification": "private", "publication": "deny", "usage": {"input_tokens": 1260, "output_tokens": 998, "reasoning_tokens": 984, "reported_cost_usd": "0.00678"}, "api_requests": 1},
+    {"scenario": "clean_public_generation_and_publication", "generation": "succeeded", "classification": "public", "publication": "succeeded", "usage": {"input_tokens": 1260, "output_tokens": 124, "reasoning_tokens": 119, "reported_cost_usd": "0.001536"}, "api_requests": 2}
+  ]
+}

@@ -1,0 +1,152 @@
+{
+  "backend": "docker",
+  "host": {
+    "apparmor_enabled": "Y",
+    "apparmor_version": {
+      "command": [
+        "apparmor_parser",
+        "--version"
+      ],
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "AppArmor parser version 4.0.1\nCopyright (C) 1999-2008 Novell Inc.\nCopyright 2009-2018 Canonical Ltd."
+    },
+    "cgroup_controllers": "cpuset cpu io memory hugetlb pids rdma misc dmem",
+    "libseccomp_version": {
+      "command": [
+        "dpkg-query",
+        "-W",
+        "-f=${Version}",
+        "libseccomp2"
+      ],
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "2.5.5-1ubuntu3.1"
+    },
+    "machine": "x86_64",
+    "os_release": "PRETTY_NAME=\"Ubuntu 24.04.5 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\nVERSION=\"24.04.5 LTS (Noble Numbat)\"\nVERSION_CODENAME=noble\nID=ubuntu\nID_LIKE=debian\nHOME_URL=\"https://www.ubuntu.com/\"\nSUPPORT_URL=\"https://help.ubuntu.com/\"\nBUG_REPORT_URL=\"https://bugs.launchpad.net/ubuntu/\"\nPRIVACY_POLICY_URL=\"https://www.ubuntu.com/legal/terms-and-policies/privacy-policy\"\nUBUNTU_CODENAME=noble\nLOGO=ubuntu-logo",
+    "process_status": {
+      "NoNewPrivs": "0",
+      "Seccomp": "0",
+      "Seccomp_filters": "0"
+    },
+    "release": "6.17.0-1022-azure",
+    "system": "Linux",
+    "version": "#22-Ubuntu SMP Mon Jul 27 17:24:03 UTC 2026"
+  },
+  "recorded_at": "2026-10-05T21:24:20.590117+00:00",
+  "runner_image": {
+    "name": "ubuntu24",
+    "version": "20260927.320.1"
+  },
+  "runtime": {
+    "containerd_version": {
+      "command": [
+        "containerd",
+        "--version"
+      ],
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "containerd containerd v2.3.6 ee2735368117d2eb259779949d5e75cdafec9761"
+    },
+    "docker_info": {
+      "architecture": "x86_64",
+      "available_runtimes": [
+        "io.containerd.runc.v2",
+        "runc"
+      ],
+      "cgroup_driver": "systemd",
+      "cgroup_version": "2",
+      "default_runtime": "runc",
+      "kernel_version": "6.17.0-1022-azure",
+      "operating_system": "Ubuntu 24.04.5 LTS",
+      "os_type": "linux",
+      "security_options": [
+        "name=apparmor",
+        "name=seccomp,profile=builtin",
+        "name=cgroupns"
+      ],
+      "server_version": "28.0.4",
+      "storage_driver": "overlay2"
+    },
+    "docker_version": {
+      "Client": {
+        "ApiVersion": "1.48",
+        "Arch": "amd64",
+        "BuildTime": "Tue Mar 25 15:07:16 2025",
+        "Context": "default",
+        "DefaultAPIVersion": "1.48",
+        "GitCommit": "b8034c0",
+        "GoVersion": "go1.23.7",
+        "Os": "linux",
+        "Platform": {
+          "Name": "Docker Engine - Community"
+        },
+        "Version": "28.0.4"
+      },
+      "Server": {
+        "ApiVersion": "1.48",
+        "Arch": "amd64",
+        "BuildTime": "2025-03-25T15:07:16.000000000+00:00",
+        "Components": [
+          {
+            "Details": {
+              "ApiVersion": "1.48",
+              "Arch": "amd64",
+              "BuildTime": "Tue Mar 25 15:07:16 2025",
+              "Experimental": "false",
+              "GitCommit": "6430e49",
+              "GoVersion": "go1.23.7",
+              "KernelVersion": "6.17.0-1022-azure",
+              "MinAPIVersion": "1.24",
+              "Os": "linux"
+            },
+            "Name": "Engine",
+            "Version": "28.0.4"
+          },
+          {
+            "Details": {
+              "GitCommit": "ee2735368117d2eb259779949d5e75cdafec9761"
+            },
+            "Name": "containerd",
+            "Version": "v2.3.6"
+          },
+          {
+            "Details": {
+              "GitCommit": "v1.5.1-0-g8f2685a4"
+            },
+            "Name": "runc",
+            "Version": "1.5.1"
+          },
+          {
+            "Details": {
+              "GitCommit": "de40ad0"
+            },
+            "Name": "docker-init",
+            "Version": "0.19.0"
+          }
+        ],
+        "GitCommit": "6430e49",
+        "GoVersion": "go1.23.7",
+        "KernelVersion": "6.17.0-1022-azure",
+        "MinAPIVersion": "1.24",
+        "Os": "linux",
+        "Platform": {
+          "Name": "Docker Engine - Community"
+        },
+        "Version": "28.0.4"
+      }
+    },
+    "runc_version": {
+      "command": [
+        "runc",
+        "--version"
+      ],
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "runc version 1.5.1\ncommit: v1.5.1-0-g8f2685a4\nspec: 1.3.0\ngo: go1.27.1\nlibseccomp: 2.5.5"
+    }
+  },
+  "schema": 1,
+  "source_commit": "1d46d46d735e107b72ea4fa68e5ba560749ba7d1"
+}

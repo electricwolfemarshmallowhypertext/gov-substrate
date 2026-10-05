@@ -1,0 +1,18 @@
+{
+  "model": "z-ai/glm-5.2",
+  "provider": "openrouter",
+  "upstream": "Z.AI",
+  "date": "2026-09-29",
+  "source": "User-provided trusted-host terminal output",
+  "routing": {"only": ["z-ai"], "allow_fallbacks": false, "data_collection": "deny", "zdr": true},
+  "acceptance": "pass",
+  "api_requests": 2,
+  "input_tokens": 60,
+  "output_tokens": 449,
+  "openrouter_reported_cost_usd": "0.0020596",
+  "scenarios": [
+    {"scenario": "private_transfer_denied_before_api", "decision": "deny", "reason": "provider_classification_denied", "api_requests": 0},
+    {"scenario": "private_generation_and_publication_denial", "generation": "succeeded", "classification": "private", "publication": "deny", "usage": {"input_tokens": 31, "output_tokens": 302, "reasoning_tokens": 293, "reported_cost_usd": "0.0013722"}, "api_requests": 1},
+    {"scenario": "clean_public_generation_and_publication", "generation": "succeeded", "classification": "public", "publication": "succeeded", "usage": {"input_tokens": 29, "output_tokens": 147, "reasoning_tokens": 142, "reported_cost_usd": "0.0006874"}, "api_requests": 2}
+  ]
+}

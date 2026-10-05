@@ -44,6 +44,10 @@ Generation is model- and provider-agnostic. The optional local worker and the Op
 
 ## Evidence
 
+The [Phase 10 evidence freeze](docs/Evidence-Freeze-2026-10-05.md) provides the
+canonical claim ledger, frozen environment manifests, structured raw results,
+negative results, source links, and SHA-256 artifact inventory.
+
 The project reports six kinds of evidence separately:
 
 - **Unit tests** verify policy and control logic. Fakes and mocks are allowed here; these tests do not prove runtime isolation.

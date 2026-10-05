@@ -1,0 +1,132 @@
+{
+  "backend": "kubernetes",
+  "host": {
+    "apparmor_enabled": "Y",
+    "apparmor_version": {
+      "command": [
+        "apparmor_parser",
+        "--version"
+      ],
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "AppArmor parser version 4.0.1\nCopyright (C) 1999-2008 Novell Inc.\nCopyright 2009-2018 Canonical Ltd."
+    },
+    "cgroup_controllers": "cpuset cpu io memory hugetlb pids rdma misc dmem",
+    "libseccomp_version": {
+      "command": [
+        "dpkg-query",
+        "-W",
+        "-f=${Version}",
+        "libseccomp2"
+      ],
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "2.5.5-1ubuntu3.1"
+    },
+    "machine": "x86_64",
+    "os_release": "PRETTY_NAME=\"Ubuntu 24.04.5 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\nVERSION=\"24.04.5 LTS (Noble Numbat)\"\nVERSION_CODENAME=noble\nID=ubuntu\nID_LIKE=debian\nHOME_URL=\"https://www.ubuntu.com/\"\nSUPPORT_URL=\"https://help.ubuntu.com/\"\nBUG_REPORT_URL=\"https://bugs.launchpad.net/ubuntu/\"\nPRIVACY_POLICY_URL=\"https://www.ubuntu.com/legal/terms-and-policies/privacy-policy\"\nUBUNTU_CODENAME=noble\nLOGO=ubuntu-logo",
+    "process_status": {
+      "NoNewPrivs": "0",
+      "Seccomp": "0",
+      "Seccomp_filters": "0"
+    },
+    "release": "6.17.0-1022-azure",
+    "system": "Linux",
+    "version": "#22-Ubuntu SMP Mon Jul 27 17:24:03 UTC 2026"
+  },
+  "recorded_at": "2026-10-05T21:25:35.228029+00:00",
+  "runner_image": {
+    "name": "ubuntu24",
+    "version": "20260927.320.1"
+  },
+  "runtime": {
+    "calico_nodes": [
+      {
+        "image_ids": [
+          "quay.io/calico/node@sha256:99b03fe91e8bfbcb153ae65ef4b701b24ce541ffdd74ff314eb041096008f7fd"
+        ],
+        "images": [
+          "quay.io/calico/node:v3.32.2"
+        ],
+        "name": "calico-node-mcbz5",
+        "node": "gov-substrate-control-plane",
+        "phase": "Running"
+      },
+      {
+        "image_ids": [
+          "quay.io/calico/node@sha256:99b03fe91e8bfbcb153ae65ef4b701b24ce541ffdd74ff314eb041096008f7fd"
+        ],
+        "images": [
+          "quay.io/calico/node:v3.32.2"
+        ],
+        "name": "calico-node-zq6f4",
+        "node": "gov-substrate-worker",
+        "phase": "Running"
+      }
+    ],
+    "current_context": "kind-gov-substrate",
+    "default_deny_policy": {
+      "podSelector": {},
+      "policyTypes": [
+        "Ingress",
+        "Egress"
+      ]
+    },
+    "kubectl_version": {
+      "clientVersion": {
+        "buildDate": "2026-08-20T03:09:25Z",
+        "compiler": "gc",
+        "gitCommit": "bb826b1d48562f110659e64e8ec444327433db95",
+        "gitTreeState": "clean",
+        "gitVersion": "v1.36.4",
+        "goVersion": "go1.26.5",
+        "major": "1",
+        "minor": "36",
+        "platform": "linux/amd64"
+      },
+      "kustomizeVersion": "v5.8.1",
+      "serverVersion": {
+        "buildDate": "2026-08-20T03:06:28Z",
+        "compiler": "gc",
+        "emulationMajor": "1",
+        "emulationMinor": "36",
+        "gitCommit": "bb826b1d48562f110659e64e8ec444327433db95",
+        "gitTreeState": "clean",
+        "gitVersion": "v1.36.4",
+        "goVersion": "go1.26.5",
+        "major": "1",
+        "minCompatibilityMajor": "1",
+        "minCompatibilityMinor": "35",
+        "minor": "36",
+        "platform": "linux/amd64"
+      }
+    },
+    "namespace": "gov-substrate-conformance",
+    "namespace_labels": {
+      "kubernetes.io/metadata.name": "gov-substrate-conformance",
+      "pod-security.kubernetes.io/audit": "restricted",
+      "pod-security.kubernetes.io/enforce": "restricted",
+      "pod-security.kubernetes.io/enforce-version": "v1.36",
+      "pod-security.kubernetes.io/warn": "restricted"
+    },
+    "nodes": [
+      {
+        "container_runtime": "containerd://2.3.4",
+        "kernel_version": "6.17.0-1022-azure",
+        "kubelet_version": "v1.36.4",
+        "name": "gov-substrate-control-plane",
+        "os_image": "Debian GNU/Linux 13 (trixie)"
+      },
+      {
+        "container_runtime": "containerd://2.3.4",
+        "kernel_version": "6.17.0-1022-azure",
+        "kubelet_version": "v1.36.4",
+        "name": "gov-substrate-worker",
+        "os_image": "Debian GNU/Linux 13 (trixie)"
+      }
+    ],
+    "probe_image": "docker.io/library/gov-substrate-runtime-probe@sha256:1a34478f335cb6145f3aab8006678520dafcc4ae7a4fe1c0dcdb9a1562cd93f2"
+  },
+  "schema": 1,
+  "source_commit": "1d46d46d735e107b72ea4fa68e5ba560749ba7d1"
+}

@@ -1,0 +1,63 @@
+{
+  "backend": "native-linux",
+  "host": {
+    "apparmor_enabled": "Y",
+    "apparmor_version": {
+      "command": [
+        "apparmor_parser",
+        "--version"
+      ],
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "AppArmor parser version 4.0.1\nCopyright (C) 1999-2008 Novell Inc.\nCopyright 2009-2018 Canonical Ltd."
+    },
+    "cgroup_controllers": "cpuset cpu io memory hugetlb pids rdma misc dmem",
+    "libseccomp_version": {
+      "command": [
+        "dpkg-query",
+        "-W",
+        "-f=${Version}",
+        "libseccomp2"
+      ],
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "2.5.5-1ubuntu3.1"
+    },
+    "machine": "x86_64",
+    "os_release": "PRETTY_NAME=\"Ubuntu 24.04.5 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\nVERSION=\"24.04.5 LTS (Noble Numbat)\"\nVERSION_CODENAME=noble\nID=ubuntu\nID_LIKE=debian\nHOME_URL=\"https://www.ubuntu.com/\"\nSUPPORT_URL=\"https://help.ubuntu.com/\"\nBUG_REPORT_URL=\"https://bugs.launchpad.net/ubuntu/\"\nPRIVACY_POLICY_URL=\"https://www.ubuntu.com/legal/terms-and-policies/privacy-policy\"\nUBUNTU_CODENAME=noble\nLOGO=ubuntu-logo",
+    "process_status": {
+      "NoNewPrivs": "0",
+      "Seccomp": "0",
+      "Seccomp_filters": "0"
+    },
+    "release": "6.17.0-1022-azure",
+    "system": "Linux",
+    "version": "#22-Ubuntu SMP Mon Jul 27 17:24:03 UTC 2026"
+  },
+  "recorded_at": "2026-10-05T21:19:42.120989+00:00",
+  "runner_image": {
+    "name": "ubuntu24",
+    "version": "20260927.320.1"
+  },
+  "runtime": {
+    "cgroup_controllers": "cpuset cpu io memory pids",
+    "cgroup_root": "/sys/fs/cgroup/gov-substrate-37375053106-1",
+    "cgroup_subtree_control": "",
+    "isolation_controls": [
+      "user/mount/pid/ipc/uts/network namespaces",
+      "Landlock ABI >= 6",
+      "seccomp filter",
+      "no_new_privs",
+      "zero capability sets",
+      "cgroup v2 cpu/memory/pids",
+      "closed inherited descriptors",
+      "supervisor-owned process group"
+    ],
+    "launcher_sha256": "c7e96d0b35dbaa94d4dddcb7d13ddfcbe7facd0188fda73541cd60a739653fc2",
+    "unprivileged_user_namespaces": "1",
+    "user_namespace_limit": "63838",
+    "worker_sha256": "794393648d8b0d50843a9d3710245c5d851a9f8bb16c53d14feb7b7e7c6c7d78"
+  },
+  "schema": 1,
+  "source_commit": "1d46d46d735e107b72ea4fa68e5ba560749ba7d1"
+}

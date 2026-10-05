@@ -1,0 +1,54 @@
+{
+  "backend": "native-windows",
+  "host": {
+    "apparmor_enabled": null,
+    "apparmor_version": {
+      "command": [
+        "apparmor_parser",
+        "--version"
+      ],
+      "returncode": 127,
+      "stderr": "command unavailable",
+      "stdout": ""
+    },
+    "cgroup_controllers": null,
+    "libseccomp_version": {
+      "command": [
+        "dpkg-query",
+        "-W",
+        "-f=${Version}",
+        "libseccomp2"
+      ],
+      "returncode": 127,
+      "stderr": "command unavailable",
+      "stdout": ""
+    },
+    "machine": "AMD64",
+    "os_release": null,
+    "process_status": {},
+    "release": "2025Server",
+    "system": "Windows",
+    "version": "10.0.26100"
+  },
+  "recorded_at": "2026-10-05T21:19:37.044131+00:00",
+  "runner_image": {
+    "name": "win25-vs2026",
+    "version": "20260925.250.1"
+  },
+  "runtime": {
+    "isolation_controls": [
+      "zero-capability AppContainer",
+      "restricted primary token",
+      "low-integrity token",
+      "explicit filesystem ACL",
+      "isolated profile storage",
+      "explicit inherited handle list",
+      "Job Object active-process/memory limits",
+      "kill-on-job-close",
+      "exact PID and creation-time verification"
+    ],
+    "worker_sha256": "b793438c5b39631070a4e80eabcbf1e9c3baaa8fb00c62e84231dfa32e150a30"
+  },
+  "schema": 1,
+  "source_commit": "1d46d46d735e107b72ea4fa68e5ba560749ba7d1"
+}

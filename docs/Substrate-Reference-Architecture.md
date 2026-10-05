@@ -317,6 +317,10 @@ These are explicit prototype proxies, not validated measures of institutional he
 
 ## Evidence levels and current results
 
+The [Phase 10 evidence freeze](Evidence-Freeze-2026-10-05.md) is the canonical
+index for the tested commit, environment manifests, raw results, negative
+results, outcome classifications, and SHA-256 artifact inventory.
+
 The project separates policy checks from evidence that the configured runtime
 enforces them:
 

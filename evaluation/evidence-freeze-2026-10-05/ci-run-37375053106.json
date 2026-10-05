@@ -1,0 +1,1391 @@
+{
+  "conclusion": "success",
+  "createdAt": "2026-10-05T21:18:34Z",
+  "databaseId": 37375053106,
+  "headSha": "1d46d46d735e107b72ea4fa68e5ba560749ba7d1",
+  "jobs": [
+    {
+      "completedAt": "2026-10-05T21:25:45Z",
+      "conclusion": "success",
+      "databaseId": 111981481994,
+      "name": "NVIDIA OpenShell Docker conformance",
+      "startedAt": "2026-10-05T21:23:41Z",
+      "status": "completed",
+      "steps": [
+        {
+          "completedAt": "2026-10-05T21:23:43Z",
+          "conclusion": "success",
+          "name": "Set up job",
+          "number": 1,
+          "startedAt": "2026-10-05T21:23:42Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:23:44Z",
+          "conclusion": "success",
+          "name": "Run actions/checkout@v4",
+          "number": 2,
+          "startedAt": "2026-10-05T21:23:43Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:23:44Z",
+          "conclusion": "success",
+          "name": "Run actions/setup-python@v5",
+          "number": 3,
+          "startedAt": "2026-10-05T21:23:44Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:24:01Z",
+          "conclusion": "success",
+          "name": "Run python -m pip install -e '.[test]'",
+          "number": 4,
+          "startedAt": "2026-10-05T21:23:44Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:24:20Z",
+          "conclusion": "success",
+          "name": "Install pinned official OpenShell release",
+          "number": 5,
+          "startedAt": "2026-10-05T21:24:01Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:24:36Z",
+          "conclusion": "success",
+          "name": "Start authenticated OpenShell Docker gateway",
+          "number": 6,
+          "startedAt": "2026-10-05T21:24:20Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:25:01Z",
+          "conclusion": "success",
+          "name": "Build immutable hostile-probe image",
+          "number": 7,
+          "startedAt": "2026-10-05T21:24:36Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:25:12Z",
+          "conclusion": "success",
+          "name": "Record OpenShell environment",
+          "number": 8,
+          "startedAt": "2026-10-05T21:25:01Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:25:36Z",
+          "conclusion": "success",
+          "name": "Supervisor conformance (real OpenShell sandboxes)",
+          "number": 9,
+          "startedAt": "2026-10-05T21:25:12Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:25:43Z",
+          "conclusion": "success",
+          "name": "Runtime enforcement (real OpenShell sandbox attempts)",
+          "number": 10,
+          "startedAt": "2026-10-05T21:25:36Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:25:43Z",
+          "conclusion": "success",
+          "name": "Upload OpenShell evidence and logs",
+          "number": 11,
+          "startedAt": "2026-10-05T21:25:43Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:25:43Z",
+          "conclusion": "success",
+          "name": "Remove OpenShell test resources",
+          "number": 12,
+          "startedAt": "2026-10-05T21:25:43Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:25:44Z",
+          "conclusion": "success",
+          "name": "Post Run actions/setup-python@v5",
+          "number": 23,
+          "startedAt": "2026-10-05T21:25:43Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:25:44Z",
+          "conclusion": "success",
+          "name": "Post Run actions/checkout@v4",
+          "number": 24,
+          "startedAt": "2026-10-05T21:25:44Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:25:44Z",
+          "conclusion": "success",
+          "name": "Complete job",
+          "number": 25,
+          "startedAt": "2026-10-05T21:25:44Z",
+          "status": "completed"
+        }
+      ],
+      "url": "https://github.com/electricwolfemarshmallowhypertext/gov-substrate/actions/runs/37375053106/job/111981481994"
+    },
+    {
+      "completedAt": "2026-10-05T21:24:54Z",
+      "conclusion": "success",
+      "databaseId": 111981482210,
+      "name": "gVisor runsc OCI conformance",
+      "startedAt": "2026-10-05T21:23:47Z",
+      "status": "completed",
+      "steps": [
+        {
+          "completedAt": "2026-10-05T21:23:49Z",
+          "conclusion": "success",
+          "name": "Set up job",
+          "number": 1,
+          "startedAt": "2026-10-05T21:23:48Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:23:50Z",
+          "conclusion": "success",
+          "name": "Run actions/checkout@v4",
+          "number": 2,
+          "startedAt": "2026-10-05T21:23:49Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:23:50Z",
+          "conclusion": "success",
+          "name": "Run actions/setup-python@v5",
+          "number": 3,
+          "startedAt": "2026-10-05T21:23:50Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:24:02Z",
+          "conclusion": "success",
+          "name": "Run python -m pip install -e '.[test]'",
+          "number": 4,
+          "startedAt": "2026-10-05T21:23:50Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:24:26Z",
+          "conclusion": "success",
+          "name": "Install pinned official gVisor release",
+          "number": 5,
+          "startedAt": "2026-10-05T21:24:02Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:24:27Z",
+          "conclusion": "success",
+          "name": "Record gVisor environment",
+          "number": 6,
+          "startedAt": "2026-10-05T21:24:26Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:24:44Z",
+          "conclusion": "success",
+          "name": "Supervisor conformance (real gVisor workers)",
+          "number": 7,
+          "startedAt": "2026-10-05T21:24:27Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:24:50Z",
+          "conclusion": "success",
+          "name": "Runtime enforcement (real gVisor OS attempts)",
+          "number": 8,
+          "startedAt": "2026-10-05T21:24:44Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:24:51Z",
+          "conclusion": "success",
+          "name": "Upload gVisor evidence",
+          "number": 9,
+          "startedAt": "2026-10-05T21:24:50Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:24:51Z",
+          "conclusion": "success",
+          "name": "Post Run actions/setup-python@v5",
+          "number": 17,
+          "startedAt": "2026-10-05T21:24:51Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:24:52Z",
+          "conclusion": "success",
+          "name": "Post Run actions/checkout@v4",
+          "number": 18,
+          "startedAt": "2026-10-05T21:24:51Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:24:52Z",
+          "conclusion": "success",
+          "name": "Complete job",
+          "number": 19,
+          "startedAt": "2026-10-05T21:24:52Z",
+          "status": "completed"
+        }
+      ],
+      "url": "https://github.com/electricwolfemarshmallowhypertext/gov-substrate/actions/runs/37375053106/job/111981482210"
+    },
+    {
+      "completedAt": "2026-10-05T21:19:33Z",
+      "conclusion": "success",
+      "databaseId": 111981482313,
+      "name": "Wasmtime/WASI runtime conformance",
+      "startedAt": "2026-10-05T21:19:06Z",
+      "status": "completed",
+      "steps": [
+        {
+          "completedAt": "2026-10-05T21:19:07Z",
+          "conclusion": "success",
+          "name": "Set up job",
+          "number": 1,
+          "startedAt": "2026-10-05T21:19:07Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:19:09Z",
+          "conclusion": "success",
+          "name": "Run actions/checkout@v4",
+          "number": 2,
+          "startedAt": "2026-10-05T21:19:08Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:19:09Z",
+          "conclusion": "success",
+          "name": "Run actions/setup-python@v5",
+          "number": 3,
+          "startedAt": "2026-10-05T21:19:09Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:19:16Z",
+          "conclusion": "success",
+          "name": "Run python -m pip install -e '.[test]'",
+          "number": 4,
+          "startedAt": "2026-10-05T21:19:09Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:19:25Z",
+          "conclusion": "success",
+          "name": "Build the fixed hostile probe for WASI",
+          "number": 5,
+          "startedAt": "2026-10-05T21:19:16Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:19:26Z",
+          "conclusion": "success",
+          "name": "Install pinned official Wasmtime release",
+          "number": 6,
+          "startedAt": "2026-10-05T21:19:25Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:19:26Z",
+          "conclusion": "success",
+          "name": "Record Wasmtime environment",
+          "number": 7,
+          "startedAt": "2026-10-05T21:19:26Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:19:28Z",
+          "conclusion": "success",
+          "name": "Supervisor conformance (real WASI instances)",
+          "number": 8,
+          "startedAt": "2026-10-05T21:19:26Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:19:29Z",
+          "conclusion": "success",
+          "name": "Runtime enforcement (real WASI attempts)",
+          "number": 9,
+          "startedAt": "2026-10-05T21:19:28Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:19:30Z",
+          "conclusion": "success",
+          "name": "Upload Wasmtime evidence",
+          "number": 10,
+          "startedAt": "2026-10-05T21:19:29Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:19:30Z",
+          "conclusion": "success",
+          "name": "Post Run actions/setup-python@v5",
+          "number": 19,
+          "startedAt": "2026-10-05T21:19:30Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:19:31Z",
+          "conclusion": "success",
+          "name": "Post Run actions/checkout@v4",
+          "number": 20,
+          "startedAt": "2026-10-05T21:19:30Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:19:31Z",
+          "conclusion": "success",
+          "name": "Complete job",
+          "number": 21,
+          "startedAt": "2026-10-05T21:19:31Z",
+          "status": "completed"
+        }
+      ],
+      "url": "https://github.com/electricwolfemarshmallowhypertext/gov-substrate/actions/runs/37375053106/job/111981482313"
+    },
+    {
+      "completedAt": "2026-10-05T21:20:22Z",
+      "conclusion": "success",
+      "databaseId": 111981482441,
+      "name": "Native Linux supervisor conformance",
+      "startedAt": "2026-10-05T21:18:57Z",
+      "status": "completed",
+      "steps": [
+        {
+          "completedAt": "2026-10-05T21:18:58Z",
+          "conclusion": "success",
+          "name": "Set up job",
+          "number": 1,
+          "startedAt": "2026-10-05T21:18:57Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:18:59Z",
+          "conclusion": "success",
+          "name": "Run actions/checkout@v4",
+          "number": 2,
+          "startedAt": "2026-10-05T21:18:58Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:18:59Z",
+          "conclusion": "success",
+          "name": "Run actions/setup-python@v5",
+          "number": 3,
+          "startedAt": "2026-10-05T21:18:59Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:19:12Z",
+          "conclusion": "success",
+          "name": "Run python -m pip install -e '.[test]'",
+          "number": 4,
+          "startedAt": "2026-10-05T21:18:59Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:19:42Z",
+          "conclusion": "success",
+          "name": "Build the native Linux launcher and fixed hostile probe",
+          "number": 5,
+          "startedAt": "2026-10-05T21:19:12Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:19:42Z",
+          "conclusion": "success",
+          "name": "Create an explicit delegated cgroup v2 root",
+          "number": 6,
+          "startedAt": "2026-10-05T21:19:42Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:19:42Z",
+          "conclusion": "success",
+          "name": "Record native Linux environment",
+          "number": 7,
+          "startedAt": "2026-10-05T21:19:42Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:19:47Z",
+          "conclusion": "success",
+          "name": "Supervisor conformance (real native Linux workers)",
+          "number": 8,
+          "startedAt": "2026-10-05T21:19:42Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:20:19Z",
+          "conclusion": "success",
+          "name": "Runtime enforcement (real native Linux attempts)",
+          "number": 9,
+          "startedAt": "2026-10-05T21:19:47Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:20:19Z",
+          "conclusion": "success",
+          "name": "Remove delegated cgroup root",
+          "number": 10,
+          "startedAt": "2026-10-05T21:20:19Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:20:20Z",
+          "conclusion": "success",
+          "name": "Upload native Linux evidence",
+          "number": 11,
+          "startedAt": "2026-10-05T21:20:19Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:20:20Z",
+          "conclusion": "success",
+          "name": "Post Run actions/setup-python@v5",
+          "number": 21,
+          "startedAt": "2026-10-05T21:20:20Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:20:20Z",
+          "conclusion": "success",
+          "name": "Post Run actions/checkout@v4",
+          "number": 22,
+          "startedAt": "2026-10-05T21:20:20Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:20:20Z",
+          "conclusion": "success",
+          "name": "Complete job",
+          "number": 23,
+          "startedAt": "2026-10-05T21:20:20Z",
+          "status": "completed"
+        }
+      ],
+      "url": "https://github.com/electricwolfemarshmallowhypertext/gov-substrate/actions/runs/37375053106/job/111981482441"
+    },
+    {
+      "completedAt": "2026-10-05T21:20:11Z",
+      "conclusion": "success",
+      "databaseId": 111981482448,
+      "name": "Hostile probe (x86_64-pc-windows-msvc)",
+      "startedAt": "2026-10-05T21:19:31Z",
+      "status": "completed",
+      "steps": [
+        {
+          "completedAt": "2026-10-05T21:19:32Z",
+          "conclusion": "success",
+          "name": "Set up job",
+          "number": 1,
+          "startedAt": "2026-10-05T21:19:32Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:19:37Z",
+          "conclusion": "success",
+          "name": "Run actions/checkout@v4",
+          "number": 2,
+          "startedAt": "2026-10-05T21:19:32Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:19:58Z",
+          "conclusion": "success",
+          "name": "Install pinned Rust target",
+          "number": 3,
+          "startedAt": "2026-10-05T21:19:37Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:20:07Z",
+          "conclusion": "success",
+          "name": "Compile the same hostile probe source",
+          "number": 4,
+          "startedAt": "2026-10-05T21:19:58Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:20:09Z",
+          "conclusion": "success",
+          "name": "Post Run actions/checkout@v4",
+          "number": 8,
+          "startedAt": "2026-10-05T21:20:07Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:20:09Z",
+          "conclusion": "success",
+          "name": "Complete job",
+          "number": 9,
+          "startedAt": "2026-10-05T21:20:09Z",
+          "status": "completed"
+        }
+      ],
+      "url": "https://github.com/electricwolfemarshmallowhypertext/gov-substrate/actions/runs/37375053106/job/111981482448"
+    },
+    {
+      "completedAt": "2026-10-05T21:23:51Z",
+      "conclusion": "success",
+      "databaseId": 111981482479,
+      "name": "acceptance-qwen",
+      "startedAt": "2026-10-05T21:18:45Z",
+      "status": "completed",
+      "steps": [
+        {
+          "completedAt": "2026-10-05T21:18:46Z",
+          "conclusion": "success",
+          "name": "Set up job",
+          "number": 1,
+          "startedAt": "2026-10-05T21:18:45Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:18:46Z",
+          "conclusion": "success",
+          "name": "Run actions/checkout@v4",
+          "number": 2,
+          "startedAt": "2026-10-05T21:18:46Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:18:47Z",
+          "conclusion": "success",
+          "name": "Run actions/setup-python@v5",
+          "number": 3,
+          "startedAt": "2026-10-05T21:18:46Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:18:54Z",
+          "conclusion": "success",
+          "name": "Run python -m pip install -e '.[test]'",
+          "number": 4,
+          "startedAt": "2026-10-05T21:18:47Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:19:05Z",
+          "conclusion": "success",
+          "name": "Fetch pinned official Qwen Q8_0 artifact and verify SHA-256",
+          "number": 5,
+          "startedAt": "2026-10-05T21:18:54Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:23:22Z",
+          "conclusion": "success",
+          "name": "Qwen local-model acceptance (real Docker and substrate)",
+          "number": 6,
+          "startedAt": "2026-10-05T21:19:05Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:23:49Z",
+          "conclusion": "success",
+          "name": "Environment isolation probes (separate runtime evidence)",
+          "number": 7,
+          "startedAt": "2026-10-05T21:23:22Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:23:49Z",
+          "conclusion": "success",
+          "name": "Post Run actions/setup-python@v5",
+          "number": 13,
+          "startedAt": "2026-10-05T21:23:49Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:23:50Z",
+          "conclusion": "success",
+          "name": "Post Run actions/checkout@v4",
+          "number": 14,
+          "startedAt": "2026-10-05T21:23:49Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:23:50Z",
+          "conclusion": "success",
+          "name": "Complete job",
+          "number": 15,
+          "startedAt": "2026-10-05T21:23:50Z",
+          "status": "completed"
+        }
+      ],
+      "url": "https://github.com/electricwolfemarshmallowhypertext/gov-substrate/actions/runs/37375053106/job/111981482479"
+    },
+    {
+      "completedAt": "2026-10-05T21:24:54Z",
+      "conclusion": "success",
+      "databaseId": 111981482498,
+      "name": "Native Ubuntu Docker/containerd conformance",
+      "startedAt": "2026-10-05T21:23:52Z",
+      "status": "completed",
+      "steps": [
+        {
+          "completedAt": "2026-10-05T21:23:56Z",
+          "conclusion": "success",
+          "name": "Set up job",
+          "number": 1,
+          "startedAt": "2026-10-05T21:23:53Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:23:57Z",
+          "conclusion": "success",
+          "name": "Run actions/checkout@v4",
+          "number": 2,
+          "startedAt": "2026-10-05T21:23:56Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:23:57Z",
+          "conclusion": "success",
+          "name": "Run actions/setup-python@v5",
+          "number": 3,
+          "startedAt": "2026-10-05T21:23:57Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:24:08Z",
+          "conclusion": "success",
+          "name": "Run python -m pip install -e '.[test]'",
+          "number": 4,
+          "startedAt": "2026-10-05T21:23:57Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:24:20Z",
+          "conclusion": "success",
+          "name": "Record native Docker environment",
+          "number": 5,
+          "startedAt": "2026-10-05T21:24:08Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:24:42Z",
+          "conclusion": "success",
+          "name": "Supervisor conformance (real workers, no model)",
+          "number": 6,
+          "startedAt": "2026-10-05T21:24:20Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:24:48Z",
+          "conclusion": "success",
+          "name": "Runtime enforcement (real OS attempts, no model)",
+          "number": 7,
+          "startedAt": "2026-10-05T21:24:42Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:24:52Z",
+          "conclusion": "success",
+          "name": "Circuit force-kill and orphan recovery (real Docker)",
+          "number": 8,
+          "startedAt": "2026-10-05T21:24:48Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:24:53Z",
+          "conclusion": "success",
+          "name": "Upload native Docker evidence",
+          "number": 9,
+          "startedAt": "2026-10-05T21:24:52Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:24:53Z",
+          "conclusion": "success",
+          "name": "Post Run actions/setup-python@v5",
+          "number": 17,
+          "startedAt": "2026-10-05T21:24:53Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:24:53Z",
+          "conclusion": "success",
+          "name": "Post Run actions/checkout@v4",
+          "number": 18,
+          "startedAt": "2026-10-05T21:24:53Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:24:53Z",
+          "conclusion": "success",
+          "name": "Complete job",
+          "number": 19,
+          "startedAt": "2026-10-05T21:24:53Z",
+          "status": "completed"
+        }
+      ],
+      "url": "https://github.com/electricwolfemarshmallowhypertext/gov-substrate/actions/runs/37375053106/job/111981482498"
+    },
+    {
+      "completedAt": "2026-10-05T21:19:01Z",
+      "conclusion": "success",
+      "databaseId": 111981482499,
+      "name": "Hostile probe (wasm32-wasip1)",
+      "startedAt": "2026-10-05T21:18:45Z",
+      "status": "completed",
+      "steps": [
+        {
+          "completedAt": "2026-10-05T21:18:46Z",
+          "conclusion": "success",
+          "name": "Set up job",
+          "number": 1,
+          "startedAt": "2026-10-05T21:18:46Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:18:47Z",
+          "conclusion": "success",
+          "name": "Run actions/checkout@v4",
+          "number": 2,
+          "startedAt": "2026-10-05T21:18:46Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:18:57Z",
+          "conclusion": "success",
+          "name": "Install pinned Rust target",
+          "number": 3,
+          "startedAt": "2026-10-05T21:18:47Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:18:58Z",
+          "conclusion": "success",
+          "name": "Compile the same hostile probe source",
+          "number": 4,
+          "startedAt": "2026-10-05T21:18:57Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:18:58Z",
+          "conclusion": "success",
+          "name": "Post Run actions/checkout@v4",
+          "number": 8,
+          "startedAt": "2026-10-05T21:18:58Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:18:58Z",
+          "conclusion": "success",
+          "name": "Complete job",
+          "number": 9,
+          "startedAt": "2026-10-05T21:18:58Z",
+          "status": "completed"
+        }
+      ],
+      "url": "https://github.com/electricwolfemarshmallowhypertext/gov-substrate/actions/runs/37375053106/job/111981482499"
+    },
+    {
+      "completedAt": "2026-10-05T21:19:56Z",
+      "conclusion": "success",
+      "databaseId": 111981482508,
+      "name": "Incident-derived escape acceptance",
+      "startedAt": "2026-10-05T21:18:45Z",
+      "status": "completed",
+      "steps": [
+        {
+          "completedAt": "2026-10-05T21:18:46Z",
+          "conclusion": "success",
+          "name": "Set up job",
+          "number": 1,
+          "startedAt": "2026-10-05T21:18:46Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:18:47Z",
+          "conclusion": "success",
+          "name": "Run actions/checkout@v4",
+          "number": 2,
+          "startedAt": "2026-10-05T21:18:46Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:18:47Z",
+          "conclusion": "success",
+          "name": "Run actions/setup-python@v5",
+          "number": 3,
+          "startedAt": "2026-10-05T21:18:47Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:18:54Z",
+          "conclusion": "success",
+          "name": "Run python -m pip install -e '.[test]'",
+          "number": 4,
+          "startedAt": "2026-10-05T21:18:47Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:19:18Z",
+          "conclusion": "success",
+          "name": "Real networkless agent and reachable delegated services",
+          "number": 5,
+          "startedAt": "2026-10-05T21:18:54Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:19:54Z",
+          "conclusion": "success",
+          "name": "Real mTLS provider gateway and independent witness",
+          "number": 6,
+          "startedAt": "2026-10-05T21:19:18Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:19:54Z",
+          "conclusion": "success",
+          "name": "Post Run actions/setup-python@v5",
+          "number": 11,
+          "startedAt": "2026-10-05T21:19:54Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:19:54Z",
+          "conclusion": "success",
+          "name": "Post Run actions/checkout@v4",
+          "number": 12,
+          "startedAt": "2026-10-05T21:19:54Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:19:54Z",
+          "conclusion": "success",
+          "name": "Complete job",
+          "number": 13,
+          "startedAt": "2026-10-05T21:19:54Z",
+          "status": "completed"
+        }
+      ],
+      "url": "https://github.com/electricwolfemarshmallowhypertext/gov-substrate/actions/runs/37375053106/job/111981482508"
+    },
+    {
+      "completedAt": "2026-10-05T21:19:38Z",
+      "conclusion": "success",
+      "databaseId": 111981482537,
+      "name": "unit-tests",
+      "startedAt": "2026-10-05T21:19:10Z",
+      "status": "completed",
+      "steps": [
+        {
+          "completedAt": "2026-10-05T21:19:12Z",
+          "conclusion": "success",
+          "name": "Set up job",
+          "number": 1,
+          "startedAt": "2026-10-05T21:19:11Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:19:13Z",
+          "conclusion": "success",
+          "name": "Run actions/checkout@v4",
+          "number": 2,
+          "startedAt": "2026-10-05T21:19:12Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:19:13Z",
+          "conclusion": "success",
+          "name": "Run actions/setup-python@v5",
+          "number": 3,
+          "startedAt": "2026-10-05T21:19:13Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:19:24Z",
+          "conclusion": "success",
+          "name": "Run python -m pip install -e '.[test]'",
+          "number": 4,
+          "startedAt": "2026-10-05T21:19:13Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:19:34Z",
+          "conclusion": "success",
+          "name": "Policy and control logic (Docker tests remain opt-in)",
+          "number": 5,
+          "startedAt": "2026-10-05T21:19:24Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:19:35Z",
+          "conclusion": "success",
+          "name": "Post Run actions/setup-python@v5",
+          "number": 9,
+          "startedAt": "2026-10-05T21:19:34Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:19:35Z",
+          "conclusion": "success",
+          "name": "Post Run actions/checkout@v4",
+          "number": 10,
+          "startedAt": "2026-10-05T21:19:35Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:19:35Z",
+          "conclusion": "success",
+          "name": "Complete job",
+          "number": 11,
+          "startedAt": "2026-10-05T21:19:35Z",
+          "status": "completed"
+        }
+      ],
+      "url": "https://github.com/electricwolfemarshmallowhypertext/gov-substrate/actions/runs/37375053106/job/111981482537"
+    },
+    {
+      "completedAt": "2026-10-05T21:27:45Z",
+      "conclusion": "success",
+      "databaseId": 111981482673,
+      "name": "Kubernetes/Calico runtime conformance",
+      "startedAt": "2026-10-05T21:23:59Z",
+      "status": "completed",
+      "steps": [
+        {
+          "completedAt": "2026-10-05T21:24:01Z",
+          "conclusion": "success",
+          "name": "Set up job",
+          "number": 1,
+          "startedAt": "2026-10-05T21:24:00Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:24:01Z",
+          "conclusion": "success",
+          "name": "Run actions/checkout@v4",
+          "number": 2,
+          "startedAt": "2026-10-05T21:24:01Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:24:02Z",
+          "conclusion": "success",
+          "name": "Run actions/setup-python@v5",
+          "number": 3,
+          "startedAt": "2026-10-05T21:24:01Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:24:12Z",
+          "conclusion": "success",
+          "name": "Run python -m pip install -e '.[test]'",
+          "number": 4,
+          "startedAt": "2026-10-05T21:24:02Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:24:13Z",
+          "conclusion": "success",
+          "name": "Install pinned kind and kubectl releases",
+          "number": 5,
+          "startedAt": "2026-10-05T21:24:12Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:25:11Z",
+          "conclusion": "success",
+          "name": "Create pinned disposable cluster with Calico policy enforcement",
+          "number": 6,
+          "startedAt": "2026-10-05T21:24:13Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:25:26Z",
+          "conclusion": "success",
+          "name": "Build and load the immutable hostile-probe image",
+          "number": 7,
+          "startedAt": "2026-10-05T21:25:11Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:25:34Z",
+          "conclusion": "success",
+          "name": "Build and load the Phase 9 package-mirror fixture",
+          "number": 8,
+          "startedAt": "2026-10-05T21:25:26Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:25:34Z",
+          "conclusion": "success",
+          "name": "Create restricted default-deny worker namespace",
+          "number": 9,
+          "startedAt": "2026-10-05T21:25:34Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:25:35Z",
+          "conclusion": "success",
+          "name": "Record Kubernetes environment",
+          "number": 10,
+          "startedAt": "2026-10-05T21:25:34Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:25:45Z",
+          "conclusion": "success",
+          "name": "Supervisor conformance (real Kubernetes Pods)",
+          "number": 11,
+          "startedAt": "2026-10-05T21:25:35Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:27:40Z",
+          "conclusion": "success",
+          "name": "Runtime enforcement (real Kubernetes/Calico attempts)",
+          "number": 12,
+          "startedAt": "2026-10-05T21:25:45Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:27:41Z",
+          "conclusion": "success",
+          "name": "Upload Kubernetes evidence",
+          "number": 13,
+          "startedAt": "2026-10-05T21:27:40Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:27:43Z",
+          "conclusion": "success",
+          "name": "Remove disposable Kubernetes cluster",
+          "number": 14,
+          "startedAt": "2026-10-05T21:27:41Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:27:43Z",
+          "conclusion": "success",
+          "name": "Post Run actions/setup-python@v5",
+          "number": 27,
+          "startedAt": "2026-10-05T21:27:43Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:27:44Z",
+          "conclusion": "success",
+          "name": "Post Run actions/checkout@v4",
+          "number": 28,
+          "startedAt": "2026-10-05T21:27:43Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:27:44Z",
+          "conclusion": "success",
+          "name": "Complete job",
+          "number": 29,
+          "startedAt": "2026-10-05T21:27:44Z",
+          "status": "completed"
+        }
+      ],
+      "url": "https://github.com/electricwolfemarshmallowhypertext/gov-substrate/actions/runs/37375053106/job/111981482673"
+    },
+    {
+      "completedAt": "2026-10-05T21:28:59Z",
+      "conclusion": "success",
+      "databaseId": 111981482674,
+      "name": "Hostile probe (x86_64-unknown-linux-gnu)",
+      "startedAt": "2026-10-05T21:28:43Z",
+      "status": "completed",
+      "steps": [
+        {
+          "completedAt": "2026-10-05T21:28:44Z",
+          "conclusion": "success",
+          "name": "Set up job",
+          "number": 1,
+          "startedAt": "2026-10-05T21:28:43Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:28:45Z",
+          "conclusion": "success",
+          "name": "Run actions/checkout@v4",
+          "number": 2,
+          "startedAt": "2026-10-05T21:28:44Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:28:55Z",
+          "conclusion": "success",
+          "name": "Install pinned Rust target",
+          "number": 3,
+          "startedAt": "2026-10-05T21:28:45Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:28:56Z",
+          "conclusion": "success",
+          "name": "Compile the same hostile probe source",
+          "number": 4,
+          "startedAt": "2026-10-05T21:28:55Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:28:57Z",
+          "conclusion": "success",
+          "name": "Post Run actions/checkout@v4",
+          "number": 8,
+          "startedAt": "2026-10-05T21:28:56Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:28:57Z",
+          "conclusion": "success",
+          "name": "Complete job",
+          "number": 9,
+          "startedAt": "2026-10-05T21:28:57Z",
+          "status": "completed"
+        }
+      ],
+      "url": "https://github.com/electricwolfemarshmallowhypertext/gov-substrate/actions/runs/37375053106/job/111981482674"
+    },
+    {
+      "completedAt": "2026-10-05T21:19:57Z",
+      "conclusion": "success",
+      "databaseId": 111981482749,
+      "name": "Native Windows supervisor conformance",
+      "startedAt": "2026-10-05T21:18:43Z",
+      "status": "completed",
+      "steps": [
+        {
+          "completedAt": "2026-10-05T21:18:45Z",
+          "conclusion": "success",
+          "name": "Set up job",
+          "number": 1,
+          "startedAt": "2026-10-05T21:18:44Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:18:50Z",
+          "conclusion": "success",
+          "name": "Run actions/checkout@v4",
+          "number": 2,
+          "startedAt": "2026-10-05T21:18:45Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:18:50Z",
+          "conclusion": "success",
+          "name": "Run actions/setup-python@v5",
+          "number": 3,
+          "startedAt": "2026-10-05T21:18:50Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:19:20Z",
+          "conclusion": "success",
+          "name": "Run python -m pip install -e '.[test]'",
+          "number": 4,
+          "startedAt": "2026-10-05T21:18:50Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:19:36Z",
+          "conclusion": "success",
+          "name": "Build the fixed hostile probe for Windows",
+          "number": 5,
+          "startedAt": "2026-10-05T21:19:20Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:19:37Z",
+          "conclusion": "success",
+          "name": "Record native Windows environment",
+          "number": 6,
+          "startedAt": "2026-10-05T21:19:36Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:19:42Z",
+          "conclusion": "success",
+          "name": "Supervisor conformance (real native Windows workers)",
+          "number": 7,
+          "startedAt": "2026-10-05T21:19:37Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:19:53Z",
+          "conclusion": "success",
+          "name": "Runtime enforcement (real native Windows attempts)",
+          "number": 8,
+          "startedAt": "2026-10-05T21:19:42Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:19:54Z",
+          "conclusion": "success",
+          "name": "Upload native Windows evidence",
+          "number": 9,
+          "startedAt": "2026-10-05T21:19:53Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:19:54Z",
+          "conclusion": "success",
+          "name": "Post Run actions/setup-python@v5",
+          "number": 17,
+          "startedAt": "2026-10-05T21:19:54Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:19:56Z",
+          "conclusion": "success",
+          "name": "Post Run actions/checkout@v4",
+          "number": 18,
+          "startedAt": "2026-10-05T21:19:54Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:19:56Z",
+          "conclusion": "success",
+          "name": "Complete job",
+          "number": 19,
+          "startedAt": "2026-10-05T21:19:56Z",
+          "status": "completed"
+        }
+      ],
+      "url": "https://github.com/electricwolfemarshmallowhypertext/gov-substrate/actions/runs/37375053106/job/111981482749"
+    },
+    {
+      "completedAt": "2026-10-05T21:24:58Z",
+      "conclusion": "success",
+      "databaseId": 111981482751,
+      "name": "Rootless Podman runtime conformance",
+      "startedAt": "2026-10-05T21:23:46Z",
+      "status": "completed",
+      "steps": [
+        {
+          "completedAt": "2026-10-05T21:23:47Z",
+          "conclusion": "success",
+          "name": "Set up job",
+          "number": 1,
+          "startedAt": "2026-10-05T21:23:46Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:23:48Z",
+          "conclusion": "success",
+          "name": "Run actions/checkout@v4",
+          "number": 2,
+          "startedAt": "2026-10-05T21:23:47Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:23:48Z",
+          "conclusion": "success",
+          "name": "Run actions/setup-python@v5",
+          "number": 3,
+          "startedAt": "2026-10-05T21:23:48Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:23:59Z",
+          "conclusion": "success",
+          "name": "Run python -m pip install -e '.[test]'",
+          "number": 4,
+          "startedAt": "2026-10-05T21:23:48Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:24:12Z",
+          "conclusion": "success",
+          "name": "Configure local rootless Podman without Docker",
+          "number": 5,
+          "startedAt": "2026-10-05T21:23:59Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:24:13Z",
+          "conclusion": "success",
+          "name": "Record native rootless Podman environment",
+          "number": 6,
+          "startedAt": "2026-10-05T21:24:12Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:24:37Z",
+          "conclusion": "success",
+          "name": "Supervisor conformance (real rootless workers)",
+          "number": 7,
+          "startedAt": "2026-10-05T21:24:13Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:24:56Z",
+          "conclusion": "success",
+          "name": "Runtime enforcement (real rootless OS attempts)",
+          "number": 8,
+          "startedAt": "2026-10-05T21:24:37Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:24:56Z",
+          "conclusion": "success",
+          "name": "Upload rootless Podman evidence",
+          "number": 9,
+          "startedAt": "2026-10-05T21:24:56Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:24:56Z",
+          "conclusion": "success",
+          "name": "Post Run actions/setup-python@v5",
+          "number": 17,
+          "startedAt": "2026-10-05T21:24:56Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:24:57Z",
+          "conclusion": "success",
+          "name": "Post Run actions/checkout@v4",
+          "number": 18,
+          "startedAt": "2026-10-05T21:24:56Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-10-05T21:24:57Z",
+          "conclusion": "success",
+          "name": "Complete job",
+          "number": 19,
+          "startedAt": "2026-10-05T21:24:57Z",
+          "status": "completed"
+        }
+      ],
+      "url": "https://github.com/electricwolfemarshmallowhypertext/gov-substrate/actions/runs/37375053106/job/111981482751"
+    },
+    {
+      "completedAt": "2026-10-05T21:18:35Z",
+      "conclusion": "skipped",
+      "databaseId": 111981483609,
+      "name": "acceptance-phi",
+      "startedAt": "2026-10-05T21:18:35Z",
+      "status": "completed",
+      "steps": [],
+      "url": "https://github.com/electricwolfemarshmallowhypertext/gov-substrate/actions/runs/37375053106/job/111981483609"
+    }
+  ],
+  "status": "completed",
+  "updatedAt": "2026-10-05T21:28:59Z",
+  "url": "https://github.com/electricwolfemarshmallowhypertext/gov-substrate/actions/runs/37375053106"
+}

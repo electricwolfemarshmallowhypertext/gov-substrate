@@ -1,0 +1,61 @@
+{
+  "backend": "wasmtime",
+  "host": {
+    "apparmor_enabled": "Y",
+    "apparmor_version": {
+      "command": [
+        "apparmor_parser",
+        "--version"
+      ],
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "AppArmor parser version 4.0.1\nCopyright (C) 1999-2008 Novell Inc.\nCopyright 2009-2018 Canonical Ltd."
+    },
+    "cgroup_controllers": "cpuset cpu io memory hugetlb pids rdma misc dmem",
+    "libseccomp_version": {
+      "command": [
+        "dpkg-query",
+        "-W",
+        "-f=${Version}",
+        "libseccomp2"
+      ],
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "2.5.5-1ubuntu3.1"
+    },
+    "machine": "x86_64",
+    "os_release": "PRETTY_NAME=\"Ubuntu 24.04.5 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\nVERSION=\"24.04.5 LTS (Noble Numbat)\"\nVERSION_CODENAME=noble\nID=ubuntu\nID_LIKE=debian\nHOME_URL=\"https://www.ubuntu.com/\"\nSUPPORT_URL=\"https://help.ubuntu.com/\"\nBUG_REPORT_URL=\"https://bugs.launchpad.net/ubuntu/\"\nPRIVACY_POLICY_URL=\"https://www.ubuntu.com/legal/terms-and-policies/privacy-policy\"\nUBUNTU_CODENAME=noble\nLOGO=ubuntu-logo",
+    "process_status": {
+      "NoNewPrivs": "0",
+      "Seccomp": "0",
+      "Seccomp_filters": "0"
+    },
+    "release": "6.17.0-1022-azure",
+    "system": "Linux",
+    "version": "#22-Ubuntu SMP Mon Jul 27 17:24:03 UTC 2026"
+  },
+  "recorded_at": "2026-10-05T21:19:26.787429+00:00",
+  "runner_image": {
+    "name": "ubuntu24",
+    "version": "20260927.320.1"
+  },
+  "runtime": {
+    "guest_environment_inherited": false,
+    "guest_network_inherited": false,
+    "guest_target": "wasm32-wasip1",
+    "module_sha256": "6324d803fb64d09728d7316d1a741ceb865ca7bd067841ee1d6387ed431da643",
+    "module_size": 161154,
+    "wasmtime_sha256": "c36ef7e6548600b09bcb34cb3ee4c138f3e7b01893347ec7f48fdb8e6050aa94",
+    "wasmtime_version": {
+      "command": [
+        "/home/runner/work/_temp/wasmtime-v49.0.1-x86_64-linux/wasmtime",
+        "--version"
+      ],
+      "returncode": 0,
+      "stderr": "",
+      "stdout": "wasmtime 49.0.1 (46c23a87d 2026-09-24)"
+    }
+  },
+  "schema": 1,
+  "source_commit": "1d46d46d735e107b72ea4fa68e5ba560749ba7d1"
+}

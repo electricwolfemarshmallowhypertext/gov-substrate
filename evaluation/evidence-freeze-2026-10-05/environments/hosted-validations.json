@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "environment_class": "trusted-host-to-opaque-provider",
+  "host": {
+    "operating_system": "Windows",
+    "shell": "PowerShell",
+    "python_major_minor": "3.12",
+    "credential_location": "trusted host environment",
+    "credential_sent_to_worker_or_docker": false
+  },
+  "providers": [
+    "OpenAI",
+    "Anthropic",
+    "Google Gemini",
+    "OpenRouter"
+  ],
+  "model_execution_environment": "Provider controlled and not attested by Governance Substrate",
+  "record_basis": "Trusted-host terminal output and provider usage metadata preserved in evaluation/results",
+  "limitations": [
+    "No provider runtime attestation",
+    "No claim about hidden provider context",
+    "No claim about undisclosed retention or internal model substitution"
+  ]
+}

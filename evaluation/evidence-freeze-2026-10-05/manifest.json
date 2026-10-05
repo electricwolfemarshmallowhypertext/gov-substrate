@@ -1,0 +1,333 @@
+{
+  "schema": 1,
+  "freeze_id": "2026-10-05",
+  "freeze_tag": "evidence-2026-10-05",
+  "tested_commit": "1d46d46d735e107b72ea4fa68e5ba560749ba7d1",
+  "ci_run": {
+    "id": 37375053106,
+    "url": "https://github.com/electricwolfemarshmallowhypertext/gov-substrate/actions/runs/37375053106",
+    "conclusion": "success"
+  },
+  "outcome_vocabulary": [
+    "held",
+    "detected",
+    "denied",
+    "outside_boundary"
+  ],
+  "artifacts": {
+    "ci_run": {
+      "path": "evaluation/evidence-freeze-2026-10-05/ci-run-37375053106.json",
+      "sha256": "132963d5abae4bb7cb344b6bc9083ceaf9388b29008b67325254bfc9f33d02f6"
+    },
+    "negative_results": {
+      "path": "evaluation/evidence-freeze-2026-10-05/negative-results.json",
+      "sha256": "afc8293b4bf6376323fab74c7b3be10a573bdfd2ac48f367ba0b98fe525cbbc1"
+    },
+    "environment_docker": {
+      "path": "evaluation/evidence-freeze-2026-10-05/environments/docker.json",
+      "sha256": "67947532a7dc7446764040c79e96a93845eec4310d4796b5193a6e00e19e62fa",
+      "github_artifact_id": 11371676463
+    },
+    "environment_podman": {
+      "path": "evaluation/evidence-freeze-2026-10-05/environments/podman.json",
+      "sha256": "8d5a7eb60fb834e562452afae2e90df78cd45849cd463b35fe33a3c97cdac6e4",
+      "github_artifact_id": 11371696425
+    },
+    "environment_gvisor": {
+      "path": "evaluation/evidence-freeze-2026-10-05/environments/gvisor.json",
+      "sha256": "8eb1e7a4f85c51577fef38d57e3b23c6cac4dcfb81096632a5917d3fb58b20f6",
+      "github_artifact_id": 11371900525
+    },
+    "environment_wasmtime": {
+      "path": "evaluation/evidence-freeze-2026-10-05/environments/wasmtime.json",
+      "sha256": "6c50f36939385b7b34ab03e206c6f3d8b35a6e5cbbb1820cd19c8ca4cca0a492",
+      "github_artifact_id": 11371380631
+    },
+    "environment_openshell": {
+      "path": "evaluation/evidence-freeze-2026-10-05/environments/openshell.json",
+      "sha256": "c18907e62c6aefbdb480647dd6a6670d6d5c00c419ae67eb9d7c9727fe54b569",
+      "github_artifact_id": 11371186790
+    },
+    "environment_native_linux": {
+      "path": "evaluation/evidence-freeze-2026-10-05/environments/native-linux.json",
+      "sha256": "3f4fb1bfe1a9a5ff7f931a15fa6bdc4366599bcf3bebdf303062571ea8e0b61a",
+      "github_artifact_id": 11371630659
+    },
+    "environment_native_windows": {
+      "path": "evaluation/evidence-freeze-2026-10-05/environments/native-windows.json",
+      "sha256": "2abf5199353937b67544d44161bd61621356a71123640f87944075ee56d224c1",
+      "github_artifact_id": 11371800553
+    },
+    "environment_kubernetes": {
+      "path": "evaluation/evidence-freeze-2026-10-05/environments/kubernetes.json",
+      "sha256": "b014f6d50bf13f023e36f40ac22c0b103c756f3b925ebe4dd6ab2ca2037a1035",
+      "github_artifact_id": 11371292015
+    },
+    "environment_gke": {
+      "path": "evaluation/results/kubernetes-managed-gke.json",
+      "sha256": "3f1fc5f2406b382ea0ba035ea05769c18dd562a489bfa44bb0239aba6efc6f2a"
+    },
+    "environment_hosted": {
+      "path": "evaluation/evidence-freeze-2026-10-05/environments/hosted-validations.json",
+      "sha256": "61a99fa9039a92f2aaaa136c42b688e7eba9353d437744f2970a2dac48fb1eeb"
+    },
+    "result_incident_docker": {
+      "path": "evaluation/results/incident-derived-docker.json",
+      "sha256": "683efdab4058976594211fd77de4c09b19f6789c2e1734f351bae9af4395f669"
+    },
+    "result_local_models": {
+      "path": "evaluation/results/local-models.json",
+      "sha256": "4d9ff770c18c5dc74de75f2ed2f60304d28f1e77b6f15f15515eca38fd36e069"
+    },
+    "result_object_local_models": {
+      "path": "evaluation/results/object-local-models.json",
+      "sha256": "dc657426520c5d11c6cb76e6993b5f28d08469cd5e70e0abd8ad0573275910f7"
+    },
+    "result_egress_local_models": {
+      "path": "evaluation/results/egress-local-models.json",
+      "sha256": "3f1878e977d90034eff583e84e1afe97a3350340892f317ab2ae59aea29a7c30"
+    },
+    "result_openai_luna": {
+      "path": "evaluation/results/object-hosted-luna.json",
+      "sha256": "71c46df358a7b2cad6dd03766da09a1e7fa4e045660f45d7647707090a1fda9a"
+    },
+    "result_openai_sol": {
+      "path": "evaluation/results/object-hosted-sol.json",
+      "sha256": "0c19912e8ae31c93d126bb3d53e9eaed216d74278f9bc6e3fbfe09ffe7d225bb"
+    },
+    "result_anthropic_opus": {
+      "path": "evaluation/results/object-hosted-opus-47.json",
+      "sha256": "45c51edef7c5dad63ab3e470c17f883ad243777d85e5a1c8956e758051ad60db"
+    },
+    "result_anthropic_scope": {
+      "path": "evaluation/results/object-hosted-opus-47-scope-only.json",
+      "sha256": "2858ea9d27eabf3e5712e938fb59fb26b91df866940595f7b6f8e44ced374038"
+    },
+    "result_gemini": {
+      "path": "evaluation/results/gemini-direct.json",
+      "sha256": "08eedd541bc79732c0212ad56d2b87b60596b059a57572fb4657c1f3f011d41c"
+    },
+    "result_openrouter_glm": {
+      "path": "evaluation/results/openrouter-glm-5.2.json",
+      "sha256": "90a0d7e36a92744a5e71738efc17125429ecabc8543a8e772772a1e69fab02b9"
+    },
+    "result_openrouter_grok": {
+      "path": "evaluation/results/openrouter-grok-4.7.json",
+      "sha256": "5b50ce77d2676295cc6ca04e80207ab7ce7cb8be4bf48391d2f84574cebd1e1a"
+    },
+    "result_openrouter_kimi": {
+      "path": "evaluation/results/openrouter-kimi-k3.json",
+      "sha256": "472256331832675096d334ffe9e2bd30048ffdaaedbf70a6def32973eecb59fc"
+    }
+  },
+  "claims": [
+    {
+      "id": "managed-state-and-audit-integrity",
+      "outcome": "detected",
+      "statement": "The tested substrate detected managed-state, audit-chain, registry, and independently witnessed audit-head divergence and failed closed.",
+      "implementation": [
+        "substrate.py",
+        "audit_witness.py"
+      ],
+      "tests": [
+        "tests/test_substrate.py",
+        "tests/acceptance/phase9/test_gateway_boundary.py"
+      ],
+      "environment_artifacts": [
+        "environment_docker"
+      ],
+      "raw_results": [
+        "ci_run"
+      ],
+      "remaining_boundary": "Local-only mode trusts its host; high-assurance mode requires an independent witness."
+    },
+    {
+      "id": "network-filesystem-and-shared-capabilities",
+      "outcome": "denied",
+      "statement": "The named ungranted network, filesystem, shared-resource, process, IPC, socket, secret, and persistence paths were unavailable or denied in the tested environments.",
+      "implementation": [
+        "substrate.py",
+        "network_adapter.py",
+        "filesystem_adapter.py"
+      ],
+      "tests": [
+        "tests/acceptance/environment/test_environment.py",
+        "tests/acceptance/environment/test_delegated_service.py",
+        "tests/acceptance/incidents/test_incident_escape.py"
+      ],
+      "environment_artifacts": [
+        "environment_docker"
+      ],
+      "raw_results": [
+        "ci_run",
+        "result_incident_docker"
+      ],
+      "remaining_boundary": "Only the enumerated paths and recorded runtime configurations were tested."
+    },
+    {
+      "id": "one-use-grants-circuit-and-shutdown",
+      "outcome": "denied",
+      "statement": "Altered, expired, replayed, or circuit-revoked authority was denied; the real Docker supervisor force-killed and removed the exact uncooperative worker and rejected late completion.",
+      "implementation": [
+        "substrate.py",
+        "runtime_supervisor.py",
+        "provider_gateway.py"
+      ],
+      "tests": [
+        "tests/test_execution_grants_circuit.py",
+        "tests/test_docker_runtime_integration.py",
+        "tests/acceptance/phase9/test_gateway_boundary.py"
+      ],
+      "environment_artifacts": [
+        "environment_docker"
+      ],
+      "raw_results": [
+        "ci_run"
+      ],
+      "remaining_boundary": "A provider call already admitted at the dispatch boundary is in flight and cannot be recalled."
+    },
+    {
+      "id": "runtime-conformance-matrix",
+      "outcome": "held",
+      "statement": "The same backend-neutral supervisor contract and hostile-worker enforcement suite passed under Docker, rootless Podman, gVisor, Wasmtime, OpenShell, native Linux, native Windows, and Kind/Calico.",
+      "implementation": [
+        "runtime_supervisor.py",
+        "runtime-probe/src/main.rs"
+      ],
+      "tests": [
+        "tests/acceptance/conformance/test_supervisor_contract.py",
+        "tests/acceptance/conformance/test_runtime_enforcement.py"
+      ],
+      "environment_artifacts": [
+        "environment_docker",
+        "environment_podman",
+        "environment_gvisor",
+        "environment_wasmtime",
+        "environment_openshell",
+        "environment_native_linux",
+        "environment_native_windows",
+        "environment_kubernetes"
+      ],
+      "raw_results": [
+        "ci_run"
+      ],
+      "remaining_boundary": "Each result applies only to the recorded backend version, host, and configuration."
+    },
+    {
+      "id": "managed-kubernetes-conformance",
+      "outcome": "held",
+      "statement": "The unchanged Kubernetes suite passed in a disposable GKE Autopilot cluster after an initial exact-validation failure was fixed without relaxing isolation checks.",
+      "implementation": [
+        "kubernetes_runtime_supervisor.py",
+        "runtime-probe/src/main.rs"
+      ],
+      "tests": [
+        "tests/acceptance/conformance/test_supervisor_contract.py",
+        "tests/acceptance/conformance/test_runtime_enforcement.py"
+      ],
+      "environment_artifacts": [
+        "environment_gke"
+      ],
+      "raw_results": [
+        "environment_gke",
+        "negative_results"
+      ],
+      "remaining_boundary": "The result applies to the recorded disposable GKE Autopilot environment."
+    },
+    {
+      "id": "local-model-governed-generation",
+      "outcome": "held",
+      "statement": "Real Qwen and Phi inference used the same sealed-input and governed-output path; current CI repeated the pinned Qwen leg.",
+      "implementation": [
+        "generation_adapter.py",
+        "local_generation_worker.py"
+      ],
+      "tests": [
+        "tests/acceptance/test_local_runtime.py",
+        "tests/acceptance/test_network_scope.py"
+      ],
+      "environment_artifacts": [
+        "environment_docker"
+      ],
+      "raw_results": [
+        "ci_run",
+        "result_local_models",
+        "result_object_local_models",
+        "result_egress_local_models"
+      ],
+      "remaining_boundary": "Model runs validate integration behavior, not model safety or general intelligence."
+    },
+    {
+      "id": "hosted-model-governed-generation",
+      "outcome": "held",
+      "statement": "The same sealed-input, inherited-classification, and publication boundary held in the bounded OpenAI, Anthropic, Gemini, and pinned OpenRouter validations.",
+      "implementation": [
+        "generation_adapter.py",
+        "tests/hosted_model_object_smoke.py",
+        "tests/anthropic_object_smoke.py",
+        "tests/gemini_direct_smoke.py",
+        "tests/openrouter_direct_smoke.py"
+      ],
+      "tests": [
+        "tests/test_hosted_generation_adapters.py",
+        "tests/test_gemini_direct_smoke.py",
+        "tests/test_openrouter_direct_smoke.py"
+      ],
+      "environment_artifacts": [
+        "environment_hosted"
+      ],
+      "raw_results": [
+        "result_openai_luna",
+        "result_openai_sol",
+        "result_anthropic_opus",
+        "result_anthropic_scope",
+        "result_gemini",
+        "result_openrouter_glm",
+        "result_openrouter_grok",
+        "result_openrouter_kimi"
+      ],
+      "remaining_boundary": "The substrate controls transmitted and accepted data but cannot attest to provider internals."
+    },
+    {
+      "id": "adapter-and-provider-contradictions",
+      "outcome": "detected",
+      "statement": "Altered sealed inputs, model or upstream identity, privacy profile, completion identity, audit head, and replay attempts were detected at the tested boundaries.",
+      "implementation": [
+        "substrate.py",
+        "provider_gateway.py",
+        "generation_adapter.py",
+        "audit_witness.py"
+      ],
+      "tests": [
+        "tests/test_compromised_host_provider.py",
+        "tests/acceptance/phase9/test_gateway_boundary.py"
+      ],
+      "environment_artifacts": [
+        "environment_docker",
+        "environment_hosted"
+      ],
+      "raw_results": [
+        "ci_run",
+        "negative_results"
+      ],
+      "remaining_boundary": "Undisclosed provider behavior that produces no observable contradiction remains outside the boundary."
+    },
+    {
+      "id": "trusted-host-and-opaque-provider-limit",
+      "outcome": "outside_boundary",
+      "statement": "A fully compromised trusted host or kernel and hidden hosted-provider behavior are not claimed as contained by this implementation.",
+      "implementation": [
+        "docs/Substrate-Reference-Architecture.md",
+        "docs/Compromised-Host-Provider-Evaluation.md"
+      ],
+      "tests": [],
+      "environment_artifacts": [
+        "environment_hosted"
+      ],
+      "raw_results": [
+        "negative_results"
+      ],
+      "remaining_boundary": "Requires a separate trusted host, hardware or provider attestation, or another independent control plane."
+    }
+  ]
+}

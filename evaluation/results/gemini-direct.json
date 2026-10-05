@@ -1,0 +1,38 @@
+{
+  "model": "gemini-3.8-flash",
+  "provider": "google-gemini",
+  "date": "2026-09-29",
+  "source": "User-provided trusted-host terminal output",
+  "acceptance": "pass",
+  "api_requests": 2,
+  "input_tokens": 39,
+  "output_tokens": 320,
+  "calculated_standard_cost_usd": "0.00122925",
+  "scenarios": [
+    {
+      "scenario": "private_transfer_denied_before_api",
+      "decision": "deny",
+      "reason": "provider_classification_denied",
+      "api_requests": 0
+    },
+    {
+      "scenario": "private_generation_and_publication_denial",
+      "generation": "succeeded",
+      "classification": "private",
+      "publication": "deny",
+      "usage": {"input_tokens": 20, "output_tokens": 200, "thinking_tokens": 190},
+      "api_requests": 1
+    },
+    {
+      "scenario": "clean_public_generation_and_publication",
+      "generation": "succeeded",
+      "classification": "public",
+      "publication": "succeeded",
+      "usage": {"input_tokens": 19, "output_tokens": 120, "thinking_tokens": 115},
+      "api_requests": 2
+    }
+  ],
+  "preceding_provider_failures": [
+    {"attempts": 2, "http_status": 503, "model_requests_completed": 0}
+  ]
+}
