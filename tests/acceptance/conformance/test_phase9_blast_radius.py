@@ -58,6 +58,14 @@ def test_package_mirror_cannot_expand_kubernetes_blast_radius(
         "metadata": {"name": "phase9-target", "namespace": backend.namespace},
         "spec": {"selector": {"phase9-role": "target"},
                  "ports": [{"port": 8002, "targetPort": 8002}]}}
+    backend._kubectl("create", "-f", "-", input_text=json.dumps({
+        "apiVersion": "v1", "kind": "List", "items": [target, target_service]}))
+    backend._fixtures.extend(("service/phase9-target", "pod/phase9-target"))
+    backend._kubectl("wait", "--for=condition=Ready", "pod/phase9-target",
+                     "--timeout=90s", timeout=100)
+    target_info = json.loads(backend._kubectl("get", "pod/phase9-target", "-o", "json"))
+    target_ip = target_info["status"]["podIP"]
+
     mirror = {
         "apiVersion": "v1", "kind": "Pod",
         "metadata": {"name": "phase9-mirror", "namespace": backend.namespace,
@@ -71,7 +79,7 @@ def test_package_mirror_cannot_expand_kubernetes_blast_radius(
                      "command": ["python", "/app/service.py", "mirror"],
                      "env": [{"name": "PORT", "value": "8080"},
                              {"name": "TARGET_URL",
-                              "value": "http://phase9-target:8002/"}],
+                              "value": f"http://{target_ip}:8002/"}],
                      "securityContext": {"allowPrivilegeEscalation": False,
                          "readOnlyRootFilesystem": True, "runAsNonRoot": True,
                          "runAsUser": 65532, "runAsGroup": 65532,
@@ -86,11 +94,7 @@ def test_package_mirror_cannot_expand_kubernetes_blast_radius(
         "spec": {"podSelector": {"matchLabels": {"phase9-role": "mirror"}},
                  "policyTypes": ["Egress"], "egress": [{"to": [{"podSelector": {
                      "matchLabels": {"phase9-role": "target"}}}],
-                     "ports": [{"protocol": "TCP", "port": 8002}]},
-                    {"to": [{"namespaceSelector": {"matchLabels": {
-                        "kubernetes.io/metadata.name": "kube-system"}}}],
-                     "ports": [{"protocol": "UDP", "port": 53},
-                               {"protocol": "TCP", "port": 53}]}]}}
+                     "ports": [{"protocol": "TCP", "port": 8002}]}]}}
     target_ingress = {"apiVersion": "networking.k8s.io/v1", "kind": "NetworkPolicy",
         "metadata": {"name": "phase9-target-from-mirror", "namespace": backend.namespace},
         "spec": {"podSelector": {"matchLabels": {"phase9-role": "target"}},
@@ -99,13 +103,13 @@ def test_package_mirror_cannot_expand_kubernetes_blast_radius(
                      "ports": [{"protocol": "TCP", "port": 8002}]}]}}
     backend._kubectl("create", "-f", "-", input_text=json.dumps({
         "apiVersion": "v1", "kind": "List",
-        "items": [target, target_service, mirror, mirror_service, policy, target_ingress]}))
+        "items": [mirror, mirror_service, policy, target_ingress]}))
     backend._fixtures.extend((
         "networkpolicy/phase9-target-from-mirror",
         "networkpolicy/phase9-mirror-only", "service/phase9-mirror",
-        "pod/phase9-mirror", "service/phase9-target", "pod/phase9-target"))
-    backend._kubectl("wait", "--for=condition=Ready", "pod/phase9-target",
-                     "pod/phase9-mirror", "--timeout=90s", timeout=100)
+        "pod/phase9-mirror"))
+    backend._kubectl("wait", "--for=condition=Ready", "pod/phase9-mirror",
+                     "--timeout=90s", timeout=100)
     mirror_info = json.loads(backend._kubectl("get", "service/phase9-mirror", "-o", "json"))
     mirror_ip = mirror_info["spec"]["clusterIP"]
 
