@@ -28,6 +28,12 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         return
 
+    def do_GET(self):
+        if self.path == "/health":
+            response(self, 200, {"status": "ok"})
+        else:
+            response(self, 404, {"error": "unknown_route"})
+
     def do_POST(self):
         try:
             length = int(self.headers.get("Content-Length", "0"))

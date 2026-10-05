@@ -3,19 +3,12 @@
 import base64
 import json
 import os
-import subprocess
-import time
-import urllib.request
-from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
 from generation_adapter import run_local_generation
 from substrate import Substrate, create_app
-
-
-ROOT = Path(__file__).resolve().parents[3]
 
 
 def import_text(substrate, text):
@@ -80,6 +73,8 @@ def test_package_mirror_cannot_expand_kubernetes_blast_radius(
                      "env": [{"name": "PORT", "value": "8080"},
                              {"name": "TARGET_URL",
                               "value": f"http://{target_ip}:8002/"}],
+                     "readinessProbe": {"httpGet": {"path": "/health", "port": 8080},
+                                        "periodSeconds": 1, "timeoutSeconds": 1},
                      "securityContext": {"allowPrivilegeEscalation": False,
                          "readOnlyRootFilesystem": True, "runAsNonRoot": True,
                          "runAsUser": 65532, "runAsGroup": 65532,
@@ -113,31 +108,20 @@ def test_package_mirror_cannot_expand_kubernetes_blast_radius(
     mirror_info = json.loads(backend._kubectl("get", "service/phase9-mirror", "-o", "json"))
     mirror_ip = mirror_info["spec"]["clusterIP"]
 
-    port = backend._free_port()
-    forward = subprocess.Popen(
-        backend._command("port-forward", "pod/phase9-mirror", f"{port}:8080",
-                         "--address=127.0.0.1"), cwd=ROOT,
-        env=backend.supervisor._environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    backend._port_forwards.append(forward)
-    mirror_url = f"http://127.0.0.1:{port}"
-    for _ in range(80):
-        try:
-            request = urllib.request.Request(mirror_url + "/proxy", data=b"{}",
-                                             headers={"Content-Type": "application/json"},
-                                             method="POST")
-            with urllib.request.urlopen(request, timeout=1) as response:
-                result = json.load(response)
-            if result == {"proxied": "reachable"}:
-                break
-        except OSError:
-            time.sleep(.1)
-    else:
-        raise AssertionError("package mirror could not reach the Kubernetes target")
-    request = urllib.request.Request(mirror_url + "/credentials", data=b"{}",
-                                     headers={"Content-Type": "application/json"}, method="POST")
-    with urllib.request.urlopen(request, timeout=2) as response:
-        assert json.load(response) == {"service_account_token_present": False}
+    observed = json.loads(backend._kubectl(
+        "exec", "pod/phase9-mirror", "--", "python", "-c",
+        "import json,urllib.request\n"
+        "def post(path):\n"
+        " r=urllib.request.Request('http://127.0.0.1:8080'+path,data=b'{}',"
+        "headers={'Content-Type':'application/json'},method='POST')\n"
+        " with urllib.request.urlopen(r,timeout=6) as x:return json.load(x)\n"
+        "print(json.dumps({'proxy':post('/proxy'),'credentials':post('/credentials')}))"))
+    assert observed == {
+        "proxy": {"proxied": "reachable"},
+        "credentials": {"service_account_token_present": False},
+    }
 
+    mirror_url = f"http://{mirror_ip}:8002"
     actor = {"network": {"allowed": True, "services": [{
                  "origin": mirror_url, "mode": "delegated", "egress": "internal"}]},
              "filesystem": {"read": False, "write": False}, "tools": {},
