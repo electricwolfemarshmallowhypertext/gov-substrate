@@ -17,7 +17,7 @@ In the tested reference configuration:
 - agents could not directly reach the network or governed workspace;
 - state, file, network, publication, and provider-transfer requests passed through the substrate;
 - one-use execution grants bound authorization to the exact actor, session, action, inputs, policy, and capability;
-- an operator circuit breaker revoked authority and stopped supervised workers;
+- an operator circuit breaker revoked authority, blocked undispatched provider calls, and stopped supervised workers;
 - each tested runtime supervisor verified stopped workers and reconciled orphaned workers after restart;
 - classified model output inherited the highest classification of its sealed governed inputs;
 - private generated output could not be published, while clean public output could be published.
@@ -37,8 +37,8 @@ The circuit breaker is checked before authorization and again before execution. 
 - **Data egress:** external publication accepts governed public objects rather than arbitrary agent-supplied bytes.
 - **Object provenance:** transforms and generated text retain exact parents and inherit the highest input classification. Lowering classification requires an audited operator action.
 - **Hosted transfer:** external model providers are denied by default and must be registered for the classifications they may receive.
-- **Execution control:** one-use grants, scoped emergency stops, verified worker shutdown, and orphan reconciliation.
-- **Compromised-adapter controls:** exact provider request identities, short-lived gateway credentials, request-bound operator approval, signed completion receipts, independent audit witnessing, and anomaly-triggered containment.
+- **Execution control:** one-use grants, scoped emergency stops, verified graceful and forced worker shutdown, and orphan reconciliation.
+- **Compromised-adapter controls:** exact provider request identities, circuit-aware one-use gateway dispatch, request-bound operator approval, signed completion receipts, optional or high-assurance-required independent audit witnessing, and anomaly-triggered containment.
 
 Generation is model- and provider-agnostic. The optional local worker and the OpenAI, Anthropic, Gemini, and OpenRouter adapters use the same sealed-input and governed-output path.
 

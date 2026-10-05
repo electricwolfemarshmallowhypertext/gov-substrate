@@ -81,10 +81,53 @@ def signed_completion(substrate, admitted, text="governed output"):
     claim = substrate.claim_generation(admitted["generation_id"],
                                        admitted["execution_token"], "strict-provider")
     assert claim["decision"] == "allow"
+    dispatch = substrate.authorize_provider_call(
+        admitted["generation_id"], "strict-provider", claim["gateway_credential"])
+    assert dispatch["decision"] == "allow"
     receipt = create_receipt(
         SECRET, admitted["generation_id"], "strict-provider",
         claim["request_hash"], text.encode(), claim["gateway_credential"]).as_dict()
     return claim, receipt
+
+
+def test_provider_call_authorization_is_one_use_and_circuit_revocable(tmp_path):
+    substrate = Substrate(tmp_path / "dispatch.db", registry(approval=None),
+                          gateway_secrets={"strict-provider": SECRET})
+    session = substrate.create_session("a")["session_token"]
+    source = imported(substrate, "a", "public", b"sealed public input")
+    admitted = prepared(substrate, "a", session, source)
+    claim = substrate.claim_generation(admitted["generation_id"],
+                                       admitted["execution_token"], "strict-provider")
+    first = substrate.authorize_provider_call(
+        admitted["generation_id"], "strict-provider", claim["gateway_credential"])
+    assert first["decision"] == "allow"
+    assert substrate.authorize_provider_call(
+        admitted["generation_id"], "strict-provider",
+        claim["gateway_credential"])["reason"] == "provider_call_reused"
+
+    second_session = substrate.create_session("a")["session_token"]
+    second = prepared(substrate, "a", second_session, source)
+    second_claim = substrate.claim_generation(
+        second["generation_id"], second["execution_token"], "strict-provider")
+    substrate.set_circuit("circuit-token", "provider", "strict-provider", True,
+                          "provider compromise")
+    blocked = substrate.authorize_provider_call(
+        second["generation_id"], "strict-provider",
+        second_claim["gateway_credential"])
+    assert blocked["decision"] == "deny"
+    assert blocked["reason"] in {"provider_call_unavailable", "provider_call_revoked"}
+
+
+def test_high_assurance_requires_independent_witness(tmp_path):
+    with pytest.raises(ValueError, match="requires an independent audit witness"):
+        Substrate(tmp_path / "missing-witness.db", registry(approval=None),
+                  gateway_secrets={"strict-provider": SECRET},
+                  require_audit_witness=True)
+    substrate = Substrate(
+        tmp_path / "witness.db", registry(approval=None),
+        audit_witness=MemoryWitness(), gateway_secrets={"strict-provider": SECRET},
+        require_audit_witness=True)
+    assert substrate.create_session("a")["decision"] == "allow"
 
 
 def test_exact_provider_request_and_signed_completion_identity(tmp_path):

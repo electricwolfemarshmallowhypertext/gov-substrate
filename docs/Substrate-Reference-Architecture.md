@@ -41,6 +41,13 @@ Actors authenticate with bearer tokens from environment variables. The service i
 
 The state layer includes actor identity, explicit capabilities, session and persistent namespaces, prior events, and current health observations. The audit records actor, action, policy rule and registry digest, full managed state before and after, decision, timestamp, and override link. SQLite triggers reject ordinary updates and deletes of audit rows; a SHA-256 chain detects unauthorized changes to audit content. Direct changes to managed state are detected against the last admitted state snapshot on the next request.
 
+An independent witness can anchor every audit head outside SQLite. Setting
+`GOV_SUBSTRATE_HIGH_ASSURANCE=1` makes that witness mandatory at startup; missing,
+rejecting, unavailable, or divergent witness state fails closed. Local-only mode
+remains available and explicitly retains the trusted-host limitation: a
+privileged database owner that coherently rewrites state and the complete local
+chain is outside that weaker mode's guarantee.
+
 Shell and external API execution adapters remain absent; proposals for them are logged and denied.
 
 ## Network capability boundary (Milestone 2)
@@ -143,6 +150,13 @@ claim is revoked but shutdown remains unconfirmed. Reset is blocked while
 shutdown remains unconfirmed. Startup reconciliation must verify the relevant
 runtime empty before the substrate admits new actions.
 
+For gateway-required hosted providers, the gateway must consume a dispatch
+authorization from the substrate immediately before the upstream request. The
+authorization rechecks the circuit and sealed request, is one use, and marks the
+request as dispatched. A circuit trip before that boundary revokes the pending
+credential, and the gateway does not contact the provider. A request already
+marked dispatched is classified as in flight and cannot be recalled.
+
 `DockerRuntimeSupervisor` is the reference Docker/OCI supervisor. The trusted host
 configures a unique project ID per substrate deployment and passes the same
 supervisor instance to `Substrate` and `run_local_generation`. Each run receives
@@ -150,6 +164,9 @@ a stable name and deployment/generation labels. The backend addresses the
 container itself: stop, force kill if needed, wait, inspect its stopped state,
 remove, and verify absence. It leaves the container available for inspection
 until verification; killing the Compose CLI process alone is insufficient.
+The real Docker acceptance includes a worker that ignores `SIGTERM` and verifies
+Docker emitted `SIGKILL`, the exact container was removed, and late completion
+was rejected.
 At startup, reconciliation stops and audits labeled orphan workers before the
 substrate admits new actions. An unverified reconciliation prevents startup.
 Separate host processes need a trusted supervisor service to share that
@@ -269,12 +286,15 @@ inputs and whose classification is their highest classification.
 
 For `gateway_required` providers, the claim is also a signed, short-lived,
 one-use gateway credential. The separate gateway is the only component holding
-the provider credential. It validates the sealed request identity and returns a
+the provider credential. It validates the sealed request identity, consumes a
+one-use provider-call authorization from the substrate, and only then contacts
+the upstream provider. It returns a
 signed receipt covering the generation, provider, request identity, exact
 response hash, and credential. The substrate rejects missing, altered, replayed,
 expired, cross-generation, or circuit-revoked receipts. The reference Docker
-acceptance gives the worker no network and proves only the gateway can reach the
-provider fixture.
+acceptance gives the worker no network, proves only the gateway can reach the
+provider fixture, and proves a circuit trip after claim but before dispatch
+leaves the upstream call count unchanged.
 
 The OpenRouter adapter additionally pins the model and upstream, disables
 fallback providers, and verifies the reported upstream. Direct-provider and
@@ -316,9 +336,9 @@ enforces them:
 
 | Claim | Implemented boundary | Current evidence | Limit |
 | --- | --- | --- | --- |
-| Governed state and audit integrity | Transactional state gate, append-only audit triggers, hash chain, and state snapshots | Unit and deterministic adversarial tests | SQLite and its host remain trusted; a database owner can rewrite local evidence |
+| Governed state and audit integrity | Transactional state gate, append-only audit triggers, hash chain, state snapshots, and independently witnessed heads | Unit tests plus real mTLS witness acceptance and coherent local-rewrite detection | Local-only mode retains a weaker trusted-host boundary; high-assurance mode requires the external witness |
 | Network and filesystem confinement | Networkless workers, substrate-owned adapters, scoped workspace, and path controls | Real Docker environment probes plus the shared hostile-worker suite under native Docker, rootless Podman, gVisor, Wasmtime/WASI, NVIDIA OpenShell, native Linux, native Windows, disposable Kind/Calico, and disposable GKE Autopilot | Applies to the recorded runtime settings and granted mounts or handles |
-| Execution authority and emergency stop | One-use grants, execution-time circuit checks, runtime supervisor, and orphan reconciliation | Unit tests plus real native Docker, rootless Podman, gVisor, Wasmtime, NVIDIA OpenShell, native Linux, native Windows, Kind/Calico, and GKE Autopilot worker stop, removal, late-completion rejection, and restart reconciliation | A different backend or host configuration requires its own real evidence |
+| Execution authority and emergency stop | One-use grants, execution-time circuit checks, circuit-aware provider dispatch, runtime supervisor, and orphan reconciliation | Unit tests plus real provider-gateway revocation and native Docker, rootless Podman, gVisor, Wasmtime, NVIDIA OpenShell, native Linux, native Windows, Kind/Calico, and GKE Autopilot worker stop, removal, late-completion rejection, and restart reconciliation | A different backend or host configuration requires its own real evidence |
 | Local generated-output provenance | Sealed governed context, isolated local worker, inherited classification, and governed output object | Real Qwen and Phi inference through the same Docker worker | Establishes boundary behavior, not model quality or arbitrary backend equivalence |
 | Hosted transfer and generated-output provenance | Provider classification grants, sealed inputs, host-side credentials, governed return path, and publication gate | Bounded live OpenAI, Anthropic, Gemini, and pinned OpenRouter runs | The substrate cannot attest to hidden provider context, retention, or execution |
 | Incident-derived escape resistance | Exact request shapes and routes, denied delegated services, scoped state, inherited classification, execution-time revocation, and audit redaction | Deterministic policy checks plus a real networkless Docker agent with reachable relay and third-party fixtures | Covers the named incident classes and recorded configurations, not unknown exploits or all parser/protocol variants |

@@ -20,6 +20,13 @@ request identity, nonce, and 120-second expiry. Only its SHA-256 digest is
 stored. The external gateway verifies the credential and consumes it once. A
 provider credential remains in the gateway and is absent from the worker.
 
+Immediately before an upstream request, the gateway presents that credential
+back to the substrate. The substrate rechecks the sealed request and circuit
+state and atomically consumes a one-use dispatch authorization. A circuit trip
+after claim but before dispatch therefore denies the gateway request before the
+provider is contacted. Dispatch authorization defines the start of an in-flight
+provider request; a call already dispatched cannot be recalled.
+
 The gateway returns a signed receipt binding the generation, provider, exact
 request identity, exact response hash, and gateway credential. The substrate
 accepts the generated text only when every receipt field and signature matches.
@@ -41,6 +48,10 @@ reference client uses mutual TLS and verifies the independent head before each
 state transition or audit read. A missing, rejecting, or divergent witness
 makes the substrate fail closed. Local hash chaining and SQLite triggers remain;
 the witness adds a separate trust boundary rather than replacing them.
+`GOV_SUBSTRATE_HIGH_ASSURANCE=1` makes the witness a startup requirement. The
+real acceptance test coherently changes managed state and recomputes the local
+audit head; local consistency is preserved, but the independently stored head
+diverges and the substrate fails closed.
 
 ### Automatic scoped containment
 
@@ -57,10 +68,12 @@ path. Thresholds and the observation window are explicit registry policy.
 | Add, remove, reorder, or replace governed inputs | Existing immutable object, manifest-hash, ordered-parent, and one-use grant tests | Denied or detected before completion |
 | Substitute model, upstream, fallback, collection, ZDR, or retention policy | Phase 9 deterministic strict-profile test | Denied before a gateway call |
 | Invent, alter, expire, reuse, or cross a gateway credential | Deterministic receipt tests plus real Docker gateway replay | Denied |
+| Trip the provider circuit after claim but before gateway dispatch | Real Docker gateway/provider call counter | Denied before the upstream call; call count unchanged |
 | Forge, alter, replay, or attach a completion to another generation | Signed receipt and response-hash tests | Denied |
 | Send private data without exact operator review | Deterministic high-risk approval test | Escalated; only the exact approved request proceeds |
 | Rewrite or fork the local audit without the witness | Deterministic divergence test | Audit and subsequent actions fail closed |
 | Disable the independent witness | Real Docker mTLS witness test | Audit verification fails closed |
+| Coherently rewrite local managed state and its audit head | Real Docker mTLS witness test | Independent head diverges; audit fails closed |
 | Repeated denied resource probing | Deterministic monitor test | Actor circuit triggered |
 | Same denied resource probed by multiple actors | Deterministic monitor test | Capability circuit triggered |
 | Worker bypasses the provider gateway | Real Docker worker with `network_mode: none` | Direct gateway and provider connections failed |

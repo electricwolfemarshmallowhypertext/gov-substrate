@@ -5,8 +5,11 @@ import datetime
 import ipaddress
 import json
 import os
+import socket
+import sqlite3
 import ssl
 import subprocess
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -14,13 +17,14 @@ import uuid
 from pathlib import Path
 
 import pytest
+import uvicorn
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 
 from audit_witness import MTLSAuditWitness
-from substrate import IntegrityError, Substrate
+from substrate import IntegrityError, Substrate, canonical, create_app, digest
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -90,17 +94,27 @@ def post(url, body, certs):
         return json.load(response)
 
 
+def free_port():
+    with socket.socket() as listener:
+        listener.bind(("0.0.0.0", 0))
+        return listener.getsockname()[1]
+
+
 @pytest.mark.runtime_enforcement
 def test_only_mtls_gateway_has_provider_egress_and_witness_is_independent(
         tmp_path, acceptance_enabled):
     certs = tmp_path / "certs"
     certificates(certs)
     project = "govphase9" + uuid.uuid4().hex[:10]
+    substrate_port = free_port()
     prefix = ["compose", "-p", project, "-f", str(COMPOSE)]
     env = {name: value for name, value in os.environ.items()
            if not any(word in name.upper() for word in
                       ("API_KEY", "TOKEN", "SECRET", "PASSWORD"))}
-    env.update(PHASE9_CERTS=str(certs), LAB_IMAGE_TAG=project)
+    env.update(PHASE9_CERTS=str(certs), LAB_IMAGE_TAG=project,
+               PHASE9_SUBSTRATE_URL=f"http://host.docker.internal:{substrate_port}")
+    server = None
+    server_thread = None
     try:
         command(prefix, "build", "provider", env=env, timeout=1200)
         command(prefix, "up", "-d", "provider", "gateway", "witness", env=env)
@@ -128,14 +142,28 @@ def test_only_mtls_gateway_has_provider_egress_and_witness_is_independent(
                  "filesystem": {"read": False, "write": False}, "tools": {},
                  "persistence": {"session": True, "cross_session": False},
                  "shared_channels": []}
-        substrate = Substrate(tmp_path / "phase9.db", {
+        db_path = tmp_path / "phase9.db"
+        substrate = Substrate(db_path, {
             "actors": {"agent": actor}, "tokens": {"agent-token": "agent"},
-            "operator_token": "operator-token", "providers": {
+            "operator_token": "operator-token", "circuit_operator_token": "control-token",
+            "providers": {
                 "strict-provider": {"max_classification": "public",
                                     "request": PROFILE,
                                     "gateway_required": True}}},
             audit_witness=witness,
-            gateway_secrets={"strict-provider": SECRET})
+            gateway_secrets={"strict-provider": SECRET},
+            require_audit_witness=True)
+        server = uvicorn.Server(uvicorn.Config(
+            create_app(substrate), host="0.0.0.0", port=substrate_port,
+            log_level="error"))
+        server_thread = threading.Thread(target=server.run, daemon=True)
+        server_thread.start()
+        for _ in range(100):
+            if server.started:
+                break
+            time.sleep(.05)
+        else:
+            raise AssertionError("substrate callback did not start")
         session = substrate.create_session("agent")["session_token"]
         source = substrate.import_object(
             "public", "text/plain", base64.b64encode(b"sealed context").decode(),
@@ -167,6 +195,63 @@ def test_only_mtls_gateway_has_provider_egress_and_witness_is_independent(
             post(f"https://localhost:{gateway_port}/generate", payload, certs)
         assert replay.value.code == 409
 
+        state = substrate.propose("agent", session, {
+            "kind": "state.write", "scope": "session", "key": "integrity",
+            "value": "trusted"})
+        assert state["decision"] == "allow"
+        with sqlite3.connect(db_path) as db:
+            db.row_factory = sqlite3.Row
+            row = db.execute("SELECT * FROM events ORDER BY id DESC LIMIT 1").fetchone()
+            original = (row["state_after"], row["event_hash"])
+            db.execute("DROP TRIGGER events_no_update")
+            db.execute("UPDATE state SET value=? WHERE key='integrity'",
+                       (canonical("tampered"),))
+            snapshot = json.loads(row["state_after"])
+            for item in snapshot["state"]:
+                if item["key"] == "integrity":
+                    item["value"] = canonical("tampered")
+            fields = {key: row[key] for key in (
+                "timestamp", "actor", "action", "policy", "decision",
+                "state_before", "state_after", "override_of", "elapsed_ms",
+                "prev_hash")}
+            fields["state_after"] = canonical(snapshot)
+            db.execute("UPDATE events SET state_after=?,event_hash=? WHERE id=?",
+                       (fields["state_after"], digest(fields), row["id"]))
+        with pytest.raises(IntegrityError, match="witness diverged"):
+            substrate.audit()
+        with sqlite3.connect(db_path) as db:
+            db.execute("UPDATE state SET value=? WHERE key='integrity'",
+                       (canonical("trusted"),))
+            db.execute("UPDATE events SET state_after=?,event_hash=? WHERE id=?",
+                       (original[0], original[1], row["id"]))
+            db.execute("""CREATE TRIGGER events_no_update BEFORE UPDATE ON events
+                        BEGIN SELECT RAISE(ABORT, 'audit events are append only'); END""")
+        assert substrate.audit()[-1]["event_hash"] == original[1]
+
+        second = substrate.propose("agent", session, {
+            "kind": "generation.prepare", "input_ids": [source],
+            "provider": "strict-provider", "provider_request": PROFILE})
+        second_claim = substrate.claim_generation(
+            second["generation_id"], second["execution_token"], "strict-provider")
+        denied_payload = dict(
+            payload, generation_id=second["generation_id"],
+            request_hash=second_claim["request_hash"],
+            gateway_credential=second_claim["gateway_credential"])
+        before_calls = json.loads(command(
+            prefix, "exec", "-T", "provider", "python", "-c",
+            "import json,urllib.request; print(json.load(urllib.request.urlopen('http://127.0.0.1:8080/count'))['calls'])",
+            env=env))
+        substrate.set_circuit("control-token", "provider", "strict-provider", True,
+                              "provider compromise")
+        with pytest.raises(urllib.error.HTTPError) as revoked:
+            post(f"https://localhost:{gateway_port}/generate", denied_payload, certs)
+        assert revoked.value.code == 403
+        after_calls = json.loads(command(
+            prefix, "exec", "-T", "provider", "python", "-c",
+            "import json,urllib.request; print(json.load(urllib.request.urlopen('http://127.0.0.1:8080/count'))['calls'])",
+            env=env))
+        assert before_calls == after_calls
+
         probe = json.loads(command(
             prefix, "run", "--rm", "-e", f"GATEWAY_IP={gateway_ip}",
             "-e", f"PROVIDER_IP={provider_ip}", "worker", env=env))
@@ -178,6 +263,10 @@ def test_only_mtls_gateway_has_provider_egress_and_witness_is_independent(
         with pytest.raises(IntegrityError, match="witness unavailable"):
             substrate.audit()
     finally:
+        if server is not None:
+            server.should_exit = True
+        if server_thread is not None:
+            server_thread.join(timeout=10)
         subprocess.run(["docker", *prefix, "down", "--volumes", "--remove-orphans"],
                        cwd=ROOT, env=env, capture_output=True, timeout=180)
         subprocess.run(["docker", "image", "rm", f"gov-substrate-phase9:{project}"],

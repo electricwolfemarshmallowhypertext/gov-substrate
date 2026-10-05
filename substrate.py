@@ -26,7 +26,8 @@ from audit_witness import AuditWitness, MTLSAuditWitness
 from filesystem_adapter import MAX_CONTENT, check_target, parts_of, read_text, workspace_snapshot, write_text
 from governed_objects import CLASSIFICATIONS, transform
 from network_adapter import fetch, origin_and_target
-from provider_gateway import issue_gateway_credential, request_identity, verify_receipt
+from provider_gateway import (issue_gateway_credential, request_identity,
+                              verify_gateway_credential, verify_receipt)
 from runtime_supervisor import RuntimeSupervisor, StopResult
 
 
@@ -88,7 +89,8 @@ class Substrate:
                  workspace_root: str | Path | None = None,
                  runtime_supervisor: RuntimeSupervisor | None = None,
                  audit_witness: AuditWitness | None = None,
-                 gateway_secrets: dict[str, bytes] | None = None):
+                 gateway_secrets: dict[str, bytes] | None = None,
+                 require_audit_witness: bool = False):
         self.db_path = str(db_path)
         self._execution_lock = threading.RLock()
         self.actors = copy.deepcopy(registry["actors"])
@@ -103,6 +105,10 @@ class Substrate:
             raise ValueError("circuit operator token must be distinct and nonempty")
         self.runtime_supervisor = runtime_supervisor
         self.audit_witness = audit_witness
+        if type(require_audit_witness) is not bool:
+            raise ValueError("require_audit_witness must be a boolean")
+        if require_audit_witness and audit_witness is None:
+            raise ValueError("high-assurance mode requires an independent audit witness")
         self.gateway_secrets = dict(gateway_secrets or {})
         self.providers = copy.deepcopy(registry.get("providers", {}))
         if not isinstance(self.providers, dict):
@@ -297,6 +303,10 @@ class Substrate:
                 snapshot = self._snapshot(db)
                 self._append(db, "system", {"kind": "genesis"},
                              {"rule": "initial_state"}, "allow", snapshot, snapshot)
+        if require_audit_witness:
+            with self._db() as db:
+                if self._snapshot(db) != self._verify(db):
+                    raise IntegrityError("state integrity failed at startup")
         if self.runtime_supervisor is not None:
             self._reconcile_runtime()
 
@@ -318,7 +328,8 @@ class Substrate:
                            (digest({"kind": "generation.execute",
                                     "generation_id": item.generation_id}),))
                 db.execute("UPDATE generation_receipts SET status='revoked' "
-                           "WHERE generation_id=? AND status='issued'", (item.generation_id,))
+                           "WHERE generation_id=? AND status IN ('issued','dispatched')",
+                           (item.generation_id,))
             db.execute("UPDATE circuit_stops SET shutdown_confirmed=1 "
                        "WHERE active=1 AND shutdown_confirmed=0")
             after = self._snapshot(db)
@@ -692,7 +703,8 @@ class Substrate:
                         db.execute("UPDATE generations SET status='revoked' WHERE id=?",
                                    (run["id"],))
                         db.execute("UPDATE generation_receipts SET status='revoked' "
-                                   "WHERE generation_id=? AND status='issued'", (run["id"],))
+                                   "WHERE generation_id=? AND status IN ('issued','dispatched')",
+                                   (run["id"],))
                         affected.append(run["actor"])
                         stopped_runs.append(run["id"])
                 if scope == "global":
@@ -995,6 +1007,60 @@ class Substrate:
                 "request_hash": transfer["request_hash"] if transfer else None,
                 **({"gateway_credential": challenge} if challenge is not None else {})}
 
+    def authorize_provider_call(self, generation_id: str, provider: str,
+                                gateway_credential: str) -> dict[str, Any]:
+        """Consume a gateway credential at the provider-call boundary."""
+        with self._execution_lock, self._db() as db:
+            db.execute("BEGIN IMMEDIATE")
+            expected = self._verify(db)
+            before = self._snapshot(db)
+            run = db.execute("SELECT * FROM generations WHERE id=?",
+                             (generation_id,)).fetchone()
+            sealed_provider = self._generation_provider(db, generation_id) if run else None
+            transfer = db.execute(
+                "SELECT * FROM generation_transfers WHERE generation_id=?",
+                (generation_id,)).fetchone() if run else None
+            receipt = db.execute(
+                "SELECT * FROM generation_receipts WHERE generation_id=?",
+                (generation_id,)).fetchone() if run else None
+            credential = verify_gateway_credential(
+                self.gateway_secrets.get(provider, b""), gateway_credential)
+            if before != expected:
+                rule = "state_integrity"
+            elif run is None or run["status"] != "claimed":
+                rule = "provider_call_unavailable"
+            elif provider != sealed_provider:
+                rule = "provider_call_binding_mismatch"
+            elif receipt is None or receipt["status"] != "issued":
+                rule = "provider_call_reused" if receipt and receipt["status"] == "dispatched" else "provider_call_revoked"
+            elif receipt["expires_at"] <= time.time():
+                rule = "provider_call_expired"
+            elif (credential is None or credential["actor"] != run["actor"] or
+                  credential["generation_id"] != generation_id or
+                  credential["provider"] != provider or transfer is None or
+                  credential["request_hash"] != transfer["request_hash"] or
+                  hashlib.sha256(gateway_credential.encode()).hexdigest() !=
+                  receipt["challenge_hash"]):
+                rule = "provider_call_binding_mismatch"
+            elif self._stopped(db, run["actor"], "generation", provider):
+                rule = "provider_call_revoked"
+            else:
+                rule = None
+            if rule is None:
+                db.execute("UPDATE generation_receipts SET status='dispatched' "
+                           "WHERE generation_id=?", (generation_id,))
+            after = self._snapshot(db)
+            event_id = self._append(
+                db, "trusted-provider-gateway",
+                {"kind": "provider.call.authorize", "generation_id": generation_id,
+                 "provider": provider,
+                 "request_hash": transfer["request_hash"] if transfer else None},
+                {"rule": rule or "provider_call_authorized"},
+                "deny" if rule else "allow", before, after)
+            db.commit()
+        return {"event_id": event_id, "decision": "deny" if rule else "allow",
+                "reason": rule or "provider_call_authorized"}
+
     def complete_generation(self, generation_id: str, text: str,
                             receipt: dict[str, Any] | None = None) -> dict[str, Any]:
         try:
@@ -1025,7 +1091,7 @@ class Substrate:
             elif not payload or len(payload) > MAX_CONTENT:
                 rule = "invalid_generation_output"
             elif provider is not None and self.providers[provider].get("gateway_required", False):
-                if (receipt_row is None or receipt_row["status"] != "issued" or
+                if (receipt_row is None or receipt_row["status"] != "dispatched" or
                         receipt_row["expires_at"] <= time.time() or
                         not verify_receipt(self.gateway_secrets[provider], receipt or {}) or
                         receipt["generation_id"] != generation_id or
@@ -1739,6 +1805,14 @@ class GenerationCompleteRequest(BaseModel):
     receipt: dict[str, Any] | None = None
 
 
+class ProviderCallAuthorizationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    generation_id: str
+    provider: str
+    gateway_credential: str
+
+
 class ExecutionRequest(BaseModel):
     action: dict[str, Any]
     execution_token: str
@@ -1870,6 +1944,14 @@ def create_app(substrate: Substrate) -> FastAPI:
         except IntegrityError as exc:
             raise HTTPException(503, str(exc)) from exc
 
+    @app.post("/generations/provider-call")
+    def provider_call(body: ProviderCallAuthorizationRequest):
+        try:
+            return substrate.authorize_provider_call(
+                body.generation_id, body.provider, body.gateway_credential)
+        except IntegrityError as exc:
+            raise HTTPException(503, str(exc)) from exc
+
     @app.get("/health")
     def health(authorization: str | None = Header(default=None)):
         actor_from_header(authorization)
@@ -1898,10 +1980,14 @@ def app_from_env() -> FastAPI:
         if not all(witness_values):
             raise ValueError("all mTLS audit witness settings are required")
         witness = MTLSAuditWitness(*witness_values)
+    assurance = os.environ.get("GOV_SUBSTRATE_HIGH_ASSURANCE", "0")
+    if assurance not in ("0", "1"):
+        raise ValueError("GOV_SUBSTRATE_HIGH_ASSURANCE must be 0 or 1")
     return create_app(Substrate(os.environ.get("GOV_SUBSTRATE_DB", "substrate.db"), registry,
                                 os.environ.get("GOV_SUBSTRATE_WORKSPACE"),
                                 audit_witness=witness,
-                                gateway_secrets=registry["gateway_secrets"]))
+                                gateway_secrets=registry["gateway_secrets"],
+                                require_audit_witness=assurance == "1"))
 
 
 app = app_from_env() if os.environ.get("GOV_SUBSTRATE_AUTOSTART") == "1" else FastAPI()

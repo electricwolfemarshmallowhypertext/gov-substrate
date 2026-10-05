@@ -71,6 +71,10 @@ jobs:
         env:
           RUN_ACCEPTANCE_TESTS: '1'
         run: python -m pytest -q tests/acceptance/conformance -m runtime_enforcement
+      - name: Circuit force-kill and orphan recovery (real Docker)
+        env:
+          RUN_DOCKER_TESTS: '1'
+        run: python -m pytest -q tests/test_docker_runtime_integration.py
       - name: Upload native Docker evidence
         if: always()
         uses: actions/upload-artifact@v4

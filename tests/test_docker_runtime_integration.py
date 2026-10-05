@@ -1,6 +1,7 @@
 """Opt-in Docker proof that circuit shutdown stops the worker container."""
 
 import base64
+import json
 import os
 import subprocess
 import threading
@@ -17,14 +18,14 @@ from substrate import Substrate, create_app
 
 @pytest.mark.skipif(os.getenv("RUN_DOCKER_TESTS") != "1",
                     reason="set RUN_DOCKER_TESTS=1 for Docker integration")
-def test_circuit_verifies_running_container_stopped(tmp_path):
+def test_circuit_force_kills_uncooperative_container_and_verifies_removal(tmp_path):
     project = "govsubstrate" + uuid.uuid4().hex[:10]
     compose = tmp_path / "compose.yaml"
     compose.write_text('''services:
   generator:
     image: python:3.12-slim
     pull_policy: never
-    entrypoint: ["python", "-c", "import sys,time; sys.stdin.buffer.read(); time.sleep(60)"]
+    entrypoint: ["python", "-c", "import signal,sys,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); sys.stdin.buffer.read(); time.sleep(60)"]
     network_mode: none
     read_only: true
     cap_drop: [ALL]
@@ -69,6 +70,7 @@ def test_circuit_verifies_running_container_stopped(tmp_path):
             time.sleep(0.2)
         else:
             raise AssertionError("worker container never started")
+        event_since = str(int(time.time()) - 1)
         stop = substrate.set_circuit("control-token", "global", "*", True, "fixture stop")
         worker.join(timeout=15)
         assert stop["shutdown_confirmed"] is True
@@ -80,6 +82,14 @@ def test_circuit_verifies_running_container_stopped(tmp_path):
         assert event["action"]["kind"] == "circuit.shutdown"
         assert event["decision"] == "succeeded"
         assert event["action"]["results"][0]["runtime_id"] == info["Id"]
+        events = subprocess.run(
+            ["docker", "events", "--since", event_since,
+             "--until", str(int(time.time()) + 1), "--filter", f"container={info['Id']}",
+             "--filter", "event=kill", "--format", "{{json .}}"],
+            capture_output=True, text=True, timeout=10, check=True)
+        signals = {json.loads(line)["Actor"]["Attributes"].get("signal")
+                   for line in events.stdout.splitlines() if line}
+        assert "9" in signals, signals
     finally:
         subprocess.run(["docker", "container", "rm", "-f", name],
                        capture_output=True, timeout=15)

@@ -25,8 +25,10 @@ interface. A strict provider registration seals the model, upstream, fallback,
 collection, ZDR, and retention fields and can require operator approval at a
 classification threshold. `run_with_gateway` passes the sealed claim to a
 separate gateway. The gateway verifies a per-actor, per-generation credential,
-owns the provider credential, and returns the text with a signed response
-receipt. The substrate verifies that receipt before creating the output object.
+consumes a one-use dispatch authorization from the substrate immediately before
+the upstream request, owns the provider credential, and returns the text with a
+signed response receipt. The substrate verifies that receipt before creating the
+output object.
 
 ## Add to an existing agent stack
 
@@ -195,6 +197,10 @@ to the actor, active session, generation ID, input IDs and hashes, inherited
 classification, registry hash, provider, and expiry. The claim consumes it and
 records the use. An operator circuit trigger revokes affected unclaimed and
 claimed runs. The host must not make a provider call after a denied claim.
+Strict gateway mode additionally requires `/generations/provider-call` to admit
+the dispatch. That check consumes the gateway credential and rechecks the
+circuit. A trip before dispatch blocks the upstream call; a dispatch already
+admitted is in flight and cannot be recalled.
 
 The direct adapters rely on their trusted host process to preserve the sealed
 request. Strict gateway mode detects host-adapter changes to governed inputs,

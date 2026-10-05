@@ -31,6 +31,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/health":
             response(self, 200, {"status": "ok"})
+        elif self.path == "/count" and getattr(self.server, "mode", None) == "provider":
+            response(self, 200, {"calls": PROVIDER_CALLS})
         else:
             response(self, 404, {"error": "unknown_route"})
 
@@ -44,7 +46,11 @@ class Handler(BaseHTTPRequestHandler):
         getattr(self.server, "handle")(self, self.path, body)
 
 
+PROVIDER_CALLS = 0
+
+
 def provider(handler, path, body):
+    global PROVIDER_CALLS
     if (path != "/generate" or
             handler.headers.get("Authorization") !=
             "Bearer " + os.environ["PROVIDER_CREDENTIAL"]):
@@ -54,6 +60,7 @@ def provider(handler, path, body):
     if type(profile) is not dict or body.get("inputs") is None:
         response(handler, 400, {"error": "malformed_request"})
         return
+    PROVIDER_CALLS += 1
     response(handler, 200, {
         "text": "provider response from sealed context",
         "model": profile.get("model"),
@@ -103,6 +110,21 @@ def gateway(handler, path, body):
         return
     if expected != body["request_hash"] or len(decoded) != len(body["input_ids"]):
         response(handler, 400, {"error": "gateway_request_identity_mismatch"})
+        return
+    authorization = Request(
+        os.environ["SUBSTRATE_URL"].rstrip("/") + "/generations/provider-call",
+        data=json.dumps({"generation_id": body["generation_id"],
+                         "provider": body["provider"],
+                         "gateway_credential": body["gateway_credential"]}).encode(),
+        headers={"Content-Type": "application/json"}, method="POST")
+    try:
+        with urlopen(authorization, timeout=5) as authorized:
+            authorization_result = json.load(authorized)
+    except (OSError, ValueError):
+        response(handler, 503, {"error": "substrate_authorization_unavailable"})
+        return
+    if authorization_result.get("decision") != "allow":
+        response(handler, 403, {"error": "provider_call_revoked"})
         return
     USED_CREDENTIALS.add(credential_hash)
     outbound = json.dumps({"profile": body["provider_request"], "inputs": decoded},
@@ -172,6 +194,7 @@ class Witness:
 
 def serve(mode):
     server = ThreadingHTTPServer(("0.0.0.0", int(os.environ["PORT"])), Handler)
+    server.mode = mode
     if mode == "provider":
         server.handle = provider
     elif mode == "gateway":

@@ -22,10 +22,13 @@ services:
       PROVIDER_URL: "http://provider:8080/generate"
       PROVIDER_CREDENTIAL: "phase9-fixture-provider-credential"
       GATEWAY_SIGNING_SECRET: "phase-9-test-gateway-secret"
+      SUBSTRATE_URL: ${PHASE9_SUBSTRATE_URL}
     volumes:
       - ${PHASE9_CERTS}:/certs:ro
     ports: ["127.0.0.1::8443"]
     networks: [control, provider]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     read_only: true
     tmpfs: [/tmp]
     cap_drop: [ALL]
