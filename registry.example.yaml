@@ -19,6 +19,7 @@ actors:
     shared_channels: []
 operator_token_env: GOV_SUBSTRATE_OPERATOR_TOKEN
 circuit_operator_token_env: GOV_SUBSTRATE_CIRCUIT_OPERATOR_TOKEN
+require_task_identity: true
 # Hosted generation defaults to deny. An audited registry migration is required
 # before adding a grant. A strict gateway grant can bind the model, upstream,
 # privacy settings, high-risk approval threshold, and external verification key:
@@ -36,9 +37,9 @@ circuit_operator_token_env: GOV_SUBSTRATE_CIRCUIT_OPERATOR_TOKEN
 #     retention: none
 providers: {}
 
-# Optional automatic containment uses denied attempts only. Enabling it also
-# requires circuit_operator_token_env above.
-# monitoring:
-#   window_seconds: 60
-#   actor_denials: 10
-#   cross_actor_denials: 3
+# Automatic containment uses denied attempts only. Tune these thresholds for
+# each deployment; the circuit operator token remains host-side.
+monitoring:
+  window_seconds: 60
+  actor_denials: 10
+  cross_actor_denials: 3

@@ -81,7 +81,8 @@ def load_registry(path: str | Path) -> dict[str, Any]:
             gateway_secrets[name] = secret.encode()
     return {"actors": actors, "tokens": tokens, "operator_token": operator_token,
             "circuit_operator_token": control_token, "providers": providers,
-            "gateway_secrets": gateway_secrets, "monitoring": data.get("monitoring")}
+            "gateway_secrets": gateway_secrets, "monitoring": data.get("monitoring"),
+            "require_task_identity": data.get("require_task_identity", False)}
 
 
 class Substrate:
@@ -145,6 +146,9 @@ class Substrate:
                         for key in self.monitoring) or
                     self.circuit_operator_token is None):
                 raise ValueError("invalid anomaly monitoring policy")
+        self.require_task_identity = registry.get("require_task_identity", False)
+        if type(self.require_task_identity) is not bool:
+            raise ValueError("require_task_identity must be a boolean")
         self.workspace_root = Path(workspace_root).resolve(strict=True) if workspace_root else None
         if self.workspace_root is not None and not self.workspace_root.is_dir():
             raise ValueError("workspace root must be a directory")
@@ -221,6 +225,8 @@ class Substrate:
             registry_material["providers"] = self.providers
         if self.monitoring is not None:
             registry_material["monitoring"] = self.monitoring
+        if self.require_task_identity:
+            registry_material["require_task_identity"] = True
         if self.workspace_root is not None:
             registry_material["workspace_root"] = str(self.workspace_root)
         self.registry_hash = digest(registry_material)
@@ -233,6 +239,17 @@ class Substrate:
                 CREATE TABLE IF NOT EXISTS sessions (
                     id TEXT PRIMARY KEY, actor TEXT NOT NULL,
                     token_hash TEXT NOT NULL, active INTEGER NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS task_identities (
+                    id TEXT PRIMARY KEY, actor TEXT NOT NULL, parent_id TEXT,
+                    token_hash TEXT NOT NULL UNIQUE, capabilities TEXT NOT NULL,
+                    expires_at REAL NOT NULL, active INTEGER NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS task_sessions (
+                    session_id TEXT PRIMARY KEY, task_id TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS generation_sessions (
+                    generation_id TEXT PRIMARY KEY, session_id TEXT NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS objects (
                     id TEXT PRIMARY KEY, classification TEXT NOT NULL,
@@ -354,6 +371,12 @@ class Substrate:
         sessions = {r["id"]: {"actor": r["actor"], "token_hash": r["token_hash"],
                               "active": bool(r["active"])}
                     for r in db.execute("SELECT * FROM sessions ORDER BY id")}
+        task_identities = [dict(row) for row in db.execute(
+            "SELECT * FROM task_identities ORDER BY id")]
+        task_sessions = [dict(row) for row in db.execute(
+            "SELECT * FROM task_sessions ORDER BY session_id")]
+        generation_sessions = [dict(row) for row in db.execute(
+            "SELECT * FROM generation_sessions ORDER BY generation_id")]
         objects = [{"id": row["id"], "classification": row["classification"],
                     "media_type": row["media_type"], "readers": json.loads(row["readers"]),
                     "parents": json.loads(row["parents"]), "operation": row["operation"],
@@ -376,6 +399,12 @@ class Substrate:
         signals = [dict(row) for row in db.execute(
             "SELECT * FROM anomaly_signals ORDER BY id")]
         snapshot = {"state": state, "sessions": sessions}
+        if task_identities:
+            snapshot["task_identities_sha256"] = digest(task_identities)
+        if task_sessions:
+            snapshot["task_sessions"] = task_sessions
+        if generation_sessions:
+            snapshot["generation_sessions"] = generation_sessions
         if objects:
             snapshot["objects"] = objects
         if generations:
@@ -458,6 +487,96 @@ class Substrate:
                 return actor
         return None
 
+    def authenticate_principal(self, token: str) -> tuple[str, str | None] | None:
+        actor = self.authenticate(token)
+        if actor is not None:
+            return actor, None
+        if not token:
+            return None
+        with self._db() as db:
+            if self._snapshot(db) != self._verify(db):
+                raise IntegrityError("state integrity failed")
+            row = db.execute(
+                "SELECT id,actor FROM task_identities WHERE token_hash=? "
+                "AND active=1 AND expires_at>?",
+                (hashlib.sha256(token.encode()).hexdigest(), time.time())).fetchone()
+            return (row["actor"], row["id"]) if row else None
+
+    def issue_task_identity(self, operator_token: str, actor: str,
+                            capabilities: list[str], parent_id: str | None = None,
+                            ttl_seconds: int = 900) -> dict[str, Any]:
+        if not self.is_operator(operator_token):
+            raise PermissionError("invalid operator credential")
+        known = {"session", "state", "object", "network", "filesystem", "generation"}
+        if (actor not in self.actors or type(capabilities) is not list or
+                not capabilities or not all(isinstance(item, str) for item in capabilities) or
+                len(capabilities) != len(set(capabilities)) or
+                not set(capabilities) <= known or type(ttl_seconds) is not int or
+                not 1 <= ttl_seconds <= 3600 or
+                (parent_id is not None and
+                 (not isinstance(parent_id, str) or len(parent_id) != 32))):
+            raise ValueError("invalid task authority")
+        task_id, token = secrets.token_hex(16), secrets.token_urlsafe(32)
+        expires_at = time.time() + ttl_seconds
+        with self._execution_lock, self._db() as db:
+            db.execute("BEGIN IMMEDIATE")
+            before = self._snapshot(db)
+            if before != self._verify(db):
+                raise IntegrityError("state integrity failed")
+            if self._stopped(db, actor, "session", None):
+                raise ValueError("task authority unavailable during circuit stop")
+            parent = None
+            if parent_id is not None:
+                parent = db.execute("SELECT * FROM task_identities WHERE id=? AND active=1 "
+                                    "AND expires_at>?", (parent_id, time.time())).fetchone()
+                if (parent is None or parent["actor"] == actor or
+                        not set(capabilities) <= set(json.loads(parent["capabilities"])) or
+                        expires_at > parent["expires_at"]):
+                    raise ValueError("parent task does not grant this authority")
+            if db.execute("SELECT 1 FROM task_identities WHERE actor=? AND active=1 "
+                          "AND expires_at>?", (actor, time.time())).fetchone():
+                raise ValueError("actor already has an active task identity")
+            db.execute("INSERT INTO task_identities VALUES (?,?,?,?,?,?,1)",
+                       (task_id, actor, parent_id, hashlib.sha256(token.encode()).hexdigest(),
+                        canonical(sorted(capabilities)), expires_at))
+            after = self._snapshot(db)
+            event_id = self._append(db, "human-operator",
+                                    {"kind": "task.issue", "task_id": task_id,
+                                     "actor": actor, "parent_id": parent_id,
+                                     "capabilities": sorted(capabilities),
+                                     "expires_at": expires_at},
+                                    {"rule": "operator_task_authority"},
+                                    "allow", before, after)
+            db.commit()
+        return {"event_id": event_id, "task_id": task_id, "actor": actor,
+                "parent_id": parent_id, "task_token": token,
+                "expires_at": expires_at}
+
+    @staticmethod
+    def _task_session_live(db: sqlite3.Connection, session_id: str) -> bool:
+        row = db.execute("SELECT t.active,t.expires_at FROM task_sessions s "
+                         "JOIN task_identities t ON t.id=s.task_id WHERE s.session_id=?",
+                         (session_id,)).fetchone()
+        return row is None or (bool(row["active"]) and row["expires_at"] > time.time())
+
+    @staticmethod
+    def _session_task_id(db: sqlite3.Connection, session_id: str) -> str | None:
+        row = db.execute("SELECT task_id FROM task_sessions WHERE session_id=?",
+                         (session_id,)).fetchone()
+        return row["task_id"] if row else None
+
+    @staticmethod
+    def _task_capability(db: sqlite3.Connection, task_id: str, capability: str) -> bool:
+        row = db.execute("SELECT capabilities FROM task_identities WHERE id=? AND active=1 "
+                         "AND expires_at>?", (task_id, time.time())).fetchone()
+        return row is not None and capability in json.loads(row["capabilities"])
+
+    @staticmethod
+    def _generation_task_live(db: sqlite3.Connection, generation_id: str) -> bool:
+        row = db.execute("SELECT session_id FROM generation_sessions WHERE generation_id=?",
+                         (generation_id,)).fetchone()
+        return row is None or Substrate._task_session_live(db, row["session_id"])
+
     def is_operator(self, token: str) -> bool:
         return hmac.compare_digest(token, self.operator_token)
 
@@ -485,6 +604,8 @@ class Substrate:
             if not db.execute("SELECT 1 FROM sessions WHERE id=? AND actor=? AND active=1",
                               (row["session_id"], row["actor"])).fetchone():
                 raise ValueError("transfer approval session is unavailable")
+            if not self._task_session_live(db, row["session_id"]):
+                raise ValueError("transfer approval task is unavailable")
             approval_token = secrets.token_urlsafe(32)
             expires_at = time.time() + 120
             db.execute("UPDATE transfer_approvals SET token_hash=?,expires_at=?,status='issued',"
@@ -508,13 +629,15 @@ class Substrate:
         if self.monitoring is None:
             return
         trigger = None
+        detected_at = time.time()
+        detected_tick = time.perf_counter()
         with self._execution_lock, self._db() as db:
             db.execute("BEGIN IMMEDIATE")
             expected = self._verify(db)
             before = self._snapshot(db)
             if before != expected:
                 raise IntegrityError("state integrity failed")
-            now = time.time()
+            now = detected_at
             db.execute("INSERT INTO anomaly_signals(timestamp,actor,capability,fingerprint,event_id) "
                        "VALUES (?,?,?,?,?)", (now, actor, capability, fingerprint, source_event_id))
             cutoff = now - self.monitoring["window_seconds"]
@@ -538,8 +661,10 @@ class Substrate:
             db.commit()
         if trigger is not None:
             try:
-                self.set_circuit(self.circuit_operator_token, *trigger[:2], True,
-                                 reason=trigger[2])
+                with self._execution_lock:
+                    self._set_circuit_locked(*trigger[:2], True, trigger[2],
+                                             detected_tick=detected_tick,
+                                             detection_event_id=source_event_id)
             except ValueError as exc:
                 if "already" not in str(exc):
                     raise
@@ -612,6 +737,8 @@ class Substrate:
         elif not db.execute("SELECT 1 FROM sessions WHERE id=? AND actor=? AND active=1",
                             (session_id, actor)).fetchone():
             rule = "execution_session_revoked"
+        elif not self._task_session_live(db, session_id):
+            rule = "execution_session_revoked"
         elif self._stopped(db, actor, capability, provider):
             rule = "execution_unavailable"
         else:
@@ -650,7 +777,8 @@ class Substrate:
             return self._set_circuit_locked(scope, target, active, reason)
 
     def _set_circuit_locked(self, scope: str, target: str, active: bool,
-                            reason: str) -> dict[str, Any]:
+                            reason: str, *, detected_tick: float | None = None,
+                            detection_event_id: int | None = None) -> dict[str, Any]:
         with self._db() as db:
             db.execute("BEGIN IMMEDIATE")
             expected = self._verify(db)
@@ -672,10 +800,19 @@ class Substrate:
                        (scope, target, int(active), int(not active)))
             affected = []
             if active:
+                scoped_actors = {target} if scope == "actor" else set()
+                if scope == "actor":
+                    descendants = db.execute(
+                        "WITH RECURSIVE descendants(id,actor) AS ("
+                        "SELECT id,actor FROM task_identities WHERE actor=? "
+                        "UNION ALL SELECT child.id,child.actor FROM task_identities child "
+                        "JOIN descendants parent ON child.parent_id=parent.id) "
+                        "SELECT actor FROM descendants", (target,))
+                    scoped_actors.update(row["actor"] for row in descendants)
                 grants = list(db.execute("SELECT * FROM execution_grants WHERE status='issued'"))
                 for grant in grants:
                     if (scope == "global" or
-                            (scope == "actor" and grant["actor"] == target) or
+                            (scope == "actor" and grant["actor"] in scoped_actors) or
                             (scope == "capability" and grant["capability"] == target) or
                             (scope == "provider" and grant["provider"] == target)):
                         db.execute("UPDATE execution_grants SET status='revoked' WHERE id=?",
@@ -685,7 +822,7 @@ class Substrate:
                     "SELECT * FROM transfer_approvals WHERE status='issued'"))
                 for approval in approvals:
                     if (scope == "global" or
-                            (scope == "actor" and approval["actor"] == target) or
+                            (scope == "actor" and approval["actor"] in scoped_actors) or
                             (scope == "capability" and target == "generation") or
                             (scope == "provider" and approval["provider"] == target)):
                         db.execute("UPDATE transfer_approvals SET status='revoked' WHERE id=?",
@@ -697,7 +834,7 @@ class Substrate:
                 stopped_runs = []
                 for run in runs:
                     if (scope == "global" or
-                            (scope == "actor" and run["actor"] == target) or
+                            (scope == "actor" and run["actor"] in scoped_actors) or
                             (scope == "capability" and target == "generation") or
                             (scope == "provider" and run["provider"] == target)):
                         db.execute("UPDATE generations SET status='revoked' WHERE id=?",
@@ -709,18 +846,27 @@ class Substrate:
                         stopped_runs.append(run["id"])
                 if scope == "global":
                     db.execute("UPDATE sessions SET active=0")
+                    db.execute("UPDATE task_identities SET active=0")
                 elif scope == "actor":
-                    db.execute("UPDATE sessions SET active=0 WHERE actor=?", (target,))
+                    for scoped_actor in scoped_actors:
+                        db.execute("UPDATE sessions SET active=0 WHERE actor=?",
+                                   (scoped_actor,))
+                        db.execute("UPDATE task_identities SET active=0 WHERE actor=?",
+                                   (scoped_actor,))
                 elif affected:
                     db.executemany("UPDATE sessions SET active=0 WHERE actor=?",
                                    [(actor,) for actor in set(affected)])
             after = self._snapshot(db)
+            trigger_action = {"kind": "circuit.trigger" if active else "circuit.reset",
+                              "scope": scope, "target": target}
+            if active and detection_event_id is not None:
+                trigger_action["detection_event_id"] = detection_event_id
             event_id = self._append(db, "circuit-operator",
-                                    {"kind": "circuit.trigger" if active else "circuit.reset",
-                                     "scope": scope, "target": target},
+                                    trigger_action,
                                     {"rule": "authorized_circuit_control", "reason": reason},
                                     "allow", before, after)
             db.commit()
+            tripped_tick = time.perf_counter()
         if active:
             if self.runtime_supervisor is not None and stopped_runs:
                 try:
@@ -741,9 +887,18 @@ class Substrate:
                     db.execute("UPDATE circuit_stops SET shutdown_confirmed=1 "
                                "WHERE scope=? AND target=?", (scope, target))
                 after = self._snapshot(db)
-                self._append(db, "circuit-operator",
-                             {"kind": "circuit.shutdown", "trigger_event_id": event_id,
-                              "results": [item.audit() for item in results]},
+                shutdown_action = {"kind": "circuit.shutdown", "trigger_event_id": event_id,
+                                   "results": [item.audit() for item in results]}
+                if detected_tick is not None:
+                    shutdown_action["detection_to_trip_ms"] = round(
+                        max(0.0, tripped_tick - detected_tick) * 1000, 3)
+                    shutdown_action["detection_to_shutdown_ms"] = (
+                        round(max(0.0, time.perf_counter() - detected_tick) * 1000, 3)
+                        if verified else None)
+                shutdown_action["trip_to_shutdown_ms"] = (
+                    round(max(0.0, time.perf_counter() - tripped_tick) * 1000, 3)
+                    if verified else None)
+                self._append(db, "circuit-operator", shutdown_action,
                              {"rule": "circuit_shutdown_verified" if verified else
                               "circuit_shutdown_unconfirmed"},
                              "succeeded" if verified else "failed", before, after)
@@ -751,11 +906,11 @@ class Substrate:
         return {"event_id": event_id, "decision": "allow",
                 "shutdown_confirmed": verified if active else None}
 
-    def create_session(self, actor: str) -> dict[str, Any]:
+    def create_session(self, actor: str, task_id: str | None = None) -> dict[str, Any]:
         with self._execution_lock:
-            return self._create_session(actor)
+            return self._create_session(actor, task_id)
 
-    def _create_session(self, actor: str) -> dict[str, Any]:
+    def _create_session(self, actor: str, task_id: str | None = None) -> dict[str, Any]:
         session_id, token = secrets.token_hex(16), secrets.token_urlsafe(32)
         with self._db() as db:
             db.execute("BEGIN IMMEDIATE")
@@ -766,32 +921,60 @@ class Substrate:
                                         {"rule": "state_integrity"}, "deny", before, before)
                 db.commit()
                 return {"event_id": event_id, "decision": "deny", "reason": "state_integrity"}
+            if self.require_task_identity and task_id is None:
+                event_id = self._append(db, actor, {"kind": "session.create"},
+                                        {"rule": "task_identity_required"},
+                                        "deny", before, before)
+                db.commit()
+                return {"event_id": event_id, "decision": "deny",
+                        "reason": "task_identity_required"}
             if self._stopped(db, actor, "session", None):
                 event_id = self._append(db, actor, {"kind": "session.create"},
                                         {"rule": "circuit_blocked"}, "deny", before, before)
                 db.commit()
                 return {"event_id": event_id, "decision": "deny",
                         "reason": "capability_unavailable"}
-            db.execute("UPDATE sessions SET active=0 WHERE actor=?", (actor,))
+            if task_id is not None:
+                task = db.execute("SELECT * FROM task_identities WHERE id=? AND actor=? "
+                                  "AND active=1 AND expires_at>?",
+                                  (task_id, actor, time.time())).fetchone()
+                if task is None or "session" not in json.loads(task["capabilities"]):
+                    event_id = self._append(db, actor,
+                                            {"kind": "session.create", "task_id": task_id},
+                                            {"rule": "task_authority_unavailable"},
+                                            "deny", before, before)
+                    db.commit()
+                    return {"event_id": event_id, "decision": "deny",
+                            "reason": "task_authority_unavailable"}
+                db.execute("UPDATE sessions SET active=0 WHERE id IN "
+                           "(SELECT session_id FROM task_sessions WHERE task_id=?)", (task_id,))
+            else:
+                db.execute("UPDATE sessions SET active=0 WHERE actor=? AND id NOT IN "
+                           "(SELECT session_id FROM task_sessions)", (actor,))
             db.execute("INSERT INTO sessions VALUES (?,?,?,1)",
                        (session_id, actor, hashlib.sha256(token.encode()).hexdigest()))
+            if task_id is not None:
+                db.execute("INSERT INTO task_sessions VALUES (?,?)", (session_id, task_id))
             if self.scoped_filesystem and self.workspace_root is not None:
                 self._scoped_root("session", actor, session_id, None).mkdir(parents=True)
                 self._scoped_root("actor", actor, session_id, None).mkdir(parents=True, exist_ok=True)
                 for channel in self.actors[actor]["filesystem"]["scopes"].get("shared", {}).get("channels", []):
                     self._scoped_root("shared", actor, session_id, channel).mkdir(parents=True, exist_ok=True)
             after = self._snapshot(db)
-            event_id = self._append(db, actor, {"kind": "session.create", "session_id": session_id},
+            event_id = self._append(db, actor, {"kind": "session.create", "session_id": session_id,
+                                                "task_id": task_id},
                                     {"rule": "authenticated_actor"}, "allow", before, after)
             db.commit()
         return {"event_id": event_id, "decision": "allow", "session_id": session_id,
+                "task_id": task_id,
                 "session_token": token}
 
     @staticmethod
     def _session_valid(db, actor, session_token):
         token_hash = hashlib.sha256(session_token.encode()).hexdigest()
-        return db.execute("SELECT 1 FROM sessions WHERE actor=? AND token_hash=? AND active=1",
-                          (actor, token_hash)).fetchone() is not None
+        row = db.execute("SELECT id FROM sessions WHERE actor=? AND token_hash=? AND active=1",
+                         (actor, token_hash)).fetchone()
+        return row is not None and Substrate._task_session_live(db, row["id"])
 
     def _scoped_root(self, scope: str, actor: str, session_id: str,
                      channel: str | None) -> Path:
@@ -942,6 +1125,8 @@ class Substrate:
                 rule = "generation_not_found"
             elif run["status"] != "prepared":
                 rule = "generation_already_claimed"
+            elif not self._generation_task_live(db, generation_id):
+                rule = "task_authority_unavailable"
             elif provider != sealed_provider:
                 rule = "generation_provider_mismatch"
             elif sources is None:
@@ -1029,6 +1214,8 @@ class Substrate:
                 rule = "state_integrity"
             elif run is None or run["status"] != "claimed":
                 rule = "provider_call_unavailable"
+            elif not self._generation_task_live(db, generation_id):
+                rule = "provider_call_revoked"
             elif provider != sealed_provider:
                 rule = "provider_call_binding_mismatch"
             elif receipt is None or receipt["status"] != "issued":
@@ -1084,6 +1271,8 @@ class Substrate:
                 rule = "generation_not_found"
             elif run["status"] != "claimed":
                 rule = "generation_already_consumed" if run["status"] == "completed" else "generation_not_claimed"
+            elif not self._generation_task_live(db, generation_id):
+                rule = "task_authority_unavailable"
             elif sources is None:
                 rule = "generation_manifest_invalid"
             elif self._stopped(db, run["actor"], "generation", self._generation_provider(db, generation_id)):
@@ -1377,23 +1566,31 @@ class Substrate:
 
     def propose(self, actor: str, session_token: str, action: dict[str, Any],
                 execution_token: str | None = None,
-                authorize_only: bool = False) -> dict[str, Any]:
+                authorize_only: bool = False,
+                task_id: str | None = None) -> dict[str, Any]:
         if action.get("kind") in ("network.request", "object.publish"):
-            return self._propose(actor, session_token, action, execution_token, authorize_only)
+            return self._propose(actor, session_token, action, execution_token,
+                                 authorize_only, task_id)
         with self._execution_lock:
-            return self._propose(actor, session_token, action, execution_token, authorize_only)
+            return self._propose(actor, session_token, action, execution_token,
+                                 authorize_only, task_id)
 
-    def _external_execution_open(self, actor: str, session_token: str) -> bool:
+    def _external_execution_open(self, actor: str, session_token: str,
+                                 task_id: str | None = None) -> bool:
         with self._db() as db:
             expected = self._verify(db)
             if self._snapshot(db) != expected:
                 return False
-            return (self._session_valid(db, actor, session_token) and
+            row = db.execute("SELECT id FROM sessions WHERE actor=? AND token_hash=? AND active=1",
+                             (actor, hashlib.sha256(session_token.encode()).hexdigest())).fetchone()
+            return (row is not None and self._task_session_live(db, row["id"]) and
+                    self._session_task_id(db, row["id"]) == task_id and
                     not self._stopped(db, actor, "network", None))
 
     def _propose(self, actor: str, session_token: str, action: dict[str, Any],
                  execution_token: str | None = None,
-                 authorize_only: bool = False) -> dict[str, Any]:
+                 authorize_only: bool = False,
+                 task_id: str | None = None) -> dict[str, Any]:
         started = time.perf_counter()
         with self._db() as db:
             db.execute("BEGIN IMMEDIATE")
@@ -1406,12 +1603,17 @@ class Substrate:
                              (actor, hashlib.sha256(session_token.encode()).hexdigest())).fetchone()
             if before != expected:
                 decision, rule, namespace = "deny", "state_integrity", None
-            elif row is None:
+            elif self.require_task_identity and task_id is None:
+                decision, rule, namespace = "deny", "task_identity_required", None
+            elif (row is None or not self._task_session_live(db, row["id"]) or
+                  self._session_task_id(db, row["id"]) != task_id):
                 decision, rule, namespace = "deny", "invalid_session", None
             else:
                 session_id = row["id"]
                 if self._stopped(db, actor, capability, provider):
                     decision, rule, namespace = "deny", "circuit_blocked", None
+                elif task_id is not None and not self._task_capability(db, task_id, capability):
+                    decision, rule, namespace = "deny", "task_capability_denied", None
                 else:
                     decision, rule, namespace = self._decide(actor, action, session_id, db)
                 if decision == "escalate" and rule == "provider_approval_required":
@@ -1458,6 +1660,7 @@ class Substrate:
                 db.execute("INSERT INTO generations VALUES (?,?,?,?,?,?,?)",
                            (value, actor, canonical(input_ids), canonical(hashes),
                             classification, "prepared", None))
+                db.execute("INSERT INTO generation_sessions VALUES (?,?)", (value, session_id))
                 if provider is not None:
                     db.execute("INSERT INTO generation_providers VALUES (?,?)",
                                (value, provider))
@@ -1535,6 +1738,8 @@ class Substrate:
                         logged_action["channel_sha256"] = digest(logged_action.pop("channel"))
             if rule == "unknown_action":
                 logged_action = {"kind": "unknown", "action_sha256": digest(action)}
+            if task_id is not None:
+                logged_action = {**logged_action, "task_id": task_id}
             event_id = self._append(db, actor, logged_action, {"rule": rule}, decision, before, after,
                                     elapsed_ms=(time.perf_counter() - started) * 1000)
             db.commit()
@@ -1559,12 +1764,16 @@ class Substrate:
             result.update(generation_id=value, classification=namespace[2],
                            input_ids=namespace[0], provider=namespace[3],
                            execution_token=generation_token)
-        if decision == "deny" and self.monitoring is not None and rule != "circuit_blocked":
+        if (decision == "deny" and self.monitoring is not None and
+                rule not in ("circuit_blocked", "invalid_session", "state_integrity")):
             self._record_denial_signal(actor, capability, digest(logged_action), event_id)
         if decision == "allow" and action["kind"] == "object.publish":
             parent, url, origin = namespace
             try:
-                if not self._external_execution_open(actor, session_token):
+                open_boundary = (self._external_execution_open(actor, session_token)
+                                 if task_id is None else
+                                 self._external_execution_open(actor, session_token, task_id))
+                if not open_boundary:
                     raise ValueError("capability_unavailable")
                 response = fetch(url, [origin])
                 outcome = {key: response[key] for key in
@@ -1585,7 +1794,10 @@ class Substrate:
                 db.commit()
         if decision == "allow" and action["kind"] == "network.request":
             try:
-                if not self._external_execution_open(actor, session_token):
+                open_boundary = (self._external_execution_open(actor, session_token)
+                                 if task_id is None else
+                                 self._external_execution_open(actor, session_token, task_id))
+                if not open_boundary:
                     raise ValueError("capability_unavailable")
                 network = self.actors[actor]["network"]
                 destinations = list(network.get("destinations", []))
@@ -1823,49 +2035,81 @@ class TransferApprovalRequest(BaseModel):
     reason: str
 
 
+class TaskIdentityRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    actor: str
+    capabilities: list[str]
+    parent_id: str | None = None
+    ttl_seconds: int = 900
+
+
 def create_app(substrate: Substrate) -> FastAPI:
     app = FastAPI(title="Governance Substrate Reference Architecture")
 
-    def actor_from_header(authorization: str | None) -> str:
+    def principal_from_header(authorization: str | None) -> tuple[str, str | None]:
         token = (authorization or "").removeprefix("Bearer ")
-        actor = substrate.authenticate(token)
-        if actor is None:
+        try:
+            principal = substrate.authenticate_principal(token)
+        except IntegrityError as exc:
+            raise HTTPException(503, str(exc)) from exc
+        if principal is None:
             raise HTTPException(401, "invalid actor token")
-        return actor
+        return principal
+
+    def actor_from_header(authorization: str | None) -> str:
+        return principal_from_header(authorization)[0]
+
+    @app.post("/tasks/issue")
+    def task_issue(body: TaskIdentityRequest,
+                   authorization: str | None = Header(default=None)):
+        token = (authorization or "").removeprefix("Bearer ")
+        try:
+            return substrate.issue_task_identity(token, body.actor, body.capabilities,
+                                                 body.parent_id, body.ttl_seconds)
+        except PermissionError as exc:
+            raise HTTPException(401, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        except IntegrityError as exc:
+            raise HTTPException(503, str(exc)) from exc
 
     @app.post("/sessions")
     def session(authorization: str | None = Header(default=None)):
         try:
-            return substrate.create_session(actor_from_header(authorization))
+            actor, task_id = principal_from_header(authorization)
+            return substrate.create_session(actor, task_id)
         except IntegrityError as exc:
             raise HTTPException(503, str(exc)) from exc
 
     @app.post("/proposals")
     def proposal(body: Proposal, authorization: str | None = Header(default=None),
                  x_session_token: str | None = Header(default=None)):
-        actor = actor_from_header(authorization)
+        actor, task_id = principal_from_header(authorization)
         try:
-            return substrate.propose(actor, x_session_token or "", body.action)
+            return substrate.propose(actor, x_session_token or "", body.action,
+                                     task_id=task_id)
         except IntegrityError as exc:
             raise HTTPException(503, str(exc)) from exc
 
     @app.post("/authorizations")
     def authorization(body: Proposal, authorization: str | None = Header(default=None),
                       x_session_token: str | None = Header(default=None)):
-        actor = actor_from_header(authorization)
+        actor, task_id = principal_from_header(authorization)
         try:
             return substrate.propose(actor, x_session_token or "", body.action,
-                                     authorize_only=True)
+                                     authorize_only=True, task_id=task_id)
         except IntegrityError as exc:
             raise HTTPException(503, str(exc)) from exc
 
     @app.post("/executions")
     def execution(body: ExecutionRequest, authorization: str | None = Header(default=None),
                   x_session_token: str | None = Header(default=None)):
-        actor = actor_from_header(authorization)
+        actor, task_id = principal_from_header(authorization)
         try:
             return substrate.propose(actor, x_session_token or "", body.action,
-                                     execution_token=body.execution_token)
+                                     execution_token=body.execution_token,
+                                     task_id=task_id)
         except IntegrityError as exc:
             raise HTTPException(503, str(exc)) from exc
 

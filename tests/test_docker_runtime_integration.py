@@ -40,7 +40,9 @@ def test_circuit_force_kills_uncooperative_container_and_verifies_removal(tmp_pa
              "shared_channels": []}
     substrate = Substrate(tmp_path / "runtime.db", {
         "actors": {"agent": actor}, "tokens": {"actor-token": "agent"},
-        "operator_token": "adapter-token", "circuit_operator_token": "control-token"},
+        "operator_token": "adapter-token", "circuit_operator_token": "control-token",
+        "monitoring": {"window_seconds": 60, "actor_denials": 2,
+                       "cross_actor_denials": 2}},
         runtime_supervisor=runtime)
     client = TestClient(create_app(substrate))
     imported = substrate.import_object("public", "text/plain",
@@ -71,17 +73,26 @@ def test_circuit_force_kills_uncooperative_container_and_verifies_removal(tmp_pa
         else:
             raise AssertionError("worker container never started")
         event_since = str(int(time.time()) - 1)
-        stop = substrate.set_circuit("control-token", "global", "*", True, "fixture stop")
+        denied = {"kind": "credential.expand", "requested_scope": "administrator"}
+        assert substrate.propose("agent", session, denied)["decision"] == "deny"
+        assert substrate.propose("agent", session, denied)["decision"] == "deny"
         worker.join(timeout=15)
-        assert stop["shutdown_confirmed"] is True
         assert not worker.is_alive() and errors
         assert runtime._inspect(name) is None
         assert not any(event["action"]["kind"] == "generation.complete"
                        for event in substrate.audit())
-        event = substrate.audit()[-1]
+        event = [row for row in substrate.audit()
+                 if row["action"].get("kind") == "circuit.shutdown"][-1]
         assert event["action"]["kind"] == "circuit.shutdown"
         assert event["decision"] == "succeeded"
         assert event["action"]["results"][0]["runtime_id"] == info["Id"]
+        assert event["action"]["detection_to_trip_ms"] >= 0
+        assert event["action"]["trip_to_shutdown_ms"] > 0
+        assert event["action"]["detection_to_shutdown_ms"] >= event["action"]["detection_to_trip_ms"]
+        trigger = next(item for item in substrate.audit()
+                       if item["id"] == event["action"]["trigger_event_id"])
+        assert trigger["action"]["scope"] == "actor"
+        assert trigger["action"]["target"] == "agent"
         events = subprocess.run(
             ["docker", "events", "--since", event_since,
              "--until", str(int(time.time()) + 1), "--filter", f"container={info['Id']}",

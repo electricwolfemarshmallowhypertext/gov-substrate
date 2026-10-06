@@ -232,6 +232,7 @@ def test_unwired_shutdown_is_audited_as_unconfirmed(tmp_path):
     assert event["action"]["kind"] == "circuit.shutdown"
     assert event["decision"] == "failed"
     assert event["action"]["results"][0]["state"] == "stop_unconfirmed"
+    assert event["action"]["trip_to_shutdown_ms"] is None
     with pytest.raises(ValueError, match="unconfirmed"):
         substrate.set_circuit("control-token", "global", "*", False, "unsafe reset")
 

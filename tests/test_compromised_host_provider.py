@@ -259,8 +259,16 @@ def test_cross_actor_and_resource_abuse_trigger_scoped_containment(tmp_path):
     assert substrate.propose("b", b_session, denied_action)["decision"] == "deny"
     stops = [event for event in substrate.audit()
              if event["action"].get("kind") == "circuit.trigger"]
-    assert stops[-1]["action"] == {"kind": "circuit.trigger",
-                                    "scope": "capability", "target": "network"}
+    assert stops[-1]["action"]["kind"] == "circuit.trigger"
+    assert stops[-1]["action"]["scope"] == "capability"
+    assert stops[-1]["action"]["target"] == "network"
+    assert isinstance(stops[-1]["action"]["detection_event_id"], int)
+    shutdown = [event for event in substrate.audit()
+                if event["action"].get("kind") == "circuit.shutdown"][-1]
+    assert shutdown["decision"] == "succeeded"
+    assert shutdown["action"]["detection_to_trip_ms"] >= 0
+    assert shutdown["action"]["trip_to_shutdown_ms"] >= 0
+    assert shutdown["action"]["detection_to_shutdown_ms"] >= 0
 
     fresh = Substrate(tmp_path / "abuse.db", policy,
                       gateway_secrets={"strict-provider": SECRET})
@@ -271,4 +279,7 @@ def test_cross_actor_and_resource_abuse_trigger_scoped_containment(tmp_path):
         assert result["decision"] == "deny"
     stop = [event for event in fresh.audit()
             if event["action"].get("kind") == "circuit.trigger"][-1]
-    assert stop["action"] == {"kind": "circuit.trigger", "scope": "actor", "target": "a"}
+    assert stop["action"]["kind"] == "circuit.trigger"
+    assert stop["action"]["scope"] == "actor"
+    assert stop["action"]["target"] == "a"
+    assert isinstance(stop["action"]["detection_event_id"], int)

@@ -9,6 +9,7 @@ import uuid
 from pathlib import Path
 
 import pytest
+import yaml
 
 from docker_runtime_supervisor import DockerRuntimeSupervisor
 from substrate import Substrate
@@ -120,11 +121,15 @@ def test_worker_environment_has_only_granted_capabilities(worker_lab):
             "mode": "scan", "target_ip": target_ip, "gateway_ip": gateway_ip,
             "host_marker": marker, "host_pid": os.getpid(),
             "marker": "worker-private-" + uuid.uuid4().hex})
+        inventory = yaml.safe_load((ROOT / "docs" / "Reference-Harness-Inventory.yaml")
+                                   .read_text(encoding="utf-8"))
+        declared_allowed = set(inventory["probes"]["allowed"])
+        declared_blocked = {name.replace("{marker}", marker)
+                            for name in inventory["probes"]["blocked"]}
+        assert set(rows) == declared_allowed | declared_blocked
         for row in rows.values():
             print(json.dumps(row))
-        allowed = {"model_read", "private_tmp", "private_shm",
-                   "ipc_namespace", "mount_namespace"}
-        assert all(row["allowed"] is (name in allowed)
+        assert all(row["allowed"] is (name in declared_allowed)
                    for name, row in rows.items()), rows
         routed = {"direct_ipv4", "direct_ipv6", "docker_gateway",
                   "cloud_metadata_ipv4", "cloud_metadata_ipv6", "other_container"}

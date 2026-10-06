@@ -35,9 +35,49 @@ The substrate checks the circuit breaker before authorization and again before e
 
 The substrate API is independent of Docker. The v0.5.0 release evidence used Docker/OCI. Current `main` adds post-release evidence from rootless Podman, gVisor, Wasmtime/WASI, NVIDIA OpenShell, native Linux, native Windows, a disposable Kind/Calico cluster, and a disposable managed GKE Autopilot cluster under recorded configurations. Any other backend requires the same level of runtime-specific proof before equivalent claims are made.
 
+## Unreleased pre-v0.6 controls
+
+The example registry now requires a task identity for agent sessions. An operator
+issues a random, short-lived token for one pre-registered actor and an explicit
+set of action families. A child identity records its parent task, cannot exceed
+the parent's families or expiry, and must use a distinct actor ID. Sessions and
+execution grants remain bound to that task; expiration prevents a prepared
+generation from being claimed or completed. An actor circuit trip revokes its
+task identities and descendants. Bootstrap actor tokens belong on the trusted
+host when task-only mode is enabled. Legacy deployments can leave that mode off;
+they must not describe their static bearer tokens as task-scoped identities.
+Turning on task-only mode or denial monitoring changes the registry hash;
+an existing database requires an audited migration or a fresh deployment.
+
+The example registry also enables sliding-window denial monitoring. Repeated
+denials trip an actor circuit; matching denials from multiple actors trip the
+affected capability circuit. The trigger records the denial event ID. The
+shutdown event records detection-to-trip, trip-to-verified-shutdown, and total
+detection-to-verified-shutdown milliseconds. An unverified stop has no completed
+shutdown duration. The real Docker integration test starts an uncooperative
+worker, causes two policy denials, and verifies automatic force-kill and removal.
+Thresholds are deployment policy, not model instructions.
+
+Shared state and shared file paths require named channels granted to each
+participating actor. Unsupported queues and telemetry writes are denied;
+agents cannot read or edit the operator audit. Injected instructions in a
+governed object cannot add prompt fields, import authority, or publish a private
+object. A thousand denied privilege-expansion proposals trip containment and
+never become an allowed transition. These are bounded checks of the named
+surfaces, not a proof against every possible covert channel or unlimited
+denial-of-service traffic.
+
+The [reference harness inventory](Reference-Harness-Inventory.yaml) lists the
+worker's process environment, user, mounts, writable paths, network, interfaces,
+and external spend authority. Unit tests compare the API routes to that list;
+the real Docker environment suite compares it with inspect data and actual
+inside-container probes. A worker has no provider credential or external spend
+authority. Hosted provider policy still has no hard dollar-denominated cap;
+deployments must bound billing separately.
+
 ## Managed state boundary (Milestone 1)
 
-Actors authenticate with bearer tokens from environment variables. The service issues one active session per actor. Every valid proposal reaches one SQLite transaction that checks the capability registry, verifies the previous audit chain and committed state, makes a decision, and appends an event. An admitted `state.write` and its audit event commit together. A denied or escalated proposal leaves managed state unchanged and still produces an event. An authenticated operator can apply an escalated persistent write once, with a reason and an audit link to the original proposal.
+Actors authenticate with bearer tokens from environment variables or operator-issued task tokens. Legacy sessions replace the prior session for the same actor; task sessions are separate and bind to their task identity. Every valid proposal reaches one SQLite transaction that checks the capability registry, verifies the previous audit chain and committed state, makes a decision, and appends an event. An admitted `state.write` and its audit event commit together. A denied or escalated proposal leaves managed state unchanged and still produces an event. An authenticated operator can apply an escalated persistent write once, with a reason and an audit link to the original proposal.
 
 The state layer includes actor identity, explicit capabilities, session and persistent namespaces, prior events, and current health observations. The audit records actor, action, policy rule and registry digest, full managed state before and after, decision, timestamp, and override link. SQLite triggers reject ordinary updates and deletes of audit rows; a SHA-256 chain detects unauthorized changes to audit content. Direct changes to managed state are detected against the last admitted state snapshot on the next request.
 
@@ -95,7 +135,12 @@ python -m uvicorn substrate:app --host 127.0.0.1 --port 8000
 
 The API schema is at `http://127.0.0.1:8000/docs`. Keep the generated tokens for the lifetime of the database: the audit anchors token hashes and capability definitions. Use `GOV_SUBSTRATE_REGISTRY` and `GOV_SUBSTRATE_DB` to select another registry file or database path. A registry or token change against an existing database fails closed; audited migration is future work.
 
-Example flow: `POST /sessions` with `Authorization: Bearer <actor token>`; then `POST /proposals` with the same header and `X-Session-Token: <returned session token>`:
+Example flow with the task-only example registry: the trusted operator calls
+`POST /tasks/issue` with an actor ID, explicit capabilities such as
+`["session", "state"]`, and a lifetime of at most 3,600 seconds. Keep the
+bootstrap actor token on the host. Call `POST /sessions` with
+`Authorization: Bearer <task token>`, then `POST /proposals` with the same
+header and `X-Session-Token: <returned session token>`:
 
 ```json
 {"action":{"kind":"state.write","scope":"session","key":"note","value":"hello"}}

@@ -40,6 +40,8 @@ The circuit breaker is checked before authorization and again before execution. 
 - **Execution control:** one-use grants, scoped emergency stops, verified graceful and forced worker shutdown, and orphan reconciliation.
 - **Compromised-adapter controls:** exact provider request identities, circuit-aware one-use gateway dispatch, request-bound operator approval, signed completion receipts, optional or high-assurance-required independent audit witnessing, and anomaly-triggered containment.
 
+Unreleased pre-v0.6 work adds task-scoped agent credentials, automatic containment timing, and a [testable reference harness inventory](docs/Reference-Harness-Inventory.yaml). The example policy requires short-lived task credentials and enables denial-triggered stops.
+
 Generation is model- and provider-agnostic. The optional local worker and the OpenAI, Anthropic, Gemini, and OpenRouter adapters use the same sealed-input and governed-output path.
 
 ## Evidence
