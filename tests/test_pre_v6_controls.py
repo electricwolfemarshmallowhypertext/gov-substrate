@@ -181,6 +181,14 @@ def test_repeated_probes_trip_and_never_gain_a_route(boundary):
     audit = substrate.audit()
     assert any(event["action"].get("kind") == "circuit.trigger" and
                event["action"]["scope"] == "actor" for event in audit)
+    shutdown = next(event for event in audit
+                    if event["action"].get("kind") == "circuit.shutdown")
+    receipt = shutdown["action"]["receipt"]
+    assert shutdown["actor"] == "security-monitor"
+    assert receipt["how"]["initiator"] == "security-monitor"
+    assert receipt["why"]["reason"] == "automatic_resource_abuse"
+    assert receipt["why"]["detection_event_id"] is not None
+    assert receipt["when"]["detected_at"] <= receipt["when"]["triggered_at"]
     assert not any(event["decision"] == "allow" and
                    event["action"].get("kind") == "credential.expand" for event in audit)
     assert substrate.health()["legibility"] == 1.0

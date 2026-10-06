@@ -173,6 +173,16 @@ trigger and shutdown action. Reset requires
 the same operator credential and a reason and is audited. Agent responses use
 a generic unavailable decision rather than exposing circuit configuration.
 
+Each trip returns a `receipt_event_id` for its `circuit.shutdown` audit event.
+That event links to the trigger and records **what** authority was revoked and
+whether shutdown was verified, **when** detection (if applicable), trip, and shutdown were
+recorded (Unix seconds), **how** it was initiated and supervised, **where** the
+stop applied including exact worker runtime IDs, and **why** with the operator
+reason or source denial event. Revocation counts include only active authority
+actually changed. An unconfirmed worker stop is recorded as failed, not as a
+verified shutdown. The receipt is part of the existing hash-chained,
+operator-only audit and its independent witness when configured.
+
 ### Runtime supervisor contract
 
 Local execution uses the runtime-neutral `RuntimeSupervisor` contract:

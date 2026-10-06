@@ -86,6 +86,11 @@ def test_circuit_force_kills_uncooperative_container_and_verifies_removal(tmp_pa
         assert event["action"]["kind"] == "circuit.shutdown"
         assert event["decision"] == "succeeded"
         assert event["action"]["results"][0]["runtime_id"] == info["Id"]
+        receipt = event["action"]["receipt"]
+        assert receipt["what"]["shutdown_confirmed"] is True
+        assert receipt["where"]["workers"][0]["runtime_id"] == info["Id"]
+        assert receipt["how"]["initiator"] == "security-monitor"
+        assert receipt["why"]["reason"] == "automatic_resource_abuse"
         assert event["action"]["detection_to_trip_ms"] >= 0
         assert event["action"]["trip_to_shutdown_ms"] > 0
         assert event["action"]["detection_to_shutdown_ms"] >= event["action"]["detection_to_trip_ms"]

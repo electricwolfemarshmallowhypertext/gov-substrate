@@ -146,8 +146,27 @@ def test_global_trigger_revokes_sessions_tokens_claims_and_logs_shutdown(boundar
     with pytest.raises(PermissionError):
         substrate.set_circuit("adapter-token", "global", "*", True, "incident")
     assert client.post("/circuit", headers={"Authorization": "Bearer a-token"}).status_code == 404
-    substrate.set_circuit("control-token", "global", "*", True, "incident")
+    trip = substrate.set_circuit("control-token", "global", "*", True, "incident")
     assert prepared["generation_id"] in stopped_workers
+    audit = substrate.audit()
+    trigger = next(event for event in audit if event["id"] == trip["event_id"])
+    receipt_event = next(event for event in audit if event["id"] == trip["receipt_event_id"])
+    receipt = receipt_event["action"]["receipt"]
+    assert receipt_event["action"]["trigger_event_id"] == trigger["id"]
+    assert receipt_event["decision"] == "succeeded"
+    assert receipt["what"]["state"] == "tripped"
+    assert receipt["what"]["shutdown_confirmed"] is True
+    assert receipt["what"]["revoked"]["execution_grants"] >= 2
+    assert receipt["what"]["revoked"]["generations"] == 1
+    assert receipt["what"]["revoked"]["sessions"] == 2
+    assert receipt["when"]["triggered_at"] == trigger["timestamp"]
+    assert receipt["when"]["shutdown_recorded_at"] >= trigger["timestamp"]
+    assert receipt["how"]["initiator"] == "circuit-operator"
+    assert receipt["how"]["runtime_control"] == "supervisor"
+    assert receipt["where"]["scope"] == "global"
+    assert receipt["where"]["target"] == "*"
+    assert receipt["where"]["workers"][0]["generation_id"] == prepared["generation_id"]
+    assert receipt["why"] == {"reason": "incident", "detection_event_id": None}
     assert request("/executions", "a", {"kind": "state.write", "scope": "session",
                                                 "key": "x", "value": 1}, token)["decision"] == "deny"
     assert client.post("/generations/claim", headers={"Authorization": "Bearer adapter-token"},
@@ -233,6 +252,9 @@ def test_unwired_shutdown_is_audited_as_unconfirmed(tmp_path):
     assert event["decision"] == "failed"
     assert event["action"]["results"][0]["state"] == "stop_unconfirmed"
     assert event["action"]["trip_to_shutdown_ms"] is None
+    assert event["action"]["receipt"]["what"]["shutdown_confirmed"] is False
+    assert event["action"]["receipt"]["where"]["workers"][0]["runtime"] == "unwired"
+    assert event["action"]["receipt"]["how"]["runtime_control"] == "unwired"
     with pytest.raises(ValueError, match="unconfirmed"):
         substrate.set_circuit("control-token", "global", "*", False, "unsafe reset")
 

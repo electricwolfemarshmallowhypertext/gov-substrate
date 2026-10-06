@@ -799,6 +799,9 @@ class Substrate:
                        "shutdown_confirmed=excluded.shutdown_confirmed",
                        (scope, target, int(active), int(not active)))
             affected = []
+            revoked = {"execution_grants": 0, "transfer_approvals": 0,
+                       "generations": 0, "generation_receipts": 0,
+                       "sessions": 0, "task_identities": 0}
             if active:
                 scoped_actors = {target} if scope == "actor" else set()
                 if scope == "actor":
@@ -817,6 +820,7 @@ class Substrate:
                             (scope == "provider" and grant["provider"] == target)):
                         db.execute("UPDATE execution_grants SET status='revoked' WHERE id=?",
                                    (grant["id"],))
+                        revoked["execution_grants"] += 1
                         affected.append(grant["actor"])
                 approvals = list(db.execute(
                     "SELECT * FROM transfer_approvals WHERE status='issued'"))
@@ -827,6 +831,7 @@ class Substrate:
                             (scope == "provider" and approval["provider"] == target)):
                         db.execute("UPDATE transfer_approvals SET status='revoked' WHERE id=?",
                                    (approval["id"],))
+                        revoked["transfer_approvals"] += 1
                         affected.append(approval["actor"])
                 runs = list(db.execute("SELECT g.id,g.actor,p.provider FROM generations g "
                                        "LEFT JOIN generation_providers p ON p.generation_id=g.id "
@@ -839,32 +844,49 @@ class Substrate:
                             (scope == "provider" and run["provider"] == target)):
                         db.execute("UPDATE generations SET status='revoked' WHERE id=?",
                                    (run["id"],))
-                        db.execute("UPDATE generation_receipts SET status='revoked' "
-                                   "WHERE generation_id=? AND status IN ('issued','dispatched')",
-                                   (run["id"],))
+                        revoked["generations"] += 1
+                        revoked["generation_receipts"] += db.execute(
+                            "UPDATE generation_receipts SET status='revoked' "
+                            "WHERE generation_id=? AND status IN ('issued','dispatched')",
+                            (run["id"],)).rowcount
                         affected.append(run["actor"])
                         stopped_runs.append(run["id"])
                 if scope == "global":
-                    db.execute("UPDATE sessions SET active=0")
-                    db.execute("UPDATE task_identities SET active=0")
+                    revoked["sessions"] += db.execute(
+                        "UPDATE sessions SET active=0 WHERE active=1").rowcount
+                    revoked["task_identities"] += db.execute(
+                        "UPDATE task_identities SET active=0 WHERE active=1").rowcount
                 elif scope == "actor":
                     for scoped_actor in scoped_actors:
-                        db.execute("UPDATE sessions SET active=0 WHERE actor=?",
-                                   (scoped_actor,))
-                        db.execute("UPDATE task_identities SET active=0 WHERE actor=?",
-                                   (scoped_actor,))
+                        revoked["sessions"] += db.execute(
+                            "UPDATE sessions SET active=0 WHERE actor=? AND active=1",
+                            (scoped_actor,)).rowcount
+                        revoked["task_identities"] += db.execute(
+                            "UPDATE task_identities SET active=0 WHERE actor=? AND active=1",
+                            (scoped_actor,)).rowcount
                 elif affected:
-                    db.executemany("UPDATE sessions SET active=0 WHERE actor=?",
-                                   [(actor,) for actor in set(affected)])
+                    for actor in set(affected):
+                        revoked["sessions"] += db.execute(
+                            "UPDATE sessions SET active=0 WHERE actor=? AND active=1",
+                            (actor,)).rowcount
             after = self._snapshot(db)
+            initiator = "security-monitor" if detection_event_id is not None else "circuit-operator"
             trigger_action = {"kind": "circuit.trigger" if active else "circuit.reset",
                               "scope": scope, "target": target}
             if active and detection_event_id is not None:
                 trigger_action["detection_event_id"] = detection_event_id
-            event_id = self._append(db, "circuit-operator",
+            event_id = self._append(db, initiator,
                                     trigger_action,
                                     {"rule": "authorized_circuit_control", "reason": reason},
                                     "allow", before, after)
+            triggered_at = db.execute(
+                "SELECT timestamp FROM events WHERE id=?", (event_id,)).fetchone()[0]
+            detected_at = None
+            if detection_event_id is not None:
+                detected = db.execute(
+                    "SELECT timestamp FROM events WHERE id=?",
+                    (detection_event_id,)).fetchone()
+                detected_at = detected[0] if detected is not None else None
             db.commit()
             tripped_tick = time.perf_counter()
         if active:
@@ -898,13 +920,31 @@ class Substrate:
                 shutdown_action["trip_to_shutdown_ms"] = (
                     round(max(0.0, time.perf_counter() - tripped_tick) * 1000, 3)
                     if verified else None)
-                self._append(db, "circuit-operator", shutdown_action,
-                             {"rule": "circuit_shutdown_verified" if verified else
-                              "circuit_shutdown_unconfirmed"},
-                             "succeeded" if verified else "failed", before, after)
+                shutdown_action["receipt"] = {
+                    "what": {"state": "tripped", "revoked": revoked,
+                             "shutdown_confirmed": verified},
+                    "when": {"detected_at": detected_at,
+                             "triggered_at": triggered_at,
+                             "shutdown_recorded_at": time.time()},
+                    "how": {"initiator": initiator,
+                            "runtime_control": ("supervisor" if stopped_runs and
+                                                self.runtime_supervisor is not None else
+                                                "unwired" if stopped_runs else
+                                                "no_active_worker")},
+                    "where": {"scope": scope, "target": target,
+                              "workers": [item.audit() for item in results]},
+                    "why": {"reason": reason,
+                            "detection_event_id": detection_event_id},
+                }
+                receipt_event_id = self._append(
+                    db, initiator, shutdown_action,
+                    {"rule": "circuit_shutdown_verified" if verified else
+                     "circuit_shutdown_unconfirmed"},
+                    "succeeded" if verified else "failed", before, after)
                 db.commit()
         return {"event_id": event_id, "decision": "allow",
-                "shutdown_confirmed": verified if active else None}
+                "shutdown_confirmed": verified if active else None,
+                "receipt_event_id": receipt_event_id if active else None}
 
     def create_session(self, actor: str, task_id: str | None = None) -> dict[str, Any]:
         with self._execution_lock:
