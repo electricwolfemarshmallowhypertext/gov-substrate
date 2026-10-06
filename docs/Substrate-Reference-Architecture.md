@@ -175,9 +175,9 @@ a generic unavailable decision rather than exposing circuit configuration.
 
 Each trip returns a `receipt_event_id` for its `circuit.shutdown` audit event.
 That event links to the trigger and records **what** authority was revoked and
-whether shutdown was verified, **when** detection (if applicable), trip, and shutdown were
-recorded (Unix seconds), **how** it was initiated and supervised, **where** the
-stop applied including exact worker runtime IDs, and **why** with the operator
+whether shutdown was verified, **when** detection (if applicable), trip, and
+shutdown were recorded (Unix seconds), **how** it was initiated and supervised,
+**where** the stop applied including exact worker runtime IDs, and **why** with the operator
 reason or source denial event. Revocation counts include only active authority
 actually changed. An unconfirmed worker stop is recorded as failed, not as a
 verified shutdown. The receipt is part of the existing hash-chained,
@@ -403,7 +403,7 @@ enforces them:
 | --- | --- | --- | --- |
 | Governed state and audit integrity | Transactional state gate, append-only audit triggers, hash chain, state snapshots, and independently witnessed heads | Unit tests plus real mTLS witness acceptance and coherent local-rewrite detection | Local-only mode retains a weaker trusted-host boundary; high-assurance mode requires the external witness |
 | Network and filesystem confinement | Networkless workers, substrate-owned adapters, scoped workspace, and path controls | Real Docker environment probes plus the shared hostile-worker suite under native Docker, rootless Podman, gVisor, Wasmtime/WASI, NVIDIA OpenShell, native Linux, native Windows, disposable Kind/Calico, and disposable GKE Autopilot | Applies to the recorded runtime settings and granted mounts or handles |
-| Execution authority and emergency stop | One-use grants, execution-time circuit checks, circuit-aware provider dispatch, runtime supervisor, and orphan reconciliation | Unit tests plus real provider-gateway revocation and native Docker, rootless Podman, gVisor, Wasmtime, NVIDIA OpenShell, native Linux, native Windows, Kind/Calico, and GKE Autopilot worker stop, removal, late-completion rejection, and restart reconciliation | A different backend or host configuration requires its own real evidence |
+| Execution authority and emergency stop | One-use grants, task-scoped credentials, execution-time circuit checks, circuit-aware provider dispatch, automatic scoped trips with audit receipts, runtime supervisor, and orphan reconciliation | Unit tests plus real provider-gateway revocation and native Docker, rootless Podman, gVisor, Wasmtime, NVIDIA OpenShell, native Linux, native Windows, Kind/Calico, and GKE Autopilot worker stop, removal, late-completion rejection, and restart reconciliation | A different backend or host configuration requires its own real evidence |
 | Local generated-output provenance | Sealed governed context, isolated local worker, inherited classification, and governed output object | Real Qwen and Phi inference through the same Docker worker | Establishes boundary behavior, not model quality or arbitrary backend equivalence |
 | Hosted transfer and generated-output provenance | Provider classification grants, sealed inputs, host-side credentials, governed return path, and publication gate | Bounded live OpenAI, Anthropic, Gemini, and pinned OpenRouter runs | The substrate cannot attest to hidden provider context, retention, or execution |
 | Incident-derived escape resistance | Exact request shapes and routes, denied delegated services, scoped state, inherited classification, execution-time revocation, and audit redaction | Deterministic policy checks plus a real networkless Docker agent with reachable relay and third-party fixtures | Covers the named incident classes and recorded configurations, not unknown exploits or all parser/protocol variants |
@@ -433,6 +433,18 @@ mTLS gateway and witness, circuit revocation before provider dispatch, forced
 removal of an uncooperative worker, late-completion rejection, and restart
 reconciliation. These results are indexed by the evidence freeze rather than
 presented as proof against a fully compromised kernel or opaque provider.
+
+Later pre-v0.6 controls are outside the `evidence-2026-10-05` tag. On commit
+`ccb395c`, the [full CI run](https://github.com/electricwolfemarshmallowhypertext/gov-substrate/actions/runs/37487547840)
+passed **141 unit tests with 10 opt-in skips**, **4 real Qwen Docker acceptance tests**,
+and **5 real Docker environment probes**. The environment job checked the
+[reference harness inventory](Reference-Harness-Inventory.yaml) against the
+actual worker configuration and inside-container capability attempts. The
+local real Docker supervisor suite passed **2/2**: an automatic trip force-killed
+an uncooperative worker, verified its removal and exact runtime ID in the
+trip receipt, and restart reconciliation found and stopped an orphan. Focused
+tests also checked manual, automatic, and unconfirmed trip receipts. These
+results verify the tested reference configuration, not every deployment.
 
 ## Adversarial evaluation
 

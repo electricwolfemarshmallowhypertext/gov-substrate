@@ -17,7 +17,7 @@ In the tested reference configuration:
 - agents could not directly reach the network or governed workspace;
 - state, file, network, publication, and provider-transfer requests passed through the substrate;
 - one-use execution grants bound authorization to the exact actor, session, action, inputs, policy, and capability;
-- an operator circuit breaker revoked authority, blocked undispatched provider calls, and stopped supervised workers;
+- the circuit breaker revoked authority, blocked undispatched provider calls, and stopped supervised workers;
 - each tested runtime supervisor verified stopped workers and reconciled orphaned workers after restart;
 - classified model output inherited the highest classification of its sealed governed inputs;
 - private generated output could not be published, while clean public output could be published.
@@ -40,7 +40,7 @@ The circuit breaker is checked before authorization and again before execution. 
 - **Execution control:** one-use grants, scoped emergency stops, verified graceful and forced worker shutdown, and orphan reconciliation.
 - **Compromised-adapter controls:** exact provider request identities, circuit-aware one-use gateway dispatch, request-bound operator approval, signed completion receipts, optional or high-assurance-required independent audit witnessing, and anomaly-triggered containment.
 
-Unreleased pre-v0.6 work adds task-scoped agent credentials, automatic containment timing, and a [testable reference harness inventory](docs/Reference-Harness-Inventory.yaml). The example policy requires short-lived task credentials and enables denial-triggered stops.
+Unreleased pre-v0.6 work adds short-lived task credentials, denial-triggered stops with measured shutdown time, and a [testable reference harness inventory](docs/Reference-Harness-Inventory.yaml). Each stop records what was revoked, when and why it happened, and whether the worker actually stopped.
 
 Generation is model- and provider-agnostic. The optional local worker and the OpenAI, Anthropic, Gemini, and OpenRouter adapters use the same sealed-input and governed-output path.
 
@@ -54,6 +54,13 @@ nine bounded claims, environment manifests, structured results, and preserved
 negative results. Its tag-aware verifier and the complete post-freeze
 [CI run](https://github.com/electricwolfemarshmallowhypertext/gov-substrate/actions/runs/37379254758)
 passed.
+
+Post-freeze controls are verified separately from that tag. At commit `ccb395c`,
+the [CI run](https://github.com/electricwolfemarshmallowhypertext/gov-substrate/actions/runs/37487547840)
+passed **141 unit tests** with 10 opt-in skips, **4 real Qwen Docker acceptance tests**,
+and **5 real Docker environment probes**. The local Docker supervisor suite
+passed **2/2**, including automatic containment of an uncooperative worker and
+an audit receipt naming the exact stopped container.
 
 The project reports seven kinds of evidence separately:
 
