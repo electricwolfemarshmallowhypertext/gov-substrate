@@ -6,7 +6,7 @@ Governance Substrate puts enforceable capability boundaries beneath AI agents. I
 
 > **Technical architecture:** [Substrate Reference Architecture](docs/Substrate-Reference-Architecture.md)
 
-Current release: [Governance Substrate v0.5.0](https://github.com/electricwolfemarshmallowhypertext/gov-substrate/releases/tag/v0.5.0)
+Current source version: [v0.6.0](https://github.com/electricwolfemarshmallowhypertext/gov-substrate/tree/v0.6.0)
 
 ## Demonstrated result
 
@@ -40,7 +40,7 @@ The circuit breaker is checked before authorization and again before execution. 
 - **Execution control:** one-use grants, scoped emergency stops, verified graceful and forced worker shutdown, and orphan reconciliation.
 - **Compromised-adapter controls:** exact provider request identities, circuit-aware one-use gateway dispatch, request-bound operator approval, signed completion receipts, optional or high-assurance-required independent audit witnessing, and anomaly-triggered containment.
 
-Unreleased pre-v0.6 work adds short-lived task credentials, denial-triggered stops with measured shutdown time, and a [testable reference harness inventory](docs/Reference-Harness-Inventory.yaml). Each stop records what was revoked, when and why it happened, and whether the worker actually stopped.
+The v0.6.0 source adds short-lived task credentials, denial-triggered stops with measured shutdown time, and a [testable reference harness inventory](docs/Reference-Harness-Inventory.yaml). Each stop records what was revoked, when and why it happened, and whether the worker actually stopped.
 
 Generation is model- and provider-agnostic. The optional local worker and the OpenAI, Anthropic, Gemini, and OpenRouter adapters use the same sealed-input and governed-output path.
 
@@ -134,7 +134,7 @@ Earlier evaluations document the failures that motivated scoped authority, persi
 **Governance as Substrate: Engineering Patterns for Resilient Collective Systems — V2, September 2026 Revision**
 
 - [Research paper DOI](https://doi.org/10.5281/zenodo.23002435)
-- [v0.5.0 release notes](docs/Release-v0.5.0.md)
+- [v0.6.0 release notes](docs/Release-v0.6.0.md)
 
 ## Scope
 

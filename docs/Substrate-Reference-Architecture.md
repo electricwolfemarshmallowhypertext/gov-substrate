@@ -1,12 +1,12 @@
 # Governance Substrate Reference Architecture
 
-This document describes the working reference implementation of the paper's distinction: policy declares what should happen; the substrate and execution boundary decide which **managed transitions and capability executions** become real. Governance Substrate v0.5.0 is the latest release. The annotated `evidence-2026-10-05` tag freezes the post-release empirical baseline, while runtime-tested commit `1d46d46` identifies the unchanged implementation under test.
+This document describes the working reference implementation of the paper's distinction: policy declares what should happen; the substrate and execution boundary decide which **managed transitions and capability executions** become real. It covers the v0.6.0 source. The annotated `evidence-2026-10-05` tag freezes the earlier empirical baseline, while runtime-tested commit `1d46d46` identifies the implementation under test for that freeze.
 
 > Governance as Substrate has a working reference implementation whose tested runtime boundary enforced capabilities independently of model behavior across local and hosted models.
 
 That statement applies to the documented tests and environments. It is not a claim of universal confinement or proof of every possible runtime backend.
 
-- Current implementation: [Governance Substrate v0.5.0](https://github.com/electricwolfemarshmallowhypertext/gov-substrate/releases/tag/v0.5.0)
+- Current source version: [Governance Substrate v0.6.0](https://github.com/electricwolfemarshmallowhypertext/gov-substrate/tree/v0.6.0)
 - Research basis: [Governance as Substrate, V2 — September 2026 Revision](https://doi.org/10.5281/zenodo.23002435)
 
 The paper PDF remains outside this repository because its prose is not distributed under the software license.
@@ -33,9 +33,9 @@ The substrate checks the circuit breaker before authorization and again before e
 | Hosted-provider internals | External. The substrate can record what it sent and accepted back but cannot attest to hidden provider context, retention, or internal execution. |
 | Fully compromised trusted host or kernel | Outside the current boundary. It can bypass process-local enforcement, steal credentials, or rewrite local evidence. |
 
-The substrate API is independent of Docker. The v0.5.0 release evidence used Docker/OCI. Current `main` adds post-release evidence from rootless Podman, gVisor, Wasmtime/WASI, NVIDIA OpenShell, native Linux, native Windows, a disposable Kind/Calico cluster, and a disposable managed GKE Autopilot cluster under recorded configurations. Any other backend requires the same level of runtime-specific proof before equivalent claims are made.
+The substrate API is independent of Docker. The v0.5.0 release evidence used Docker/OCI. The v0.6.0 source adds evidence from rootless Podman, gVisor, Wasmtime/WASI, NVIDIA OpenShell, native Linux, native Windows, a disposable Kind/Calico cluster, and a disposable managed GKE Autopilot cluster under recorded configurations. Any other backend requires the same level of runtime-specific proof before equivalent claims are made.
 
-## Unreleased pre-v0.6 controls
+## Controls added after v0.5.0
 
 The example registry now requires a task identity for agent sessions. An operator
 issues a random, short-lived token for one pre-registered actor and an explicit
@@ -434,7 +434,7 @@ removal of an uncooperative worker, late-completion rejection, and restart
 reconciliation. These results are indexed by the evidence freeze rather than
 presented as proof against a fully compromised kernel or opaque provider.
 
-Later pre-v0.6 controls are outside the `evidence-2026-10-05` tag. On commit
+Later v0.6.0 controls are outside the `evidence-2026-10-05` tag. On commit
 `ccb395c`, the [full CI run](https://github.com/electricwolfemarshmallowhypertext/gov-substrate/actions/runs/37487547840)
 passed **141 unit tests with 10 opt-in skips**, **4 real Qwen Docker acceptance tests**,
 and **5 real Docker environment probes**. The environment job checked the
@@ -462,7 +462,7 @@ reported separately:
 | Operator attempts an unlogged override | Invalid operator rejected; authenticated rejected attempts logged; successful override is linked and one-shot; audit update/delete triggers reject edits | `test_override_is_authenticated_one_shot_and_append_only` |
 | Audit content or registry modified out of band | Further proposals fail closed | `test_audit_tampering_blocks_further_actions`, `test_unlogged_registry_change_fails_closed` |
 
-The later [containment](Containment-Evaluation.md), [scoped-authority](Scoped-Authority-Evaluation.md), [sensitive-egress](Sensitive-Data-Egress-Evaluation.md), and [object-provenance](Object-Provenance-Evaluation.md) evaluations add cross-agent, persistence, delegated-service, and classified-publication scenarios. Their historical counts are preserved in those reports; the current v0.5.0 result appears in the evidence section above.
+The later [containment](Containment-Evaluation.md), [scoped-authority](Scoped-Authority-Evaluation.md), [sensitive-egress](Sensitive-Data-Egress-Evaluation.md), and [object-provenance](Object-Provenance-Evaluation.md) evaluations add cross-agent, persistence, delegated-service, and classified-publication scenarios. Their historical counts are preserved in those reports; the v0.5.0 release result and later evidence appear separately above.
 
 ### Runtime isolation and acceptance
 
