@@ -8,6 +8,8 @@ Governance Substrate puts enforceable capability boundaries beneath AI agents. I
 
 Current source version: [v0.6.0](https://github.com/electricwolfemarshmallowhypertext/gov-substrate/tree/v0.6.0)
 
+> **TL;DR:** Governance Substrate limits what AI agents can access, change, and publish through permissions enforced by the system. It records what happened and can stop supervised workers. Real-worker and model tests show these controls held in the documented environments; they do not prove every deployment is secure.
+
 ## Demonstrated result
 
 > Governance as Substrate has a working reference implementation whose tested runtime boundary enforced capabilities independently of model behavior across local and hosted models.
