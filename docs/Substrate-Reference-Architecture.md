@@ -94,6 +94,8 @@ Shell and external API execution adapters remain absent; proposals for them are 
 
 `network.request` is a bounded HTTP GET capability. A policy must set `network.allowed: true` and list exact origins under legacy `network.destinations` or declare classified `network.services`. The gate logs its allow or deny decision before any outbound call. On allowance, the adapter pins the resolved IP for the connection, sends only a GET, does not follow redirects, limits the response to 64 KiB, and appends a second event with the execution outcome, origin, resolved IP, HTTP status, byte count, and body digest. A denied destination produces no outbound call.
 
+An external origin resolving to a private or loopback address is rejected before connection; link-local, multicast, unspecified, and reserved addresses are rejected even for internal fixtures. A trusted registry can grant a named origin access to private addresses through `network.private_ip_origins`; classified `internal` terminal services receive the same narrow exception. This does not attest to the identity or downstream behavior of an allowed internal service.
+
 The Docker lab runs the **agent** as an unprivileged process with `network_mode: none`, a read-only root filesystem, no Docker socket, and no mounted database or policy file. Its only shared mount contains the substrate Unix socket. The **substrate** runs in a separate container with network access and the SQLite database. The agent receives no operator token. Changing the mounted YAML while the adapter runs does not change its loaded policy; restarting against the existing audit with changed policy fails closed.
 
 This is the enforced deployment shape for Milestone 2. Running the local FastAPI service beside an unsandboxed agent does not confine that agent's OS network access.
@@ -112,7 +114,7 @@ For network authority, classified `network.services` declare an exact origin and
 
 ## Sensitive-data egress authority
 
-An actor declared `data.sensitive_access: true` cannot make raw requests to external services or write to shared state or file channels, even if it has those basic capabilities. The decision is made before execution and survives a session reset. This conservative actor-level rule also blocks publication of genuinely public material through the raw request path. The [sensitive-data egress evaluation](Sensitive-Data-Egress-Evaluation.md) uses a local publisher to check raw and encoded attempts, shared writes, and a separately authorized public actor.
+An actor declared `data.sensitive_access: true`, or granted read access to any governed non-public object, cannot make raw requests to external services or write to shared state or file channels, even if it has those basic capabilities. The decision is made before execution and survives a session reset. This conservative raw-channel rule does not prevent publication of a separate governed `public` object through `object.publish`. It does not classify arbitrary data the substrate has never registered as a governed object; operators must explicitly mark actors that can access such data. The [sensitive-data egress evaluation](Sensitive-Data-Egress-Evaluation.md) uses a local publisher to check raw and encoded attempts, shared writes, and a separately authorized public actor.
 
 ## Classified objects, provenance, and declassification
 

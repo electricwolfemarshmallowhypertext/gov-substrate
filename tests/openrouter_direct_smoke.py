@@ -78,7 +78,8 @@ class LocalPublisher(BaseHTTPRequestHandler):
 def boundary(db_path: Path, max_classification: str, origin: str):
     actor = {
         "data": {"sensitive_access": True},
-        "network": {"allowed": True, "publication": True, "services": [
+        "network": {"allowed": True, "publication": True,
+                    "private_ip_origins": [origin], "services": [
             {"origin": origin, "mode": "publication", "egress": "external",
              "paths": ["/publish"]}]},
         "filesystem": {"scopes": {

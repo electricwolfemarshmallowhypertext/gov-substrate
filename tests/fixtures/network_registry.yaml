@@ -6,6 +6,7 @@ actors:
       destinations:
         - http://fixture:8000
         - https://example.com
+      private_ip_origins: [http://fixture:8000]
     filesystem:
       read: false
       write: false

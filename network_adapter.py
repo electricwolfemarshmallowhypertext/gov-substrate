@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import http.client
+import ipaddress
 import socket
 from urllib.parse import urlsplit
 
@@ -32,7 +33,7 @@ def origin_and_target(url: str) -> tuple[str, str, str, int, str]:
     return origin, parsed.scheme, host, port, target
 
 
-def fetch(url: str, allowed_origins: list[str]) -> dict:
+def fetch(url: str, allowed_origins: list[str], allow_private: bool = False) -> dict:
     origin, scheme, host, port, target = origin_and_target(url)
     normalized = {origin_and_target(item)[0] for item in allowed_origins}
     if origin not in normalized:
@@ -43,6 +44,13 @@ def fetch(url: str, allowed_origins: list[str]) -> dict:
         raise OSError("destination did not resolve")
     # http.client keeps the original host for Host and TLS SNI; the TCP address is pinned.
     address = addresses[0][4][0]
+    resolved_ip = ipaddress.ip_address(address)
+    effective_ip = (resolved_ip.ipv4_mapped or resolved_ip
+                    if resolved_ip.version == 6 else resolved_ip)
+    if (effective_ip.is_link_local or effective_ip.is_multicast or
+            effective_ip.is_unspecified or effective_ip.is_reserved or
+            (not effective_ip.is_global and not allow_private)):
+        raise ValueError("resolved address not allowed")
 
     def connect_pinned(_address, timeout, source_address=None):
         return socket.create_connection((address, port), timeout, source_address)

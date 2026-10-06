@@ -78,6 +78,39 @@ def test_network_request_rejects_exfiltration_fields_and_url_ambiguity(boundary)
     assert "PRIVATE_SENTINEL" not in json.dumps(substrate.audit())
 
 
+def test_nonpublic_reader_cannot_use_raw_egress_or_shared_channels(tmp_path):
+    reader = actor()
+    reader["network"] = {"allowed": True, "destinations": ["https://example.com"]}
+    reader["shared_channels"] = ["messages"]
+    reader["filesystem"]["scopes"]["shared"] = {
+        "read": True, "write": True, "channels": ["messages"]}
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    substrate = Substrate(tmp_path / "reader.db", {
+        "actors": {"reader": reader}, "tokens": {"reader-token": "reader"},
+        "operator_token": "operator-token"}, workspace_root=workspace)
+    session = substrate.create_session("reader")["session_token"]
+    raw = {"kind": "network.request", "url": "https://example.com/private-value"}
+    shared = {"kind": "state.write", "scope": "shared", "channel": "messages",
+              "key": "message", "value": "private-value"}
+    shared_file = {"kind": "filesystem.write", "scope": "shared",
+                   "channel": "messages", "path": "message.txt", "content": "private-value"}
+    for action in (raw, shared):
+        result = substrate.propose("reader", session, action, authorize_only=True)
+        assert result["decision"] == "allow", (action["kind"], result)
+
+    private = substrate.import_object("private", "text/plain",
+                                      base64.b64encode(b"private-value").decode(),
+                                      ["reader"], "fixture")
+    assert substrate.propose("reader", session, {"kind": "object.read",
+                                                   "object_id": private["object_id"]})["decision"] == "allow"
+    assert substrate.propose("reader", session, raw, authorize_only=True)["reason"] == "sensitive_external_egress_disabled"
+    assert substrate.propose("reader", session, shared)["reason"] == "sensitive_shared_write_disabled"
+    assert substrate.propose("reader", session, shared_file)["reason"] == "sensitive_shared_write_disabled"
+    new_session = substrate.create_session("reader")["session_token"]
+    assert substrate.propose("reader", new_session, raw, authorize_only=True)["decision"] == "deny"
+
+
 def test_delegation_reachability_and_stale_authority_fail_closed(boundary):
     substrate, sessions = boundary
     delegated = substrate.propose("agent-b", sessions["agent-b"], {
@@ -154,7 +187,7 @@ def test_redirect_is_returned_but_never_followed():
         thread.start()
     try:
         url = f"http://127.0.0.1:{redirect.server_port}/safe"
-        response = network_adapter.fetch(url, [url])
+        response = network_adapter.fetch(url, [url], allow_private=True)
         assert response["status"] == 302
         assert downstream_hits == []
     finally:
@@ -168,7 +201,7 @@ def test_dns_resolution_is_pinned_once(monkeypatch):
 
     def resolve(host, port, type):
         resolutions.append((host, port, type))
-        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.0.2.10", port))]
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", port))]
 
     def connect(address, timeout, source_address=None):
         connections.append(address)
@@ -180,4 +213,43 @@ def test_dns_resolution_is_pinned_once(monkeypatch):
         network_adapter.fetch("http://allowed.invalid/safe",
                               ["http://allowed.invalid"])
     assert len(resolutions) == 1
-    assert connections == [("192.0.2.10", 80)]
+    assert connections == [("93.184.216.34", 80)]
+
+
+@pytest.mark.parametrize("address", ["10.0.0.5", "169.254.169.254", "fd00::1", "127.0.0.1"])
+def test_external_origin_rejects_private_dns_result(monkeypatch, address):
+    connections = []
+    family = socket.AF_INET6 if ":" in address else socket.AF_INET
+    monkeypatch.setattr(network_adapter.socket, "getaddrinfo",
+                        lambda host, port, type: [(family, socket.SOCK_STREAM, 6, "", (address, port))])
+    monkeypatch.setattr(network_adapter.socket, "create_connection",
+                        lambda *args, **kwargs: connections.append(args))
+    with pytest.raises(ValueError, match="resolved address not allowed"):
+        network_adapter.fetch("https://allowed.example/safe", ["https://allowed.example"])
+    assert connections == []
+
+
+def test_explicit_internal_origin_allows_private_but_not_metadata(monkeypatch):
+    connections = []
+    address = ["10.0.0.5"]
+    monkeypatch.setattr(network_adapter.socket, "getaddrinfo",
+                        lambda host, port, type: [(socket.AF_INET, socket.SOCK_STREAM, 6,
+                                                   "", (address[0], port))])
+    def connect(target, timeout, source_address=None):
+        connections.append(target)
+        raise OSError("synthetic connect stop")
+    monkeypatch.setattr(network_adapter.socket, "create_connection", connect)
+    with pytest.raises(OSError, match="synthetic connect stop"):
+        network_adapter.fetch("http://fixture:8000/", ["http://fixture:8000"],
+                              allow_private=True)
+    assert connections == [("10.0.0.5", 8000)]
+    address[0] = "169.254.169.254"
+    with pytest.raises(ValueError, match="resolved address not allowed"):
+        network_adapter.fetch("http://fixture:8000/", ["http://fixture:8000"],
+                              allow_private=True)
+    assert len(connections) == 1
+
+
+def test_loopback_origin_requires_explicit_private_grant():
+    with pytest.raises(ValueError, match="resolved address not allowed"):
+        network_adapter.fetch("http://localhost:1/", ["http://localhost:1"])

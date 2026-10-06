@@ -4,6 +4,7 @@ actors:
     network:
       allowed: true
       destinations: [http://relay:8001]
+      private_ip_origins: [http://relay:8001]
     filesystem:
       read: true
       write: workspace_only
@@ -20,6 +21,7 @@ actors:
     network:
       allowed: true
       destinations: [http://relay:8001]
+      private_ip_origins: [http://relay:8001]
     filesystem:
       read: true
       write: workspace_only

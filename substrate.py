@@ -176,6 +176,21 @@ class Substrate:
                         len(channels) != len(set(channels))):
                     raise ValueError("invalid shared file channels")
             network = actor["network"]
+            private_origins = network.get("private_ip_origins", [])
+            if (not isinstance(private_origins, list) or
+                    not all(isinstance(item, str) for item in private_origins) or
+                    len(private_origins) != len(set(private_origins))):
+                raise ValueError("invalid private IP origin grants")
+            try:
+                configured_origins = {origin_and_target(item)[0]
+                                      for item in network.get("destinations", [])}
+                configured_origins.update(origin_and_target(item["origin"])[0]
+                                          for item in network.get("services", []))
+                if any(origin_and_target(item)[0] not in configured_origins
+                       for item in private_origins):
+                    raise ValueError("private IP origin not configured")
+            except (KeyError, TypeError, ValueError) as exc:
+                raise ValueError("invalid private IP origin grants") from exc
             if sensitive_access is True and not self.scoped_filesystem:
                 raise ValueError("sensitive actors require scoped filesystem authority")
             if sensitive_access is True and "services" not in network:
@@ -1363,6 +1378,13 @@ class Substrate:
         return {"event_id": event_id, "decision": "succeeded", "object_id": object_id,
                 "classification": run["classification"], "parents": input_ids}
 
+    @staticmethod
+    def _sensitive_reader(db: sqlite3.Connection, actor: str, caps: dict[str, Any]) -> bool:
+        if caps.get("data", {}).get("sensitive_access") is True:
+            return True
+        return any(actor in json.loads(row["readers"]) for row in db.execute(
+            "SELECT readers FROM objects WHERE classification!='public'"))
+
     def _decide(self, actor: str, action: dict[str, Any], session_id: str,
                 db: sqlite3.Connection):
         kind = action.get("kind")
@@ -1485,7 +1507,7 @@ class Substrate:
                 channel = action.get("channel")
                 if not isinstance(channel, str) or channel not in caps.get("shared_channels", []):
                     return "deny", "shared_channel_disabled", None
-                if kind == "state.write" and caps.get("data", {}).get("sensitive_access") is True:
+                if kind == "state.write" and self._sensitive_reader(db, actor, caps):
                     return "deny", "sensitive_shared_write_disabled", None
                 namespace = f"shared:{channel}"
             else:
@@ -1524,7 +1546,7 @@ class Substrate:
                 if len(matched) != 1:
                     return "deny", "invalid_service_policy", None
                 service = matched[0]
-                if (caps.get("data", {}).get("sensitive_access") is True and
+                if (self._sensitive_reader(db, actor, caps) and
                         service.get("egress", "external") != "internal"):
                     return "deny", "sensitive_external_egress_disabled", None
                 if service.get("mode") == "terminal":
@@ -1547,6 +1569,8 @@ class Substrate:
                 if service.get("mode") == "delegated":
                     return "deny", "delegated_service_unmediated", None
                 return "deny", "invalid_service_policy", None
+            if self._sensitive_reader(db, actor, caps):
+                return "deny", "sensitive_external_egress_disabled", None
             return "allow", "destination_granted", None
         if kind in ("filesystem.read", "filesystem.write"):
             capability = caps["filesystem"]
@@ -1561,7 +1585,7 @@ class Substrate:
                     if not isinstance(channel, str) or channel not in grant.get("channels", []):
                         return "deny", "shared_channel_disabled", None
                     if (kind == "filesystem.write" and
-                            caps.get("data", {}).get("sensitive_access") is True):
+                            self._sensitive_reader(db, actor, caps)):
                         return "deny", "sensitive_shared_write_disabled", None
                 else:
                     channel = None
@@ -1815,7 +1839,11 @@ class Substrate:
                                  self._external_execution_open(actor, session_token, task_id))
                 if not open_boundary:
                     raise ValueError("capability_unavailable")
-                response = fetch(url, [origin])
+                network = self.actors[actor]["network"]
+                if origin in network.get("private_ip_origins", []):
+                    response = fetch(url, [origin], allow_private=True)
+                else:
+                    response = fetch(url, [origin])
                 outcome = {key: response[key] for key in
                            ("status", "bytes", "body_sha256", "origin", "resolved_ip")}
                 result["outcome"] = "succeeded" if 200 <= response["status"] < 300 else "failed"
@@ -1843,7 +1871,16 @@ class Substrate:
                 destinations = list(network.get("destinations", []))
                 destinations.extend(service["origin"] for service in network.get("services", [])
                                     if service.get("mode") in ("terminal", "publication"))
-                response = fetch(action["url"], destinations)
+                origin = origin_and_target(action["url"])[0]
+                internal_service = any(
+                    origin_and_target(service["origin"])[0] == origin and
+                    service.get("mode") == "terminal" and
+                    service.get("egress") == "internal"
+                    for service in network.get("services", []))
+                if internal_service or origin in network.get("private_ip_origins", []):
+                    response = fetch(action["url"], destinations, allow_private=True)
+                else:
+                    response = fetch(action["url"], destinations)
                 outcome = {key: response[key] for key in
                            ("status", "bytes", "body_sha256", "origin", "resolved_ip")}
                 result["response"] = {"status": response["status"], "body": response["body"]}

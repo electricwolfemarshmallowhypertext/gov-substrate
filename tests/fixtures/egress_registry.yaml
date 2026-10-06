@@ -5,6 +5,7 @@ actors:
       sensitive_access: true
     network:
       allowed: true
+      private_ip_origins: [http://publisher:8003]
       publication: true
       services:
         - origin: http://publisher:8003
@@ -26,6 +27,7 @@ actors:
       sensitive_access: false
     network:
       allowed: true
+      private_ip_origins: [http://publisher:8003]
       publication: true
       services:
         - origin: http://publisher:8003

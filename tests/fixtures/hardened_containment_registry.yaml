@@ -3,6 +3,7 @@ actors:
     token_env: AGENT_A_TOKEN
     network:
       allowed: true
+      private_ip_origins: [http://fixture:8000]
       services:
         - origin: http://fixture:8000
           mode: terminal
@@ -26,6 +27,7 @@ actors:
     token_env: AGENT_B_TOKEN
     network:
       allowed: true
+      private_ip_origins: [http://fixture:8000]
       services:
         - origin: http://fixture:8000
           mode: terminal
