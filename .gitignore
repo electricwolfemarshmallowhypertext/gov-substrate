@@ -15,5 +15,10 @@ __pycache__/
 .network_lab_*/
 /dist/
 /TODO.md
+# Private grant, research, and manuscript drafts.
+/docs/Governance-Substrate-Grant-Research-Package.*
+/docs/Governance-Substrate-External-Research-Brief.*
+/paper/
+*[Gg]overnance*[Vv]3*
 # The source paper is all rights reserved and is not part of the code artifact.
 GovernanceAsSubstrate_TSmith_Sep2026_V2.pdf
