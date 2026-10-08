@@ -10,10 +10,10 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from fastapi.testclient import TestClient
 
-from attested_generation_adapter import run_attested_generation
-from confidential_space_worker import ConfidentialSpaceWorker
-from provider_gateway import canonical
-from substrate import Substrate, create_app
+from governance_substrate.attested_generation_adapter import run_attested_generation
+from governance_substrate.confidential_space_worker import ConfidentialSpaceWorker
+from governance_substrate.provider_gateway import canonical
+from governance_substrate.substrate import Substrate, create_app
 
 
 IMAGE = "sha256:" + "a" * 64
@@ -45,9 +45,9 @@ def setup(tmp_path, monkeypatch, model_name, mode):
     fake_model = tmp_path / model_name
     fake_model.write_bytes(b"GGUF deterministic model fixture")
     model_hash = hashlib.sha256(fake_model.read_bytes()).hexdigest()
-    monkeypatch.setattr("confidential_space_worker.MODEL_HASHES", {model_name: model_hash})
+    monkeypatch.setattr("governance_substrate.confidential_space_worker.MODEL_HASHES", {model_name: model_hash})
     signing_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    monkeypatch.setattr("substrate.fetch_google_jwks", lambda: jwks_for(signing_key))
+    monkeypatch.setattr("governance_substrate.substrate.fetch_google_jwks", lambda: jwks_for(signing_key))
     def issue(audience, nonces):
         now = int(time.time())
         claims = {
@@ -106,7 +106,7 @@ def setup(tmp_path, monkeypatch, model_name, mode):
         published.append(url)
         return {"status": 200, "bytes": 1, "body_sha256": "0" * 64,
                 "origin": origins[0], "resolved_ip": "127.0.0.1"}
-    monkeypatch.setattr("substrate.fetch", fake_fetch)
+    monkeypatch.setattr("governance_substrate.substrate.fetch", fake_fetch)
     source = substrate.import_object("public", "text/plain",
         base64.b64encode(b"Public governed context").decode(),
         ["agent"], "fixture")["object_id"]
@@ -148,7 +148,7 @@ def test_shared_attested_path_and_fail_closed_cases(tmp_path, monkeypatch, model
 
 
 def test_documented_pinned_artifacts_unchanged():
-    from confidential_space_worker import MODEL_HASHES
+    from governance_substrate.confidential_space_worker import MODEL_HASHES
     assert MODEL_HASHES == {
         "Qwen3-0.6B-Q8_0.gguf": "12fae8b8f78f0360b498d04c8db7d33aff29ab7d8080231f93a17c18119e6735",
         "Phi-4-mini-instruct-Q8_0.gguf": "3e81a3ad900b6d67df011d42ef14bad63354a3516fbd229b9bf29755363b25ee",

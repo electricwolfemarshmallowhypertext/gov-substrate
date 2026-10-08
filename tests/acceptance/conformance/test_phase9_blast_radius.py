@@ -7,8 +7,8 @@ import os
 import pytest
 from fastapi.testclient import TestClient
 
-from generation_adapter import run_local_generation
-from substrate import Substrate, create_app
+from governance_substrate.generation_adapter import run_local_generation
+from governance_substrate.substrate import Substrate, create_app
 
 
 def import_text(substrate, text):

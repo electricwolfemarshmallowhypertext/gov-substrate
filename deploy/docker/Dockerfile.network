@@ -1,0 +1,19 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+COPY pyproject.toml ./
+COPY src/ ./src/
+RUN pip install --no-cache-dir .
+COPY tests/network_probe.py /app/network_probe.py
+COPY tests/filesystem_probe.py /app/filesystem_probe.py
+COPY tests/filesystem_tool.py /app/filesystem_tool.py
+COPY tests/containment_probe.py /app/containment_probe.py
+COPY tests/hardened_containment_probe.py /app/hardened_containment_probe.py
+COPY tests/egress_probe.py /app/egress_probe.py
+COPY tests/object_probe.py /app/object_probe.py
+COPY tests/object_tool.py /app/object_tool.py
+COPY tests/containment_tool.py /app/containment_tool.py
+COPY tests/incident_escape_probe.py /app/incident_escape_probe.py
+COPY tests/fixtures/generation_worker.py /app/generation_worker.py
+
+ENV PYTHONDONTWRITEBYTECODE=1

@@ -3,7 +3,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from substrate import Substrate, create_app
+from governance_substrate.substrate import Substrate, create_app
 
 
 def registry(services):

@@ -13,7 +13,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 REGISTRY = ROOT / "tests" / "fixtures" / "egress_registry.yaml"
-COMPOSE_FILES = ("compose.network.yaml", "compose.filesystem.yaml", "compose.egress.yaml")
+COMPOSE_FILES = ("deploy/compose/compose.network.yaml", "deploy/compose/compose.filesystem.yaml", "deploy/compose/compose.egress.yaml")
 IMAGE = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9WlFE0YAAAAASUVORK5CYII=")
 

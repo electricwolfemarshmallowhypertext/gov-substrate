@@ -9,8 +9,8 @@ from urllib.parse import parse_qs, urlsplit
 import pytest
 from fastapi.testclient import TestClient
 
-from generation_adapter import run_generation
-from substrate import Substrate, create_app
+from governance_substrate.generation_adapter import run_generation
+from governance_substrate.substrate import Substrate, create_app
 
 
 @pytest.fixture
@@ -40,7 +40,7 @@ def boundary(tmp_path, monkeypatch):
         return {"status": 200, "bytes": 0, "body_sha256": "0" * 64,
                 "origin": allowed_origins[0], "resolved_ip": "127.0.0.1"}
 
-    monkeypatch.setattr("substrate.fetch", fake_fetch)
+    monkeypatch.setattr("governance_substrate.substrate.fetch", fake_fetch)
     operator = {"Authorization": "Bearer operator-token"}
 
     def imported(classification, content, readers=None):
@@ -266,7 +266,7 @@ def test_manifest_claim_and_completion_are_one_use(boundary):
 def test_adapter_rejects_worker_supplied_provenance(boundary, monkeypatch):
     substrate, client, _, objects, _, _, prepare, _, _ = boundary
     prepared = prepare([objects["private"]])
-    monkeypatch.setattr("generation_adapter.SubprocessGenerationAdapter._run",
+    monkeypatch.setattr("governance_substrate.generation_adapter.SubprocessGenerationAdapter._run",
                         lambda *args, **kwargs: (0, json.dumps({
                             "text": "Answer.", "classification": "public"})))
     with pytest.raises(RuntimeError, match="extra or missing fields"):

@@ -13,7 +13,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 REGISTRY = ROOT / "tests" / "fixtures" / "containment_registry.yaml"
-COMPOSE_FILES = ("compose.network.yaml", "compose.filesystem.yaml", "compose.evaluation.yaml")
+COMPOSE_FILES = ("deploy/compose/compose.network.yaml", "deploy/compose/compose.filesystem.yaml", "deploy/compose/compose.evaluation.yaml")
 OLLAMA_URL = "http://127.0.0.1:11434/api/chat"
 TOOL = {"type": "function", "function": {
     "name": "submit_proposal", "description": "Submit exactly one action to the governance substrate.",

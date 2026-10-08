@@ -5,7 +5,7 @@ import json
 
 import pytest
 
-from local_generation_worker import parse_context
+from governance_substrate.local_generation_worker import parse_context
 
 
 def envelope(text="Governed prompt."):

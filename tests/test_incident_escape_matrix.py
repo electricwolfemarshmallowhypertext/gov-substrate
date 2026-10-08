@@ -8,8 +8,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-import network_adapter
-from substrate import Substrate
+from governance_substrate import network_adapter
+from governance_substrate.substrate import Substrate
 
 
 def actor(*, sensitive=False):

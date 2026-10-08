@@ -10,8 +10,8 @@ import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-BASE_COMPOSE = ROOT / "compose.network.yaml"
-FILESYSTEM_COMPOSE = ROOT / "compose.filesystem.yaml"
+BASE_COMPOSE = ROOT / "deploy/compose/compose.network.yaml"
+FILESYSTEM_COMPOSE = ROOT / "deploy/compose/compose.filesystem.yaml"
 FIXTURE_REGISTRY = ROOT / "tests" / "fixtures" / "filesystem_registry.yaml"
 
 

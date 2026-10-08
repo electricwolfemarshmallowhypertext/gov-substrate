@@ -3,7 +3,7 @@ import os
 
 import pytest
 
-from wasmtime_runtime_supervisor import (
+from governance_substrate.wasmtime_runtime_supervisor import (
     WasmtimeRuntimeSupervisor,
     _process_birth,
 )

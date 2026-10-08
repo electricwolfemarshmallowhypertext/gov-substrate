@@ -4,7 +4,7 @@ import socket
 import pytest
 from fastapi.testclient import TestClient
 
-from substrate import Substrate, create_app
+from governance_substrate.substrate import Substrate, create_app
 
 
 @pytest.fixture
@@ -18,7 +18,7 @@ def system(tmp_path):
             "shared_channels": list(channels),
         }
 
-    db_path = tmp_path / "substrate.db"
+    db_path = tmp_path / "governance_substrate.substrate.db"
     substrate = Substrate(db_path, {
         "actors": {"agent-a": actor(["approved"]), "agent-b": actor()},
         "tokens": {"agent-a-secret": "agent-a", "agent-b-secret": "agent-b"},

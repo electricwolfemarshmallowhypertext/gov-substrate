@@ -10,7 +10,7 @@ import pytest
 
 
 ROOT = Path(__file__).resolve().parents[2]
-LOCAL_COMPOSE = ROOT / "compose.local-generation.yaml"
+LOCAL_COMPOSE = ROOT / "deploy/compose/compose.local-generation.yaml"
 MODEL_ARTIFACTS = {
     "Qwen3-0.6B-Q8_0.gguf": (
         804753088, "12fae8b8f78f0360b498d04c8db7d33aff29ab7d8080231f93a17c18119e6735"),

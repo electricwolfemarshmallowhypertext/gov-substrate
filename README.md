@@ -26,14 +26,14 @@ The substrate checks authority before execution, mediates governed capabilities,
 
 The project separates policy tests from real runtime evidence. Evaluation includes runtime conformance, hostile-worker enforcement, model integration, hosted-provider validation, incident-derived failure cases, and compromised-host/provider scenarios.
 
-The canonical empirical baseline is the [Phase 10 evidence freeze](docs/Evidence-Freeze-2026-10-05.md).
+Start with the [research case and evidence](docs/Research-Case-and-Evidence.md). The canonical empirical baseline is the [Phase 10 evidence freeze](docs/evidence/Evidence-Freeze-2026-10-05.md).
 
 ## Research
 
 **Governance as Substrate: Engineering Patterns for Resilient Collective Systems — V2, September 2026 Revision**
 
 - [Research paper DOI](https://doi.org/10.5281/zenodo.23002435)
-- [v0.6.0 release notes](docs/Release-v0.6.0.md)
+- [v0.6.0 release notes](docs/releases/Release-v0.6.0.md)
 
 ## Scope
 

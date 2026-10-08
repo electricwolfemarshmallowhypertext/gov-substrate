@@ -159,7 +159,7 @@ def run_hosted():
                              ("API_KEY", "TOKEN", "SECRET", "PASSWORD"))
                   and not name.startswith(("OPENAI_", "ANTHROPIC_", "OPENROUTER_"))}
     docker_env.update(LAB_IMAGE_TAG=project, LAB_WORKSPACE_VOLUME=volume)
-    compose_files = (*COMPOSE_FILES, "compose.evaluation.yaml")
+    compose_files = (*COMPOSE_FILES, "deploy/compose/compose.evaluation.yaml")
     prefix = ["docker", "compose", "-p", project,
               *(part for filename in compose_files
                 for part in ("-f", str(ROOT / filename)))]

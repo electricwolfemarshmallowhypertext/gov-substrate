@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from podman_runtime_supervisor import PodmanRuntimeSupervisor
+from governance_substrate.podman_runtime_supervisor import PodmanRuntimeSupervisor
 
 
 def supervisor():
@@ -78,7 +78,7 @@ def test_run_uses_fixed_rootless_isolation_shape(monkeypatch):
             engine.containers[f"gov-substrate-{generation_id}"]["State"]["Running"] = False
             return '{"text":"probe"}', ""
 
-    monkeypatch.setattr("podman_runtime_supervisor.subprocess.Popen", Process)
+    monkeypatch.setattr("governance_substrate.podman_runtime_supervisor.subprocess.Popen", Process)
     assert runtime.run(generation_id, '{"inputs": []}') == '{"text":"probe"}'
     command = commands[0]
     for option in (
@@ -163,7 +163,7 @@ def test_inspect_rejects_other_deployment_identity(monkeypatch):
     engine.add(generation_id, owner="another-deployment")
     info = engine.inspect(f"gov-substrate-{generation_id}")
     monkeypatch.setattr(
-        "podman_runtime_supervisor.subprocess.run",
+        "governance_substrate.podman_runtime_supervisor.subprocess.run",
         lambda *args, **kwargs: SimpleNamespace(
             returncode=0, stdout=json.dumps([info]), stderr=""
         ),
@@ -181,7 +181,7 @@ def test_inspect_rejects_restarting_worker(monkeypatch):
     info = engine.inspect(f"gov-substrate-{generation_id}")
     info["HostConfig"] = {"RestartPolicy": {"Name": "always"}}
     monkeypatch.setattr(
-        "podman_runtime_supervisor.subprocess.run",
+        "governance_substrate.podman_runtime_supervisor.subprocess.run",
         lambda *args, **kwargs: SimpleNamespace(
             returncode=0, stdout=json.dumps([info]), stderr=""
         ),

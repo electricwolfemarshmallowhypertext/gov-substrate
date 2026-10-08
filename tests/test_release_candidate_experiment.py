@@ -4,7 +4,7 @@ import base64
 
 import pytest
 
-from experimental_release_candidates import evaluate_candidate
+from governance_substrate.experimental_release_candidates import evaluate_candidate
 
 
 def render(kind, public, protected):

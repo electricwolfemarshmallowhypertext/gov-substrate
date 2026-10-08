@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from docker_runtime_supervisor import DockerRuntimeSupervisor
+from governance_substrate.docker_runtime_supervisor import DockerRuntimeSupervisor
 
 
 def supervisor(tmp_path, runtime_name="docker"):
@@ -145,7 +145,7 @@ def test_circuit_cleanup_and_adapter_cleanup_do_not_race(tmp_path, monkeypatch):
             self.returncode = -9
             killed.set()
 
-    monkeypatch.setattr("docker_runtime_supervisor.subprocess.Popen", Process)
+    monkeypatch.setattr("governance_substrate.docker_runtime_supervisor.subprocess.Popen", Process)
 
     def run():
         try:
@@ -224,7 +224,7 @@ def test_launch_names_and_labels_container_before_accepting_output(tmp_path, mon
             engine.containers[f"gov-substrate-{generation_id}"]["State"]["Running"] = False
             return '{"text":"Answer"}', ""
 
-    monkeypatch.setattr("docker_runtime_supervisor.subprocess.Popen", Process)
+    monkeypatch.setattr("governance_substrate.docker_runtime_supervisor.subprocess.Popen", Process)
     assert runtime.run(generation_id, '{"inputs": []}') == '{"text":"Answer"}'
     assert commands and "--rm" not in commands[0]
     assert ["--name", f"gov-substrate-{generation_id}"] == commands[0][
@@ -255,7 +255,7 @@ def test_model_free_service_uses_same_supervisor_contract(tmp_path, monkeypatch)
             engine.containers[f"gov-substrate-{generation_id}"]["State"]["Running"] = False
             return '{"text":"probe result"}', ""
 
-    monkeypatch.setattr("docker_runtime_supervisor.subprocess.Popen", Process)
+    monkeypatch.setattr("governance_substrate.docker_runtime_supervisor.subprocess.Popen", Process)
     assert runtime.run(generation_id, '{"inputs": []}') == '{"text":"probe result"}'
     assert commands[0][-1] == "probe"
     assert "GENERATION_MODEL_BLOB" not in runtime._environment
@@ -267,7 +267,7 @@ def test_inspect_rejects_other_deployment_identity(tmp_path, monkeypatch):
     engine = FakeEngine()
     engine.add(generation_id, owner="another-deployment")
     info = engine.inspect(f"gov-substrate-{generation_id}")
-    monkeypatch.setattr("docker_runtime_supervisor.subprocess.run", lambda *args, **kwargs:
+    monkeypatch.setattr("governance_substrate.docker_runtime_supervisor.subprocess.run", lambda *args, **kwargs:
                         SimpleNamespace(returncode=0, stdout=json.dumps([info]), stderr=""))
     with pytest.raises(RuntimeError, match="identity mismatch"):
         runtime._inspect(f"gov-substrate-{generation_id}")
@@ -280,7 +280,7 @@ def test_inspect_rejects_restarting_worker(tmp_path, monkeypatch):
     engine.add(generation_id)
     info = engine.inspect(f"gov-substrate-{generation_id}")
     info["HostConfig"] = {"RestartPolicy": {"Name": "always"}}
-    monkeypatch.setattr("docker_runtime_supervisor.subprocess.run", lambda *args, **kwargs:
+    monkeypatch.setattr("governance_substrate.docker_runtime_supervisor.subprocess.run", lambda *args, **kwargs:
                         SimpleNamespace(returncode=0, stdout=json.dumps([info]), stderr=""))
     with pytest.raises(RuntimeError, match="must not restart"):
         runtime._inspect(f"gov-substrate-{generation_id}")

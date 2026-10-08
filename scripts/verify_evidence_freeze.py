@@ -10,7 +10,24 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-MANIFEST = ROOT / "evaluation" / "evidence-freeze-2026-10-05" / "manifest.json"
+MANIFEST = ROOT / "docs" / "evidence" / "evidence-freeze-2026-10-05" / "manifest.json"
+
+
+def current_path(recorded_path: str) -> Path:
+    """Resolve a frozen, historical path after the repository layout move."""
+    if recorded_path.startswith("evaluation/evidence-freeze-2026-10-05/"):
+        recorded_path = recorded_path.replace("evaluation/", "docs/evidence/", 1)
+    elif recorded_path.startswith("evaluation/results/"):
+        recorded_path = recorded_path.replace("evaluation/", "docs/evidence/", 1)
+    elif recorded_path.startswith("runtime-probe/"):
+        recorded_path = f"tests/probes/{recorded_path}"
+    elif recorded_path.startswith("docs/") and (
+        ROOT / "docs" / "evaluations" / recorded_path.removeprefix("docs/")
+    ).is_file():
+        recorded_path = recorded_path.replace("docs/", "docs/evaluations/", 1)
+    elif "/" not in recorded_path and recorded_path.endswith(".py"):
+        recorded_path = f"src/governance_substrate/{recorded_path}"
+    return ROOT / recorded_path
 
 
 def sha256(path: Path) -> str:
@@ -34,7 +51,7 @@ def verify(require_tag: bool = False) -> dict[str, int]:
         if relative in paths:
             raise AssertionError(f"duplicate artifact path: {relative}")
         paths.add(relative)
-        path = ROOT / relative
+        path = current_path(relative)
         if not path.is_file():
             raise AssertionError(f"missing artifact {artifact_id}: {relative}")
         if sha256(path) != artifact["sha256"]:
@@ -55,10 +72,10 @@ def verify(require_tag: bool = False) -> dict[str, int]:
             if artifact_id not in artifacts:
                 raise AssertionError(f"unknown artifact {artifact_id} in {claim['id']}")
         for relative in claim["implementation"] + claim["tests"]:
-            if not (ROOT / relative).is_file():
+            if not current_path(relative).is_file():
                 raise AssertionError(f"missing evidence path in {claim['id']}: {relative}")
 
-    ci_result = json.loads((ROOT / artifacts["ci_run"]["path"]).read_text(encoding="utf-8"))
+    ci_result = json.loads(current_path(artifacts["ci_run"]["path"]).read_text(encoding="utf-8"))
     if ci_result["headSha"] != manifest["tested_commit"] or ci_result["conclusion"] != "success":
         raise AssertionError("CI result does not match the tested commit and success state")
 

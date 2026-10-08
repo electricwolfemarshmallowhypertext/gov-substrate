@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from openshell_runtime_supervisor import OpenShellRuntimeSupervisor
+from governance_substrate.openshell_runtime_supervisor import OpenShellRuntimeSupervisor
 
 
 def supervisor(tmp_path):

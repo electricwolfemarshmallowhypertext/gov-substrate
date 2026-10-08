@@ -42,7 +42,7 @@ Only an allowed proposal returns a `generation_id` and `execution_token`. Pass
 both to the host:
 
 ```python
-from generation_adapter import run_with_adapter
+from governance_substrate.generation_adapter import run_with_adapter
 from hosted_generation_adapters import OpenAITextAdapter
 
 provider = OpenAITextAdapter(
@@ -121,11 +121,11 @@ cannot select another deployment's containers. The agent sees neither the
 supervisor nor Docker control access.
 
 ```python
-from docker_runtime_supervisor import DockerRuntimeSupervisor
-from generation_adapter import run_local_generation
-from substrate import Substrate
+from governance_substrate.docker_runtime_supervisor import DockerRuntimeSupervisor
+from governance_substrate.generation_adapter import run_local_generation
+from governance_substrate.substrate import Substrate
 
-runtime = DockerRuntimeSupervisor("compose.local-generation.yaml", model_blob,
+runtime = DockerRuntimeSupervisor("deploy/compose/compose.local-generation.yaml", model_blob,
                                   project="my-substrate-instance")
 substrate = Substrate(db_path, registry, runtime_supervisor=runtime)
 result = run_local_generation(substrate_client, generation_id, operator_token,

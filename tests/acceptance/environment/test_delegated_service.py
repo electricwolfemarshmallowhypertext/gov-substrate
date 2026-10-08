@@ -5,10 +5,10 @@ import subprocess
 import time
 import uuid
 
-from conftest import ROOT, docker_command, docker_environment
+from tests.acceptance.conftest import ROOT, docker_command, docker_environment
 
 
-COMPOSE = (ROOT / "compose.network.yaml", ROOT / "compose.evaluation.yaml")
+COMPOSE = (ROOT / "deploy/compose/compose.network.yaml", ROOT / "deploy/compose/compose.evaluation.yaml")
 REGISTRY = ROOT / "tests" / "fixtures" / "hardened_containment_registry.yaml"
 
 

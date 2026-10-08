@@ -5,7 +5,7 @@ import io
 import json
 from pathlib import Path
 
-from hosted_generation_adapters import GeminiDeveloperClient
+from governance_substrate.hosted_generation_adapters import GeminiDeveloperClient
 
 
 def load_driver():
@@ -24,7 +24,7 @@ def test_direct_client_sends_only_sealed_parts_to_google(monkeypatch):
             requests.append((request, timeout))
             return io.BytesIO(b'{"candidates": []}')
 
-    monkeypatch.setattr("hosted_generation_adapters.build_opener",
+    monkeypatch.setattr("governance_substrate.hosted_generation_adapters.build_opener",
                         lambda *_handlers: FakeOpener())
     client = GeminiDeveloperClient("fixture-key")
     result = client.generate_content(

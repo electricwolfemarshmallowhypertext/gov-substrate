@@ -23,12 +23,12 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 
-from audit_witness import MTLSAuditWitness
-from substrate import IntegrityError, Substrate, canonical, create_app, digest
+from governance_substrate.audit_witness import MTLSAuditWitness
+from governance_substrate.substrate import IntegrityError, Substrate, canonical, create_app, digest
 
 
 ROOT = Path(__file__).resolve().parents[3]
-COMPOSE = ROOT / "compose.phase9.yaml"
+COMPOSE = ROOT / "deploy/compose/compose.phase9.yaml"
 PROFILE = {"model": "fixed-model", "upstream": "fixed-upstream",
            "allow_fallbacks": False, "data_collection": "deny",
            "zdr": True, "retention": "none"}

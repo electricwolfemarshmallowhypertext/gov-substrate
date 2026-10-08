@@ -8,7 +8,7 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 
-from substrate import IntegrityError, Substrate, create_app
+from governance_substrate.substrate import IntegrityError, Substrate, create_app
 
 
 def actor(*, channels=(), publication=False):
@@ -72,7 +72,7 @@ def test_task_identity_is_short_lived_scoped_and_parent_linked(boundary, monkeyp
                        json={"action": {"kind": "network.request",
                                         "url": "https://example.invalid"}}).json()["reason"] == "task_capability_denied"
 
-    import substrate as module
+    import governance_substrate.substrate as module
     now = module.time.time()
     monkeypatch.setattr(module.time, "time", lambda: now + 121)
     assert client.post("/proposals", headers=bearer(child["task_token"], session["session_token"]),
@@ -108,7 +108,7 @@ def test_expired_task_cannot_claim_prepared_generation(boundary, monkeypatch):
                                                    "input_ids": [source]},
                                  task_id=task["task_id"])
     assert prepared["decision"] == "allow"
-    import substrate as module
+    import governance_substrate.substrate as module
     now = module.time.time()
     monkeypatch.setattr(module.time, "time", lambda: now + 2)
     assert substrate.claim_generation(prepared["generation_id"],
@@ -255,8 +255,8 @@ def test_message_surfaces_require_explicit_shared_grants(boundary, tmp_path):
 
 def test_harness_inventory_covers_every_substrate_route(boundary):
     _, client = boundary
-    inventory = yaml.safe_load((Path(__file__).resolve().parents[1] / "docs" /
-                                "Reference-Harness-Inventory.yaml").read_text(encoding="utf-8"))
+    inventory = yaml.safe_load((Path(__file__).resolve().parents[1] / "docs" / "evidence" /
+                                  "Reference-Harness-Inventory.yaml").read_text(encoding="utf-8"))
     declared = set().union(*(set(inventory["substrate"][section]) for section in
                              ("callable_by_agent", "operator_only", "trusted_adapter_only",
                               "gateway_credential_required")))
@@ -269,7 +269,7 @@ def test_harness_inventory_covers_every_substrate_route(boundary):
     assert inventory["worker"]["provider_credentials"] == "absent"
     assert inventory["worker"]["external_spend"] == "none"
     example = yaml.safe_load((Path(__file__).resolve().parents[1] /
-                              "registry.example.yaml").read_text(encoding="utf-8"))
+                              "deploy/registry.example.yaml").read_text(encoding="utf-8"))
     assert example["require_task_identity"] is True
     assert example["monitoring"]["actor_denials"] > 0
     assert example["monitoring"]["cross_actor_denials"] > 0

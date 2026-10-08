@@ -11,10 +11,10 @@ from pathlib import Path
 import pytest
 import yaml
 
-from docker_runtime_supervisor import DockerRuntimeSupervisor
-from substrate import Substrate
+from governance_substrate.docker_runtime_supervisor import DockerRuntimeSupervisor
+from governance_substrate.substrate import Substrate
 
-from conftest import LOCAL_COMPOSE, ROOT, docker_command
+from tests.acceptance.conftest import LOCAL_COMPOSE, ROOT, docker_command
 
 
 PROBE_SOURCE = Path(__file__).with_name("environment_probe.py").read_text(encoding="utf-8")
@@ -121,7 +121,7 @@ def test_worker_environment_has_only_granted_capabilities(worker_lab):
             "mode": "scan", "target_ip": target_ip, "gateway_ip": gateway_ip,
             "host_marker": marker, "host_pid": os.getpid(),
             "marker": "worker-private-" + uuid.uuid4().hex})
-        inventory = yaml.safe_load((ROOT / "docs" / "Reference-Harness-Inventory.yaml")
+        inventory = yaml.safe_load((ROOT / "docs" / "evidence" / "Reference-Harness-Inventory.yaml")
                                    .read_text(encoding="utf-8"))
         declared_allowed = set(inventory["probes"]["allowed"])
         declared_blocked = {name.replace("{marker}", marker)

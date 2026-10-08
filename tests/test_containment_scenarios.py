@@ -12,7 +12,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 REGISTRY = ROOT / "tests" / "fixtures" / "containment_registry.yaml"
-COMPOSE_FILES = ("compose.network.yaml", "compose.filesystem.yaml", "compose.evaluation.yaml")
+COMPOSE_FILES = ("deploy/compose/compose.network.yaml", "deploy/compose/compose.filesystem.yaml", "deploy/compose/compose.evaluation.yaml")
 
 
 @pytest.mark.skipif(os.getenv("RUN_DOCKER_TESTS") != "1", reason="set RUN_DOCKER_TESTS=1")

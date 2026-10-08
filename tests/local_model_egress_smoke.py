@@ -15,7 +15,7 @@ from local_model_containment_smoke import model_action, require_local_models
 
 ROOT = Path(__file__).resolve().parents[1]
 REGISTRY = ROOT / "tests" / "fixtures" / "egress_registry.yaml"
-COMPOSE_FILES = ("compose.network.yaml", "compose.filesystem.yaml", "compose.egress.yaml")
+COMPOSE_FILES = ("deploy/compose/compose.network.yaml", "deploy/compose/compose.filesystem.yaml", "deploy/compose/compose.egress.yaml")
 SECRET = "PRIVATE_EGRESS_SENTINEL_4e8d7b"
 
 

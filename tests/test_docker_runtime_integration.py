@@ -11,9 +11,9 @@ import uuid
 import pytest
 from fastapi.testclient import TestClient
 
-from docker_runtime_supervisor import DockerRuntimeSupervisor
-from generation_adapter import run_local_generation
-from substrate import Substrate, create_app
+from governance_substrate.docker_runtime_supervisor import DockerRuntimeSupervisor
+from governance_substrate.generation_adapter import run_local_generation
+from governance_substrate.substrate import Substrate, create_app
 
 
 @pytest.mark.skipif(os.getenv("RUN_DOCKER_TESTS") != "1",

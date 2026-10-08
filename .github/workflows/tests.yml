@@ -46,7 +46,7 @@ jobs:
         shell: bash
         run: >-
           cargo +1.90.0 build --release --locked
-          --manifest-path runtime-probe/Cargo.toml
+          --manifest-path tests/probes/runtime-probe/Cargo.toml
           --target '${{ matrix.target }}'
 
   runtime-conformance:
@@ -196,9 +196,9 @@ jobs:
           rustup toolchain install 1.90.0 --profile minimal
           rustup target add --toolchain 1.90.0 wasm32-wasip1
           cargo +1.90.0 build --release --locked \
-            --manifest-path runtime-probe/Cargo.toml \
+            --manifest-path tests/probes/runtime-probe/Cargo.toml \
             --target wasm32-wasip1
-          echo "WASMTIME_MODULE=$GITHUB_WORKSPACE/runtime-probe/target/wasm32-wasip1/release/gov-runtime-probe.wasm" >> "$GITHUB_ENV"
+          echo "WASMTIME_MODULE=$GITHUB_WORKSPACE/tests/probes/runtime-probe/target/wasm32-wasip1/release/gov-runtime-probe.wasm" >> "$GITHUB_ENV"
       - name: Install pinned official Wasmtime release
         shell: bash
         run: |
@@ -251,13 +251,13 @@ jobs:
           rustup toolchain install 1.90.0 --profile minimal
           rustup target add --toolchain 1.90.0 x86_64-unknown-linux-musl
           cargo +1.90.0 build --release --locked \
-            --manifest-path runtime-probe/Cargo.toml \
+            --manifest-path tests/probes/runtime-probe/Cargo.toml \
             --target x86_64-unknown-linux-musl
           gcc -std=c11 -O2 -Wall -Wextra -Werror \
-            native-launcher/linux_sandbox.c -lseccomp \
+            deploy/native/linux_sandbox.c -lseccomp \
             -o "$RUNNER_TEMP/native-linux-launcher"
           echo "NATIVE_LINUX_LAUNCHER=$RUNNER_TEMP/native-linux-launcher" >> "$GITHUB_ENV"
-          echo "NATIVE_PROBE=$GITHUB_WORKSPACE/runtime-probe/target/x86_64-unknown-linux-musl/release/gov-runtime-probe" >> "$GITHUB_ENV"
+          echo "NATIVE_PROBE=$GITHUB_WORKSPACE/tests/probes/runtime-probe/target/x86_64-unknown-linux-musl/release/gov-runtime-probe" >> "$GITHUB_ENV"
       - name: Create an explicit delegated cgroup v2 root
         shell: bash
         run: |
@@ -317,9 +317,9 @@ jobs:
           rustup toolchain install 1.90.0 --profile minimal
           rustup target add --toolchain 1.90.0 x86_64-pc-windows-msvc
           cargo +1.90.0 build --release --locked \
-            --manifest-path runtime-probe/Cargo.toml \
+            --manifest-path tests/probes/runtime-probe/Cargo.toml \
             --target x86_64-pc-windows-msvc
-          echo "NATIVE_PROBE=$GITHUB_WORKSPACE/runtime-probe/target/x86_64-pc-windows-msvc/release/gov-runtime-probe.exe" >> "$GITHUB_ENV"
+          echo "NATIVE_PROBE=$GITHUB_WORKSPACE/tests/probes/runtime-probe/target/x86_64-pc-windows-msvc/release/gov-runtime-probe.exe" >> "$GITHUB_ENV"
       - name: Record native Windows environment
         run: >-
           python scripts/record_runtime_environment.py --backend native-windows
@@ -400,7 +400,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          docker build --file Dockerfile.conformance \
+          docker build --file deploy/docker/Dockerfile.conformance \
             --tag gov-substrate-runtime-probe:kubernetes .
           kind load docker-image --name gov-substrate \
             gov-substrate-runtime-probe:kubernetes
@@ -419,7 +419,7 @@ jobs:
         run: |
           set -euo pipefail
           image="gov-substrate-phase9:kubernetes"
-          docker build --file Dockerfile.phase9 --tag "$image" .
+          docker build --file deploy/docker/Dockerfile.phase9 --tag "$image" .
           kind load docker-image --name gov-substrate "$image"
           ref="docker.io/library/$image"
           digest=$(docker exec gov-substrate-worker ctr --namespace k8s.io \
@@ -570,13 +570,13 @@ jobs:
           openshell gateway select phase5
           openshell status --output json
           echo "OPENSHELL_GATEWAY_NAME=phase5" >> "$GITHUB_ENV"
-          echo "OPENSHELL_POLICY=$GITHUB_WORKSPACE/tests/acceptance/openshell-policy.yaml" >> "$GITHUB_ENV"
+          echo "OPENSHELL_POLICY=$GITHUB_WORKSPACE/deploy/openshell/policy.yaml" >> "$GITHUB_ENV"
       - name: Build immutable hostile-probe image
         shell: bash
         run: |
           set -euo pipefail
           image="gov-substrate-runtime-probe:openshell-${GITHUB_SHA}"
-          docker build --file Dockerfile.conformance --tag "$image" .
+          docker build --file deploy/docker/Dockerfile.conformance --tag "$image" .
           echo "OPENSHELL_PROBE_IMAGE=$image" >> "$GITHUB_ENV"
       - name: Record OpenShell environment
         run: >-

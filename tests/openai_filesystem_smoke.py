@@ -10,8 +10,8 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-COMPOSE = ["-f", str(ROOT / "compose.network.yaml"),
-           "-f", str(ROOT / "compose.filesystem.yaml")]
+COMPOSE = ["-f", str(ROOT / "deploy/compose/compose.network.yaml"),
+           "-f", str(ROOT / "deploy/compose/compose.filesystem.yaml")]
 TOOLS = [
     {"type": "function", "name": "read_workspace_file",
      "description": "Read a UTF-8 file through the governed workspace capability.",

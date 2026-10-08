@@ -15,8 +15,11 @@ test = ["pytest>=8,<9", "httpx>=0.27,<1", "cryptography>=45,<50"]
 llm = ["openai>=2,<3"]
 anthropic = ["anthropic>=0.111,<1"]
 
-[tool.setuptools]
-py-modules = ["substrate", "network_adapter", "filesystem_adapter", "governed_objects", "generation_adapter", "hosted_generation_adapters", "attested_generation_adapter", "google_attestation", "confidential_space_protocol", "confidential_space_worker", "provider_gateway", "audit_witness", "runtime_supervisor", "runtime_conformance", "docker_runtime_supervisor", "podman_runtime_supervisor", "wasmtime_runtime_supervisor", "native_linux_runtime_supervisor", "native_windows_runtime_supervisor", "kubernetes_runtime_supervisor", "openshell_runtime_supervisor"]
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-dir]
+"" = "src"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

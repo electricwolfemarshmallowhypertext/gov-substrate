@@ -6,8 +6,8 @@ import copy
 import pytest
 from fastapi.testclient import TestClient
 
-from provider_gateway import create_receipt
-from substrate import Substrate, create_app
+from governance_substrate.provider_gateway import create_receipt
+from governance_substrate.substrate import Substrate, create_app
 
 
 GATEWAY_KEY = b"synthetic-gateway-key"
@@ -36,7 +36,7 @@ def boundary(tmp_path, monkeypatch, assurance):
         published.append(url)
         return {"status": 200, "bytes": 1, "body_sha256": "0" * 64,
                 "origin": origins[0], "resolved_ip": "127.0.0.1"}
-    monkeypatch.setattr("substrate.fetch", fake_fetch)
+    monkeypatch.setattr("governance_substrate.substrate.fetch", fake_fetch)
     source = substrate.import_object("public", "text/plain",
                                      base64.b64encode(b"Public source.").decode(),
                                      ["agent"], "synthetic-fixture")["object_id"]

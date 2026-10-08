@@ -1,0 +1,68 @@
+services:
+  fixture:
+    image: python:3.12-slim
+    command: python -m http.server 8000 --bind 0.0.0.0
+    working_dir: /srv
+    read_only: true
+    user: "65534:65534"
+    volumes:
+      - type: bind
+        source: ../../tests/fixtures/site
+        target: /srv
+        read_only: true
+    networks: [terminal]
+
+  substrate:
+    image: gov-substrate-network-lab:${LAB_IMAGE_TAG:-local}
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.network
+    command:
+      - sh
+      - -c
+      - >-
+        rm -f /ipc/substrate.sock;
+        (while [ ! -S /ipc/substrate.sock ]; do sleep 0.1; done;
+        chmod 666 /ipc/substrate.sock) &
+        exec uvicorn governance_substrate.substrate:app --uds /ipc/substrate.sock
+    environment:
+      GOV_SUBSTRATE_AUTOSTART: "1"
+      GOV_SUBSTRATE_REGISTRY: /app/registry.yaml
+      GOV_SUBSTRATE_DB: /data/substrate.db
+      RESEARCH_AGENT_TOKEN: lab-agent-token
+      GOV_SUBSTRATE_OPERATOR_TOKEN: lab-operator-token
+    volumes:
+      - ipc:/ipc
+      - state:/data
+      - type: bind
+        source: ${LAB_REGISTRY_PATH}
+        target: /app/registry.yaml
+        read_only: true
+    networks: [egress, terminal]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+
+  agent:
+    image: gov-substrate-network-lab:${LAB_IMAGE_TAG:-local}
+    command: python /app/network_probe.py first
+    environment:
+      RESEARCH_AGENT_TOKEN: lab-agent-token
+    user: "65534:10001"
+    network_mode: none
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 64
+    volumes:
+      - ipc:/ipc
+    tmpfs:
+      - /tmp:size=16m
+
+networks:
+  egress: {}
+  terminal:
+    internal: true
+
+volumes:
+  ipc: {}
+  state: {}

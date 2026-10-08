@@ -1,0 +1,22 @@
+services:
+  probe:
+    image: gov-substrate-runtime-probe:${LAB_IMAGE_TAG:-local}
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.conformance
+    entrypoint:
+      - /usr/bin/env
+      - -i
+      - PATH=/usr/local/bin:/usr/bin:/bin
+      - HOME=/tmp
+      - /usr/local/bin/gov-runtime-probe
+    network_mode: none
+    restart: "no"
+    user: "65534:65534"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 32
+    tmpfs:
+      - /tmp:size=16m
+

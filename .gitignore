@@ -5,7 +5,7 @@ __pycache__/
 *.safetensors
 /.models/
 /.model-cache/
-/runtime-probe/target/
+/tests/probes/runtime-probe/target/
 *.egg-info/
 .venv/
 *.db

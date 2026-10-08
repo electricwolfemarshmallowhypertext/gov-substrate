@@ -1,9 +1,14 @@
 .git
 .pytest_cache
 .pytest_tmp*
+/tests/probes/runtime-probe/target/
 .network_lab_*
 dist/
 paper/
+/TODO.md
+/docs/Governance-Substrate-Grant-Research-Package.*
+/docs/Governance-Substrate-External-Research-Brief.*
+*[Gg]overnance*[Vv]3*
 __pycache__
 *.db
 *.db-*

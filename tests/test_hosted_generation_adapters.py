@@ -6,10 +6,10 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 
-from generation_adapter import SealedInput, run_with_adapter
-from hosted_generation_adapters import (AnthropicTextAdapter, GeminiTextAdapter,
+from governance_substrate.generation_adapter import SealedInput, run_with_adapter
+from governance_substrate.hosted_generation_adapters import (AnthropicTextAdapter, GeminiTextAdapter,
                                         OpenAITextAdapter)
-from substrate import Substrate, create_app
+from governance_substrate.substrate import Substrate, create_app
 
 
 class FakeOpenAI:

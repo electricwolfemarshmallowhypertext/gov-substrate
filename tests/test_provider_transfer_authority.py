@@ -7,9 +7,9 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 
-from generation_adapter import run_with_adapter
-from hosted_generation_adapters import OpenAITextAdapter
-from substrate import IntegrityError, Substrate, create_app
+from governance_substrate.generation_adapter import run_with_adapter
+from governance_substrate.hosted_generation_adapters import OpenAITextAdapter
+from governance_substrate.substrate import IntegrityError, Substrate, create_app
 
 
 class FakeOpenAI:

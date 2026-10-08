@@ -1,0 +1,30 @@
+services:
+  generator:
+    image: gov-substrate-local-generator:${LAB_IMAGE_TAG:-local}
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.generation
+    entrypoint:
+      - /usr/bin/env
+      - -i
+      - PATH=/usr/local/bin:/usr/bin:/bin
+      - HOME=/tmp
+      - PYTHONDONTWRITEBYTECODE=1
+      - OMP_NUM_THREADS=2
+      - OPENBLAS_NUM_THREADS=1
+      - python
+      - /app/local_generation_worker.py
+    network_mode: none
+    restart: "no"
+    user: "65534:65534"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 32
+    tmpfs:
+      - /tmp:size=16m
+    volumes:
+      - type: bind
+        source: ${GENERATION_MODEL_BLOB:?Set GENERATION_MODEL_BLOB to one local GGUF file}
+        target: /model/model.gguf
+        read_only: true

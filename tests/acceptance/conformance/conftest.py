@@ -13,19 +13,19 @@ from pathlib import Path
 
 import pytest
 
-from docker_runtime_supervisor import DockerRuntimeSupervisor
-from kubernetes_runtime_supervisor import KubernetesRuntimeSupervisor
-from native_linux_runtime_supervisor import NativeLinuxRuntimeSupervisor
-from native_windows_runtime_supervisor import NativeWindowsRuntimeSupervisor
-from openshell_runtime_supervisor import OpenShellRuntimeSupervisor
-from podman_runtime_supervisor import PodmanRuntimeSupervisor
-from runtime_conformance import ReachableTarget, RuntimeIdentity
-from wasmtime_runtime_supervisor import WasmtimeRuntimeSupervisor
+from governance_substrate.docker_runtime_supervisor import DockerRuntimeSupervisor
+from governance_substrate.kubernetes_runtime_supervisor import KubernetesRuntimeSupervisor
+from governance_substrate.native_linux_runtime_supervisor import NativeLinuxRuntimeSupervisor
+from governance_substrate.native_windows_runtime_supervisor import NativeWindowsRuntimeSupervisor
+from governance_substrate.openshell_runtime_supervisor import OpenShellRuntimeSupervisor
+from governance_substrate.podman_runtime_supervisor import PodmanRuntimeSupervisor
+from governance_substrate.runtime_conformance import ReachableTarget, RuntimeIdentity
+from governance_substrate.wasmtime_runtime_supervisor import WasmtimeRuntimeSupervisor
 
 
 ROOT = Path(__file__).resolve().parents[3]
-COMPOSE = ROOT / "compose.runtime-conformance.yaml"
-GVISOR_COMPOSE = ROOT / "compose.runtime-conformance-gvisor.yaml"
+COMPOSE = ROOT / "deploy/compose/compose.runtime-conformance.yaml"
+GVISOR_COMPOSE = ROOT / "deploy/compose/compose.runtime-conformance-gvisor.yaml"
 
 
 def clean_environment():
@@ -125,7 +125,7 @@ def conformance_image(acceptance_enabled):
             assert info["host"]["security"]["rootless"] is True
             assert info["host"].get("serviceIsRemote", False) is False
             podman_command(
-                "build", "--file", str(ROOT / "Dockerfile.conformance"),
+                "build", "--file", str(ROOT / "deploy/docker/Dockerfile.conformance"),
                 "--tag", image, str(ROOT), env=env,
             )
         yield {

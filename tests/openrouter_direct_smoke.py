@@ -20,13 +20,13 @@ from urllib.parse import parse_qs, urlsplit
 from fastapi.testclient import TestClient
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "src"))
 
-from generation_adapter import run_with_adapter
-from hosted_generation_adapters import (OpenRouterClient, OpenRouterHTTPError,
+from governance_substrate.generation_adapter import run_with_adapter
+from governance_substrate.hosted_generation_adapters import (OpenRouterClient, OpenRouterHTTPError,
                                         OpenRouterResponseError,
                                         OpenRouterTextAdapter)
-from substrate import Substrate, create_app
+from governance_substrate.substrate import Substrate, create_app
 
 
 PROVIDER = "openrouter"

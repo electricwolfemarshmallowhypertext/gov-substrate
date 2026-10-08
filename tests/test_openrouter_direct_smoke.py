@@ -8,8 +8,8 @@ from urllib.error import HTTPError
 
 import pytest
 
-from generation_adapter import SealedInput
-from hosted_generation_adapters import (OpenRouterClient, OpenRouterHTTPError,
+from governance_substrate.generation_adapter import SealedInput
+from governance_substrate.hosted_generation_adapters import (OpenRouterClient, OpenRouterHTTPError,
                                         OpenRouterResponseError,
                                         OpenRouterTextAdapter)
 
@@ -43,7 +43,7 @@ def test_direct_client_pins_model_provider_and_privacy(monkeypatch):
             requests.append((request, timeout))
             return io.BytesIO(json.dumps(response()).encode())
 
-    monkeypatch.setattr("hosted_generation_adapters.build_opener",
+    monkeypatch.setattr("governance_substrate.hosted_generation_adapters.build_opener",
                         lambda *_handlers: FakeOpener())
     client = OpenRouterClient("fixture-key", "z-ai")
     result = client.chat_completion(
@@ -74,7 +74,7 @@ def test_direct_client_can_record_non_zdr_pinned_provider(monkeypatch):
             requests.append(request)
             return io.BytesIO(json.dumps(response("xAI", "x-ai/grok-4.7")).encode())
 
-    monkeypatch.setattr("hosted_generation_adapters.build_opener",
+    monkeypatch.setattr("governance_substrate.hosted_generation_adapters.build_opener",
                         lambda *_handlers: FakeOpener())
     client = OpenRouterClient("fixture-key", "xai", zdr=False)
     client.chat_completion(
@@ -110,7 +110,7 @@ def test_openrouter_error_is_sanitized_and_key_status_is_limited(monkeypatch):
             raise HTTPError(request.full_url, 402, "Payment Required", {},
                             io.BytesIO(json.dumps(error_body).encode()))
 
-    monkeypatch.setattr("hosted_generation_adapters.build_opener",
+    monkeypatch.setattr("governance_substrate.hosted_generation_adapters.build_opener",
                         lambda *_handlers: ErrorOpener())
     with pytest.raises(OpenRouterHTTPError) as caught:
         OpenRouterClient("fixture-key", "z-ai").chat_completion(
@@ -159,7 +159,7 @@ def test_current_key_status_reports_limit_without_key_identity(monkeypatch):
                 "label": "must-not-be-returned", "limit": 5,
                 "limit_remaining": 4.75, "limit_reset": "monthly"}}).encode())
 
-    monkeypatch.setattr("hosted_generation_adapters.build_opener",
+    monkeypatch.setattr("governance_substrate.hosted_generation_adapters.build_opener",
                         lambda *_handlers: KeyOpener())
     status = OpenRouterClient("fixture-key", "z-ai").current_key_status()
     assert status == {"available": True, "spending_limit_configured": True,

@@ -6,7 +6,7 @@ import sqlite3
 
 from fastapi.testclient import TestClient
 
-from substrate import Substrate, create_app
+from governance_substrate.substrate import Substrate, create_app
 
 
 IMAGE = base64.b64decode(

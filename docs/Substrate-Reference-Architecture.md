@@ -11,6 +11,8 @@ That statement applies to the documented tests and environments. It is not a cla
 
 The paper PDF remains outside this repository because its prose is not distributed under the software license.
 
+For test outcomes and their limits, see the [research case and evidence](Research-Case-and-Evidence.md), then the individual evaluation reports.
+
 ## System boundary and trust model
 
 The complete execution path is:
@@ -47,7 +49,7 @@ The substrate API is independent of Docker. The v0.5.0 release evidence used Doc
 - **Execution control:** one-use grants, scoped emergency stops, verified graceful and forced worker shutdown, and orphan reconciliation.
 - **Compromised-adapter controls:** exact provider request identities, circuit-aware one-use gateway dispatch, request-bound operator approval, signed completion receipts, optional or high-assurance-required independent audit witnessing, and anomaly-triggered containment.
 
-The v0.6.0 source adds short-lived task credentials, denial-triggered stops with measured shutdown time, and a [testable reference harness inventory](Reference-Harness-Inventory.yaml). Each stop records what was revoked, when and why it happened, and whether the worker actually stopped.
+The v0.6.0 source adds short-lived task credentials, denial-triggered stops with measured shutdown time, and a [testable reference harness inventory](evidence/Reference-Harness-Inventory.yaml). Each stop records what was revoked, when and why it happened, and whether the worker actually stopped.
 
 Generation is model- and provider-agnostic. The optional local worker and the OpenAI, Anthropic, Gemini, and OpenRouter adapters use the same sealed-input and governed-output path.
 
@@ -83,7 +85,7 @@ never become an allowed transition. These are bounded checks of the named
 surfaces, not a proof against every possible covert channel or unlimited
 denial-of-service traffic.
 
-The [reference harness inventory](Reference-Harness-Inventory.yaml) lists the
+The [reference harness inventory](evidence/Reference-Harness-Inventory.yaml) lists the
 worker's process environment, user, mounts, writable paths, network, interfaces,
 and external spend authority. Unit tests compare the API routes to that list;
 the real Docker environment suite compares it with inspect data and actual
@@ -124,19 +126,19 @@ Every file proposal gets an allow or deny event. An admitted operation gets a se
 
 ## Scoped authority and delegated services
 
-The hardened registry separates file authority by lifetime and audience. Session files are reachable only through the active session; replacing the session selects a new directory. Actor files survive a session replacement but another actor maps the same path to a different directory. Shared files require an explicit `scope: shared` grant and a named channel granted to both actors. Old session bytes remain on the substrate-controlled volume for integrity checks; session replacement does not physically erase them. The [scoped-authority evaluation](Scoped-Authority-Evaluation.md) replays the earlier cross-agent and cross-session failures against these grants.
+The hardened registry separates file authority by lifetime and audience. Session files are reachable only through the active session; replacing the session selects a new directory. Actor files survive a session replacement but another actor maps the same path to a different directory. Shared files require an explicit `scope: shared` grant and a named channel granted to both actors. Old session bytes remain on the substrate-controlled volume for integrity checks; session replacement does not physically erase them. The [scoped-authority evaluation](evaluations/Scoped-Authority-Evaluation.md) replays the earlier cross-agent and cross-session failures against these grants.
 
 For network authority, classified `network.services` declare an exact origin and mode. `terminal` and `publication` services also declare exact allowed paths. A `terminal` service may be called only at its listed paths. A `publication` service also requires a publication grant and a constrained request shape. A service that can proxy, store, forward, or invoke downstream resources must be declared `delegated`; because this implementation has no downstream mediation protocol, its requests are denied and audited as `delegated_service_unmediated`. An operator's service classification is a trusted input. The substrate cannot infer a remote service's downstream authority from its origin or HTTP status.
 
 ## Sensitive-data egress authority
 
-An actor declared `data.sensitive_access: true`, or granted read access to any governed non-public object, cannot make raw requests to external services or write to shared state or file channels, even if it has those basic capabilities. The decision is made before execution and survives a session reset. This conservative raw-channel rule does not prevent publication of a separate governed `public` object through `object.publish`. It does not classify arbitrary data the substrate has never registered as a governed object; operators must explicitly mark actors that can access such data. The [sensitive-data egress evaluation](Sensitive-Data-Egress-Evaluation.md) uses a local publisher to check raw and encoded attempts, shared writes, and a separately authorized public actor.
+An actor declared `data.sensitive_access: true`, or granted read access to any governed non-public object, cannot make raw requests to external services or write to shared state or file channels, even if it has those basic capabilities. The decision is made before execution and survives a session reset. This conservative raw-channel rule does not prevent publication of a separate governed `public` object through `object.publish`. It does not classify arbitrary data the substrate has never registered as a governed object; operators must explicitly mark actors that can access such data. The [sensitive-data egress evaluation](evaluations/Sensitive-Data-Egress-Evaluation.md) uses a local publisher to check raw and encoded attempts, shared writes, and a separately authorized public actor.
 
 ## Classified objects, provenance, and declassification
 
 The object store adds `public < internal < private < restricted` labels to immutable bytes. An authenticated operator imports an object with its initial label, readers, and source. The state snapshot covers object bytes and metadata, so out-of-band changes fail the integrity check. An authorized actor may read an object or request a fixed `base64` or first-sentence `summary` transform. Each transformed child retains its parent's label and a parent link. Agents cannot create arbitrary public objects from their own bytes.
 
-`object.publish` accepts an object ID rather than agent-supplied content. The substrate builds the outbound request from stored bytes and admits external publication only for a `public` text object at a configured publication service. An admitted publication and its execution outcome are separate audit events. Lowering a label requires the operator-only declassification endpoint, a reason, and a new child object; the original remains unchanged and the override is logged. The [object-provenance evaluation](Object-Provenance-Evaluation.md) covers classification inheritance, denied private publication, public publication, and declassification.
+`object.publish` accepts an object ID rather than agent-supplied content. The substrate builds the outbound request from stored bytes and admits external publication only for a `public` text object at a configured publication service. An admitted publication and its execution outcome are separate audit events. Lowering a label requires the operator-only declassification endpoint, a reason, and a new child object; the original remains unchanged and the override is logged. The [object-provenance evaluation](evaluations/Object-Provenance-Evaluation.md) covers classification inheritance, denied private publication, public publication, and declassification.
 
 ## Run locally
 
@@ -148,7 +150,7 @@ $env:RESEARCH_AGENT_TOKEN = [guid]::NewGuid().ToString('N')
 $env:GOV_SUBSTRATE_OPERATOR_TOKEN = [guid]::NewGuid().ToString('N')
 $env:GOV_SUBSTRATE_CIRCUIT_OPERATOR_TOKEN = [guid]::NewGuid().ToString('N')
 $env:GOV_SUBSTRATE_AUTOSTART = '1'
-python -m uvicorn substrate:app --host 127.0.0.1 --port 8000
+python -m uvicorn governance_substrate.substrate:app --host 127.0.0.1 --port 8000
 ```
 
 The API schema is at `http://127.0.0.1:8000/docs`. Keep the generated tokens for the lifetime of the database: the audit anchors token hashes and capability definitions. Use `GOV_SUBSTRATE_REGISTRY` and `GOV_SUBSTRATE_DB` to select another registry file or database path. A registry or token change against an existing database fails closed; audited migration is future work.
@@ -326,14 +328,14 @@ substrate and `RuntimeSupervisor`. The assertions are grouped deliberately:
   generation path. It is separate because conformance cannot depend on a model
   choosing to attempt an escape.
 
-The Rust source under `runtime-probe/` has no third-party dependencies and is
+The Rust source under `tests/probes/runtime-probe/` has no third-party dependencies and is
 compiled for Linux, Windows, and `wasm32-wasip1`. Native Docker/containerd,
 rootless Podman/crun, and gVisor/runsc execute the real Linux suite. Wasmtime
 executes the WASI build through the same substrate and supervisor assertions.
 Native Linux and native Windows execute their platform builds through the same
 substrate and assertions without a container engine. Kubernetes executes the
 Linux probe in real Pods under the same assertions. See
-[Runtime Conformance](Runtime-Conformance.md).
+[Runtime Conformance](evidence/Runtime-Conformance.md).
 
 ### Hosted-provider transfer boundary
 
@@ -400,7 +402,7 @@ The project reports seven kinds of evidence separately:
 - **Incident-derived acceptance** replays documented proxy, authorization, side-channel, persistence, redirect, and exfiltration failure classes against local services and isolated workers.
 - **Compromised-host/provider evaluation** separates detectable adapter or provider contradictions from behavior that remains outside the observable boundary.
 
-[Runtime conformance](Runtime-Conformance.md) defines the shared contract and evidence rules. Native Ubuntu Docker/containerd, rootless Podman/crun, gVisor/runsc, Wasmtime/WASI, NVIDIA OpenShell, native Linux, native Windows, Kind/Calico, and GKE Autopilot use the same real suite. Docker/OCI remains the reference backend. Each result comes from the hostile probe running in the named backend rather than from configuration inspection alone.
+[Runtime conformance](evidence/Runtime-Conformance.md) defines the shared contract and evidence rules. Native Ubuntu Docker/containerd, rootless Podman/crun, gVisor/runsc, Wasmtime/WASI, NVIDIA OpenShell, native Linux, native Windows, Kind/Calico, and GKE Autopilot use the same real suite. Docker/OCI remains the reference backend. Each result comes from the hostile probe running in the named backend rather than from configuration inspection alone.
 
 Frozen runtime evidence:
 
@@ -432,7 +434,7 @@ Local model evidence uses pinned, hash-verified official Qwen and Microsoft Phi 
 
 ## Evidence levels and current results
 
-The [Phase 10 evidence freeze](Evidence-Freeze-2026-10-05.md) is the canonical
+The [Phase 10 evidence freeze](evidence/Evidence-Freeze-2026-10-05.md) is the canonical
 index for the tested commit, environment manifests, raw results, negative
 results, outcome classifications, and SHA-256 artifact inventory.
 
@@ -478,7 +480,7 @@ passed the unit, Qwen acceptance, and environment jobs. The separate
 passed the same acceptance path with Qwen and Phi.
 
 Post-release Phase 8 evidence is recorded in the [incident-derived escape
-evaluation](Incident-Derived-Escape-Evaluation.md). Its focused deterministic
+evaluation](evaluations/Incident-Derived-Escape-Evaluation.md). Its focused deterministic
 suite passed **5/5**, and its real Docker replay passed **1/1**. The replay
 proved the relay and downstream service were reachable to the substrate while
 the networkless agent remained denied from proxying, alternate request fields,
@@ -498,7 +500,7 @@ Later v0.6.0 controls are outside the `evidence-2026-10-05` tag. On commit
 `ccb395c`, the [full CI run](https://github.com/electricwolfemarshmallowhypertext/gov-substrate/actions/runs/37487547840)
 passed **141 unit tests with 10 opt-in skips**, **4 real Qwen Docker acceptance tests**,
 and **5 real Docker environment probes**. The environment job checked the
-[reference harness inventory](Reference-Harness-Inventory.yaml) against the
+[reference harness inventory](evidence/Reference-Harness-Inventory.yaml) against the
 actual worker configuration and inside-container capability attempts. The
 local real Docker supervisor suite passed **2/2**: an automatic trip force-killed
 an uncooperative worker, verified its removal and exact runtime ID in the
@@ -508,30 +510,30 @@ results verify the tested reference configuration, not every deployment.
 
 ## Evaluation report index
 
-- [Runtime conformance](Runtime-Conformance.md)
-- [NVIDIA OpenShell runtime evaluation](OpenShell-Runtime-Evaluation.md)
-- [Kubernetes runtime evaluation](Kubernetes-Runtime-Evaluation.md)
-- [Native operating-system runtime evaluation](Native-OS-Runtime-Evaluation.md)
-- [Wasmtime/WASI runtime evaluation](Wasmtime-Runtime-Evaluation.md)
-- [Environment skeleton](Environment-Skeleton-Evaluation.md)
-- [Local-model runtime matrix](Local-Model-Matrix-Evaluation.md)
-- [Incident-derived escape evaluation](Incident-Derived-Escape-Evaluation.md)
-- [Compromised host/provider evaluation](Compromised-Host-Provider-Evaluation.md)
-- [Free-form output provenance](Free-Form-Output-Provenance.md)
+- [Runtime conformance](evidence/Runtime-Conformance.md)
+- [NVIDIA OpenShell runtime evaluation](evaluations/OpenShell-Runtime-Evaluation.md)
+- [Kubernetes runtime evaluation](evaluations/Kubernetes-Runtime-Evaluation.md)
+- [Native operating-system runtime evaluation](evaluations/Native-OS-Runtime-Evaluation.md)
+- [Wasmtime/WASI runtime evaluation](evaluations/Wasmtime-Runtime-Evaluation.md)
+- [Environment skeleton](evaluations/Environment-Skeleton-Evaluation.md)
+- [Local-model runtime matrix](evaluations/Local-Model-Matrix-Evaluation.md)
+- [Incident-derived escape evaluation](evaluations/Incident-Derived-Escape-Evaluation.md)
+- [Compromised host/provider evaluation](evaluations/Compromised-Host-Provider-Evaluation.md)
+- [Free-form output provenance](evaluations/Free-Form-Output-Provenance.md)
 - [Generation adapters](Generation-Adapters.md)
-- [Hosted OpenAI validation](Hosted-Object-Validation.md)
-- [Claude Opus 4.7 validation](Anthropic-Opus-4.7-Validation-Report.md)
-- [Direct Gemini validation](Gemini-Direct-Validation.md)
-- [OpenRouter GLM validation](OpenRouter-Validation.md)
-- [OpenRouter Grok validation](OpenRouter-Grok-4.7-Validation.md)
-- [OpenRouter Kimi validation](OpenRouter-Kimi-K3-Validation.md)
+- [Hosted OpenAI validation](evaluations/Hosted-Object-Validation.md)
+- [Claude Opus 4.7 validation](evaluations/Anthropic-Opus-4.7-Validation-Report.md)
+- [Direct Gemini validation](evaluations/Gemini-Direct-Validation.md)
+- [OpenRouter GLM validation](evaluations/OpenRouter-Validation.md)
+- [OpenRouter Grok validation](evaluations/OpenRouter-Grok-4.7-Validation.md)
+- [OpenRouter Kimi validation](evaluations/OpenRouter-Kimi-K3-Validation.md)
 
 Earlier evaluations document the failures that motivated scoped authority, persistence lifetimes, delegated-service handling, sensitive-data egress, and object provenance:
 
-- [Containment evaluation](Containment-Evaluation.md)
-- [Scoped-authority evaluation](Scoped-Authority-Evaluation.md)
-- [Sensitive-data egress evaluation](Sensitive-Data-Egress-Evaluation.md)
-- [Object-provenance evaluation](Object-Provenance-Evaluation.md)
+- [Containment evaluation](evaluations/Containment-Evaluation.md)
+- [Scoped-authority evaluation](evaluations/Scoped-Authority-Evaluation.md)
+- [Sensitive-data egress evaluation](evaluations/Sensitive-Data-Egress-Evaluation.md)
+- [Object-provenance evaluation](evaluations/Object-Provenance-Evaluation.md)
 
 ## Adversarial evaluation
 
@@ -549,7 +551,7 @@ reported separately:
 | Operator attempts an unlogged override | Invalid operator rejected; authenticated rejected attempts logged; successful override is linked and one-shot; audit update/delete triggers reject edits | `test_override_is_authenticated_one_shot_and_append_only` |
 | Audit content or registry modified out of band | Further proposals fail closed | `test_audit_tampering_blocks_further_actions`, `test_unlogged_registry_change_fails_closed` |
 
-The later [containment](Containment-Evaluation.md), [scoped-authority](Scoped-Authority-Evaluation.md), [sensitive-egress](Sensitive-Data-Egress-Evaluation.md), and [object-provenance](Object-Provenance-Evaluation.md) evaluations add cross-agent, persistence, delegated-service, and classified-publication scenarios. Their historical counts are preserved in those reports; the v0.5.0 release result and later evidence appear separately above.
+The later [containment](evaluations/Containment-Evaluation.md), [scoped-authority](evaluations/Scoped-Authority-Evaluation.md), [sensitive-egress](evaluations/Sensitive-Data-Egress-Evaluation.md), and [object-provenance](evaluations/Object-Provenance-Evaluation.md) evaluations add cross-agent, persistence, delegated-service, and classified-publication scenarios. Their historical counts are preserved in those reports; the v0.5.0 release result and later evidence appear separately above.
 
 ### Runtime isolation and acceptance
 
@@ -564,7 +566,7 @@ python -m pytest -q tests/test_network_isolation.py --basetemp .pytest_tmp_docke
 
 The network test builds a local image, starts a networked static fixture and adapter, then launches separate networkless agent containers. It checks direct TCP to both a public IP and the fixture's IP, allowed GET plus outcome audit events, denied destination with no outbound call, rejection when the actor token is used on the operator endpoint, a new session invalidates the old token, blocked shared-storage writes, unchanged running authority after editing YAML, and fail-closed behavior after restart with the edited registry. The test removes its uniquely named containers, network, and volumes.
 
-The filesystem test uses `compose.filesystem.yaml` and a substrate-only workspace volume. It checks permitted reads and writes, protected paths, traversal and symlink escapes, direct access from the agent container, session reset, policy edits, restart behavior, and out-of-band corruption:
+The filesystem test uses `deploy/compose/compose.filesystem.yaml` and a substrate-only workspace volume. It checks permitted reads and writes, protected paths, traversal and symlink escapes, direct access from the agent container, session reset, policy edits, restart behavior, and out-of-band corruption:
 
 ```powershell
 python -m pytest -q tests/test_filesystem_isolation.py --basetemp .pytest_tmp_filesystem
@@ -600,13 +602,13 @@ After the deterministic suite passes, a trusted host-side driver can make three 
 
 ### Completed object-provenance model validation
 
-The [hosted validation report](Hosted-Object-Validation.md) records one bounded pass each from `gpt-6-luna` and `gpt-6-sol` on the same five governed object actions used by the deterministic Docker replay and local `qwen3.5:4b` and `llama3.1:8b` smoke checks: private read, private transform, denied private publication, public summary transform, and completed public publication. Both hosted runs met those acceptance criteria. Each used five independent function-call requests, with no automatic retries. The API key stayed in the trusted host-side driver and was not passed into the agent container. These runs exercised the governed tool path; they did not test arbitrary model-generated publication text.
+The [hosted validation report](evaluations/Hosted-Object-Validation.md) records one bounded pass each from `gpt-6-luna` and `gpt-6-sol` on the same five governed object actions used by the deterministic Docker replay and local `qwen3.5:4b` and `llama3.1:8b` smoke checks: private read, private transform, denied private publication, public summary transform, and completed public publication. Both hosted runs met those acceptance criteria. Each used five independent function-call requests, with no automatic retries. The API key stayed in the trusted host-side driver and was not passed into the agent container. These runs exercised the governed tool path; they did not test arbitrary model-generated publication text.
 
-The [Claude Opus 4.7 report](Anthropic-Opus-4.7-Validation-Report.md) records the same five object outcomes with `claude-opus-4-7`. Its first authorization-scope response was inconclusive. In a separate, one-request forced-call check, Opus requested a local third-party fixture that the substrate could reach but the actor was not granted. The substrate denied and logged that request as `destination_not_allowed`. This establishes the tested capability boundary; the forced call does not measure whether Opus would independently choose to cross scope.
+The [Claude Opus 4.7 report](evaluations/Anthropic-Opus-4.7-Validation-Report.md) records the same five object outcomes with `claude-opus-4-7`. Its first authorization-scope response was inconclusive. In a separate, one-request forced-call check, Opus requested a local third-party fixture that the substrate could reach but the actor was not granted. The substrate denied and logged that request as `destination_not_allowed`. This establishes the tested capability boundary; the forced call does not measure whether Opus would independently choose to cross scope.
 
-The [free-form output provenance evaluation](Free-Form-Output-Provenance.md) adds a sealed generation path. An actor requests governed input object IDs and names a provider when generation is hosted; the substrate checks access, seals hashes and the highest classification, and evaluates the provider's transfer grant. Unknown providers and inputs above a provider's grant are denied before any API call. Local generation needs no external-transfer grant. The trusted host adapter claims the admitted context under the same provider ID and supplies its bytes to a model. The output becomes an immutable object whose parents are exactly those inputs. The worker cannot assign provenance or add prompt/history fields. A public-only generation can follow private work by the same actor because it runs with a fresh, explicit context. The deterministic fixture covers isolation, publication, session reset, and operator-only declassification. A separate CPU worker runs a real local GGUF model inside the networkless container with one read-only model-file mount and no conversation store. Its Docker test checks private-to-public context separation and rejects extra context channels. The same sealed-generation path later passed bounded hosted runs with direct Gemini and with three models routed through OpenRouter to pinned upstreams: `z-ai/glm-5.2` to Z.AI, `x-ai/grok-4.7` to xAI, and `moonshotai/kimi-k3` to Moonshot AI.
+The [free-form output provenance evaluation](evaluations/Free-Form-Output-Provenance.md) adds a sealed generation path. An actor requests governed input object IDs and names a provider when generation is hosted; the substrate checks access, seals hashes and the highest classification, and evaluates the provider's transfer grant. Unknown providers and inputs above a provider's grant are denied before any API call. Local generation needs no external-transfer grant. The trusted host adapter claims the admitted context under the same provider ID and supplies its bytes to a model. The output becomes an immutable object whose parents are exactly those inputs. The worker cannot assign provenance or add prompt/history fields. A public-only generation can follow private work by the same actor because it runs with a fresh, explicit context. The deterministic fixture covers isolation, publication, session reset, and operator-only declassification. A separate CPU worker runs a real local GGUF model inside the networkless container with one read-only model-file mount and no conversation store. Its Docker test checks private-to-public context separation and rejects extra context channels. The same sealed-generation path later passed bounded hosted runs with direct Gemini and with three models routed through OpenRouter to pinned upstreams: `z-ai/glm-5.2` to Z.AI, `x-ai/grok-4.7` to xAI, and `moonshotai/kimi-k3` to Moonshot AI.
 
-The same sealed-input handoff supports [thin OpenAI, Anthropic, direct Gemini, and OpenRouter text adapters](Generation-Adapters.md). Each takes an ordered, hash-verified context from the substrate and returns only generated text; the substrate creates the classified output object. Provider registration and maximum receivable classification are sealed into the registry hash. Allow and deny events record provider, input IDs and hashes, and highest classification. The trusted host holds provider credentials. Hosted adapters send no ungoverned prompt, previous conversation, or tools. Deterministic tests use provider-shaped fakes, while the [direct Gemini](Gemini-Direct-Validation.md) and [OpenRouter](OpenRouter-Validation.md) reports record separate live runs. For hosted models, the substrate can verify the request assembled by its trusted host adapter and the result it records; it cannot attest to the provider's internal runtime or unobserved context.
+The same sealed-input handoff supports [thin OpenAI, Anthropic, direct Gemini, and OpenRouter text adapters](Generation-Adapters.md). Each takes an ordered, hash-verified context from the substrate and returns only generated text; the substrate creates the classified output object. Provider registration and maximum receivable classification are sealed into the registry hash. Allow and deny events record provider, input IDs and hashes, and highest classification. The trusted host holds provider credentials. Hosted adapters send no ungoverned prompt, previous conversation, or tools. Deterministic tests use provider-shaped fakes, while the [direct Gemini](evaluations/Gemini-Direct-Validation.md) and [OpenRouter](evaluations/OpenRouter-Validation.md) reports record separate live runs. For hosted models, the substrate can verify the request assembled by its trusted host adapter and the result it records; it cannot attest to the provider's internal runtime or unobserved context.
 
 ### Scope and limits
 

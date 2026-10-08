@@ -6,11 +6,11 @@ import time
 import uuid
 from pathlib import Path
 
-from conftest import ROOT, docker_command, docker_environment
+from tests.acceptance.conftest import ROOT, docker_command, docker_environment
 
 
-NETWORK_COMPOSE = ROOT / "compose.network.yaml"
-ACCEPTANCE_COMPOSE = Path(__file__).with_name("compose.network.yaml")
+NETWORK_COMPOSE = ROOT / "deploy/compose/compose.network.yaml"
+ACCEPTANCE_COMPOSE = ROOT / "deploy/compose/acceptance.network.yaml"
 REGISTRY = ROOT / "tests" / "fixtures" / "network_registry.yaml"
 
 

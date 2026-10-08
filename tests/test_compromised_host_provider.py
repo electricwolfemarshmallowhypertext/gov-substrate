@@ -6,8 +6,8 @@ import hashlib
 
 import pytest
 
-from provider_gateway import create_receipt, verify_gateway_credential
-from substrate import IntegrityError, Substrate
+from governance_substrate.provider_gateway import create_receipt, verify_gateway_credential
+from governance_substrate.substrate import IntegrityError, Substrate
 
 
 PROFILE = {
@@ -227,7 +227,7 @@ def test_high_risk_approval_is_exact_short_lived_and_one_use(tmp_path, monkeypat
     expiring = prepared(substrate, "a", session, source)
     expiring_token = substrate.approve_transfer(
         "operator-token", expiring["approval_request_id"], "short review")
-    monkeypatch.setattr("substrate.time.time", lambda: expiring_token["expires_at"] + 1)
+    monkeypatch.setattr("governance_substrate.substrate.time.time", lambda: expiring_token["expires_at"] + 1)
     expired = prepared(substrate, "a", session, source,
                        approval_token=expiring_token["approval_token"])
     assert expired["decision"] == "escalate"

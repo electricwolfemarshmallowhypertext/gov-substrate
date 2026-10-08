@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from kubernetes_runtime_supervisor import KubernetesRuntimeSupervisor
+from governance_substrate.kubernetes_runtime_supervisor import KubernetesRuntimeSupervisor
 
 
 IMAGE = "registry.invalid/gov-substrate/probe@sha256:" + "a" * 64

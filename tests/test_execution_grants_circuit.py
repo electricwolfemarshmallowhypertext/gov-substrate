@@ -6,10 +6,10 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 
-from generation_adapter import run_with_adapter
-from hosted_generation_adapters import OpenAITextAdapter
-from runtime_supervisor import StopResult
-from substrate import Substrate, create_app
+from governance_substrate.generation_adapter import run_with_adapter
+from governance_substrate.hosted_generation_adapters import OpenAITextAdapter
+from governance_substrate.runtime_supervisor import StopResult
+from governance_substrate.substrate import Substrate, create_app
 
 
 @pytest.fixture
@@ -93,7 +93,7 @@ def test_expired_and_wrong_session_grants_fail(boundary, monkeypatch):
     sessions["a"] = substrate.create_session("a")
     assert request("/executions", "a", action, old)["reason"] == "execution_grant_binding_mismatch"
     token = request("/authorizations", "a", action)["execution_token"]
-    import substrate as module
+    import governance_substrate.substrate as module
     now = module.time.time()
     monkeypatch.setattr(module.time, "time", lambda: now + 121)
     assert request("/executions", "a", action, token)["reason"] == "execution_grant_expired"
@@ -215,7 +215,7 @@ def test_trigger_between_network_admission_and_fetch_blocks_outbound(tmp_path, m
         "operator_token": "adapter-token", "circuit_operator_token": "control-token"})
     session = substrate.create_session("a")["session_token"]
     fetches = []
-    monkeypatch.setattr("substrate.fetch", lambda *args: fetches.append(args))
+    monkeypatch.setattr("governance_substrate.substrate.fetch", lambda *args: fetches.append(args))
     original_check = substrate._external_execution_open
 
     def trip_then_check(actor_id, session_token):

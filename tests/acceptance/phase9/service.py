@@ -10,7 +10,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.request import Request, urlopen
 
-from provider_gateway import create_receipt, request_identity, verify_gateway_credential
+from governance_substrate.provider_gateway import create_receipt, request_identity, verify_gateway_credential
 
 
 def response(handler, status, body):
