@@ -18,9 +18,9 @@ In the tested configurations, governed actions passed through the substrate, ung
 
 ## How it works
 
-`agent → substrate authorization → one-use grant → execution → verified outcome → audit`
+`substrate-governed context → agent request → substrate authorization → one-use grant → execution → verified outcome → audit`
 
-The substrate checks authority before execution, mediates governed capabilities, records what happened, and verifies the result. Agent intent does not create authority.
+The substrate governs context supplied to generation, checks authority before execution, mediates governed capabilities, records what happened, and verifies the result. Agent intent does not create authority.
 
 ## Evidence
 

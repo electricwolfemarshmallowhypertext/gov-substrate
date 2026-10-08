@@ -15,11 +15,11 @@ For test outcomes and their limits, see the [research case and evidence](Researc
 
 ## System boundary and trust model
 
-The complete execution path is:
+For mediated generation followed by an action, the path is:
 
-`agent → substrate authorization → one-use grant → execution-time check → runtime or provider adapter → verified outcome → audit`
+`agent generation request → substrate authorization and sealed context → model generation → governed output → agent action request → substrate authorization → one-use grant → execution-time check → runtime or provider adapter → verified outcome → audit`
 
-The substrate checks the circuit breaker before authorization and again before execution. A policy decision and a completed action are separate audit events. An allowance records what the substrate admitted; an outcome records what happened afterward.
+The substrate assembles governed generation context before the model receives it and checks the circuit breaker before action authorization and again before execution. Actions without a generation step begin at the action request. A policy decision and a completed action are separate audit events. An allowance records what the substrate admitted; an outcome records what happened afterward.
 
 | Component | Treatment |
 | --- | --- |
