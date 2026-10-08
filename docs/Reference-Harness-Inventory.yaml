@@ -36,7 +36,8 @@ worker:
 substrate:
   callable_by_agent: [/sessions, /proposals, /authorizations, /executions, /health]
   operator_only: [/tasks/issue, /audit, /overrides, /objects/import,
-                  /objects/declassify, /provider-transfers/approve]
+                  /objects/declassify, /objects/release,
+                  /provider-transfers/approve]
   trusted_adapter_only: [/generations/claim, /generations/complete]
   gateway_credential_required: [/generations/provider-call]
   host_operator_method: set_circuit

@@ -65,9 +65,10 @@ def test_bounded_driver_follows_governed_path_with_fake_model(monkeypatch, capsy
     assert [row["scenario"] for row in rows[:-1]] == [
         "private_transfer_denied_before_api",
         "private_generation_and_publication_denial",
-        "clean_public_generation_and_publication"]
+        "clean_public_generation_publication_hold"]
     assert rows[0]["api_requests"] == 0
     assert rows[1]["classification"] == "private" and rows[1]["publication"] == "deny"
-    assert rows[2]["classification"] == "public" and rows[2]["publication"] == "succeeded"
+    assert rows[2]["classification"] == "public" and rows[2]["publication"] == "deny"
+    assert rows[2]["reason"] == "object_release_required"
     assert rows[-1]["result"] == "pass" and rows[-1]["api_requests"] == 2
     assert len(calls) == 2

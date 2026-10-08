@@ -150,7 +150,7 @@ def plan(profile: ValidationProfile = DEFAULT_PROFILE):
             "cost_limit": "Input reserve is an estimate, not a billing cap.",
             "scenarios": ["private_transfer_denied_before_api",
                           "private_generation_and_publication_denial",
-                          "clean_public_generation_and_publication"]}
+                          "clean_public_generation_publication_hold"]}
 
 
 def failure_report(error, api_key: str | None,
@@ -263,12 +263,13 @@ def run(profile: ValidationProfile = DEFAULT_PROFILE):
             public_publish = propose({"kind": "object.publish",
                                       "object_id": public_result["object_id"],
                                       "destination": origin})
-            assert public_publish["decision"] == "allow"
-            assert public_publish["outcome"] == "succeeded"
-            assert len(server.received) == 1
-            print(json.dumps({"scenario": "clean_public_generation_and_publication",
+            assert public_publish["decision"] == "deny"
+            assert public_publish["reason"] == "object_release_required"
+            assert not server.received
+            print(json.dumps({"scenario": "clean_public_generation_publication_hold",
                               "generation": "succeeded", "classification": "public",
-                              "publication": "succeeded", "parents": public_result["parents"],
+                              "publication": "deny", "reason": public_publish["reason"],
+                              "parents": public_result["parents"],
                               "upstream": public_upstream, "usage": public_usage,
                               "api_requests": requests}))
             assert any(item["action"]["kind"] == "generation.complete"

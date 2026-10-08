@@ -28,6 +28,8 @@ from governed_objects import CLASSIFICATIONS, transform
 from network_adapter import fetch, origin_and_target
 from provider_gateway import (issue_gateway_credential, request_identity,
                               verify_gateway_credential, verify_receipt)
+from google_attestation import (fetch_google_jwks, key_binding,
+                                verify_google_attestation, verify_attested_result)
 from runtime_supervisor import RuntimeSupervisor, StopResult
 
 
@@ -115,7 +117,7 @@ class Substrate:
         if not isinstance(self.providers, dict):
             raise ValueError("provider registry must be a mapping")
         provider_keys = {"max_classification", "request", "approval_required_at",
-                         "gateway_required"}
+                         "gateway_required", "assurance", "attestation"}
         request_keys = {"model", "upstream", "allow_fallbacks", "data_collection",
                         "zdr", "retention"}
         for name, grant in self.providers.items():
@@ -131,12 +133,31 @@ class Substrate:
                         type(request["zdr"]) is not bool)) or
                     (grant.get("approval_required_at") is not None and
                      grant["approval_required_at"] not in CLASSIFICATIONS) or
+                    grant.get("assurance", "hosted_opaque") not in
+                    ("hosted_opaque", "hosted_attested") or
                     type(grant.get("gateway_required", False)) is not bool):
                 raise ValueError("invalid provider transfer grant")
             if grant.get("gateway_required") and (
                     request is None or not isinstance(self.gateway_secrets.get(name), bytes) or
                     not self.gateway_secrets[name]):
                 raise ValueError("gateway-required provider needs a verification secret")
+            attestation = grant.get("attestation")
+            if grant.get("assurance", "hosted_opaque") == "hosted_attested":
+                attestation_fields = {"kind", "audience", "image_digest",
+                                      "model_sha256", "project_id", "zone", "hwmodel"}
+                if (not grant.get("gateway_required") or request is None or
+                        not isinstance(attestation, dict) or
+                        set(attestation) != attestation_fields or
+                        attestation.get("kind") != "google_confidential_space" or
+                        any(type(value) is not str or not value
+                            for value in attestation.values()) or
+                        not attestation["image_digest"].startswith("sha256:") or
+                        len(attestation["image_digest"]) != 71 or
+                        len(attestation["model_sha256"]) != 64 or
+                        attestation["hwmodel"] not in ("GCP_AMD_SEV", "GCP_INTEL_TDX")):
+                    raise ValueError("attested provider needs pinned Google workload policy")
+            elif attestation is not None:
+                raise ValueError("opaque provider cannot declare runtime attestation")
         self.monitoring = copy.deepcopy(registry.get("monitoring"))
         if self.monitoring is not None:
             if (not isinstance(self.monitoring, dict) or
@@ -272,6 +293,10 @@ class Substrate:
                     parents TEXT NOT NULL, operation TEXT NOT NULL,
                     payload BLOB NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS object_assurances (
+                    object_id TEXT PRIMARY KEY, tier TEXT NOT NULL,
+                    release_hold INTEGER NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS generations (
                     id TEXT PRIMARY KEY, actor TEXT NOT NULL,
                     input_ids TEXT NOT NULL, input_hashes TEXT NOT NULL,
@@ -288,6 +313,11 @@ class Substrate:
                 CREATE TABLE IF NOT EXISTS generation_receipts (
                     generation_id TEXT PRIMARY KEY, challenge_hash TEXT NOT NULL,
                     expires_at REAL NOT NULL, status TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS generation_attestations (
+                    generation_id TEXT PRIMARY KEY, evidence_hash TEXT NOT NULL,
+                    result_public_key TEXT NOT NULL, model_sha256 TEXT NOT NULL,
+                    image_digest TEXT NOT NULL, nonce TEXT NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS transfer_approvals (
                     id TEXT PRIMARY KEY, actor TEXT NOT NULL, session_id TEXT NOT NULL,
@@ -398,6 +428,8 @@ class Substrate:
                     "sha256": hashlib.sha256(row["payload"]).hexdigest(),
                     "bytes": len(row["payload"])}
                    for row in db.execute("SELECT * FROM objects ORDER BY id")]
+        object_assurances = [dict(row) for row in db.execute(
+            "SELECT * FROM object_assurances ORDER BY object_id")]
         generations = [dict(row) for row in db.execute("SELECT * FROM generations ORDER BY id")]
         generation_providers = [dict(row) for row in db.execute(
             "SELECT * FROM generation_providers ORDER BY generation_id")]
@@ -405,6 +437,8 @@ class Substrate:
             "SELECT * FROM generation_transfers ORDER BY generation_id")]
         generation_receipts = [dict(row) for row in db.execute(
             "SELECT * FROM generation_receipts ORDER BY generation_id")]
+        generation_attestations = [dict(row) for row in db.execute(
+            "SELECT * FROM generation_attestations ORDER BY generation_id")]
         approvals = [dict(row) for row in db.execute(
             "SELECT * FROM transfer_approvals ORDER BY id")]
         grants = [dict(row) for row in db.execute(
@@ -422,6 +456,8 @@ class Substrate:
             snapshot["generation_sessions"] = generation_sessions
         if objects:
             snapshot["objects"] = objects
+        if object_assurances:
+            snapshot["object_assurances"] = object_assurances
         if generations:
             snapshot["generations"] = generations
         if generation_providers:
@@ -430,6 +466,8 @@ class Substrate:
             snapshot["generation_transfers"] = generation_transfers
         if generation_receipts:
             snapshot["generation_receipts"] = generation_receipts
+        if generation_attestations:
+            snapshot["generation_attestations"] = generation_attestations
         if approvals:
             snapshot["transfer_approvals_sha256"] = digest(approvals)
         if grants:
@@ -1048,6 +1086,24 @@ class Substrate:
                     canonical(parents), operation, payload))
         return object_id
 
+    @staticmethod
+    def _record_assurance(db, object_id: str, tier: str, release_hold: bool):
+        db.execute("INSERT INTO object_assurances VALUES (?,?,?)",
+                   (object_id, tier, int(release_hold)))
+
+    @staticmethod
+    def _assurance_hold(db, object_id: str) -> bool:
+        row = db.execute("SELECT release_hold FROM object_assurances WHERE object_id=?",
+                         (object_id,)).fetchone()
+        return bool(row and row["release_hold"])
+
+    @staticmethod
+    def _copy_assurance(db, parent_id: str, child_id: str):
+        row = db.execute("SELECT tier,release_hold FROM object_assurances WHERE object_id=?",
+                         (parent_id,)).fetchone()
+        if row:
+            Substrate._record_assurance(db, child_id, row["tier"], row["release_hold"])
+
     def import_object(self, classification: str, media_type: str, content_base64: str,
                       readers: list[str], source: str) -> dict[str, Any]:
         if classification not in CLASSIFICATIONS or media_type not in ("text/plain", "image/png"):
@@ -1097,7 +1153,7 @@ class Substrate:
         return {"event_id": event_id, "decision": "allow", "object_id": object_id}
 
     def declassify_object(self, object_id: str, classification: str,
-                          reason: str) -> dict[str, Any]:
+                           reason: str) -> dict[str, Any]:
         if classification not in CLASSIFICATIONS or not isinstance(reason, str):
             raise ValueError("invalid classification or reason")
         with self._execution_lock, self._db() as db:
@@ -1126,8 +1182,9 @@ class Substrate:
                 return {"event_id": event_id, "decision": "deny",
                         "reason": "capability_unavailable" if rule == "circuit_blocked" else rule}
             child_id = self._insert_object(db, classification, parent["media_type"],
-                                           json.loads(parent["readers"]), [object_id],
-                                           "declassify", parent["payload"])
+                                            json.loads(parent["readers"]), [object_id],
+                                            "declassify", parent["payload"])
+            self._copy_assurance(db, object_id, child_id)
             after = self._snapshot(db)
             event_id = self._append(db, "human-operator",
                                     {"kind": "object.declassify", "parent_id": object_id,
@@ -1138,6 +1195,50 @@ class Substrate:
             db.commit()
         return {"event_id": event_id, "decision": "override", "object_id": child_id,
                 "parent_id": object_id, "classification": classification}
+
+    def release_object(self, object_id: str, reason: str) -> dict[str, Any]:
+        if not isinstance(object_id, str) or not isinstance(reason, str):
+            raise ValueError("invalid object release request")
+        with self._execution_lock, self._db() as db:
+            db.execute("BEGIN IMMEDIATE")
+            expected = self._verify(db)
+            before = self._snapshot(db)
+            parent = db.execute("SELECT * FROM objects WHERE id=?", (object_id,)).fetchone()
+            if before != expected:
+                rule = "state_integrity"
+            elif self._stopped(db, "human-operator", "object", None):
+                rule = "circuit_blocked"
+            elif parent is None:
+                rule = "object_not_found"
+            elif parent["classification"] != "public":
+                rule = "release_requires_public_object"
+            elif not self._assurance_hold(db, object_id):
+                rule = "release_not_required"
+            elif not reason.strip():
+                rule = "release_reason_required"
+            else:
+                rule = None
+            if rule:
+                event_id = self._append(db, "human-operator",
+                                        {"kind": "object.release", "object_id": object_id},
+                                        {"rule": rule}, "deny", before, before)
+                db.commit()
+                return {"event_id": event_id, "decision": "deny", "reason": rule}
+            child_id = self._insert_object(db, "public", parent["media_type"],
+                                           json.loads(parent["readers"]), [object_id],
+                                           "release", parent["payload"])
+            tier = db.execute("SELECT tier FROM object_assurances WHERE object_id=?",
+                              (object_id,)).fetchone()["tier"]
+            self._record_assurance(db, child_id, tier, False)
+            after = self._snapshot(db)
+            event_id = self._append(db, "human-operator",
+                                    {"kind": "object.release", "parent_id": object_id,
+                                     "object_id": child_id},
+                                    {"rule": "operator_release", "reason": reason},
+                                    "override", before, after)
+            db.commit()
+        return {"event_id": event_id, "decision": "override", "object_id": child_id,
+                "parent_id": object_id, "classification": "public"}
 
     @staticmethod
     def _generation_sources(db: sqlite3.Connection, run: sqlite3.Row):
@@ -1248,7 +1349,8 @@ class Substrate:
                 **({"gateway_credential": challenge} if challenge is not None else {})}
 
     def authorize_provider_call(self, generation_id: str, provider: str,
-                                gateway_credential: str) -> dict[str, Any]:
+                                gateway_credential: str,
+                                attestation: dict[str, Any] | None = None) -> dict[str, Any]:
         """Consume a gateway credential at the provider-call boundary."""
         with self._execution_lock, self._db() as db:
             db.execute("BEGIN IMMEDIATE")
@@ -1288,15 +1390,54 @@ class Substrate:
                 rule = "provider_call_revoked"
             else:
                 rule = None
+            assurance = (self.providers[provider].get("assurance", "hosted_opaque")
+                         if provider in self.providers else "hosted_opaque")
+            if rule is None and assurance == "hosted_attested":
+                policy = self.providers[provider]["attestation"]
+                fields = {"token", "nonce", "exchange_public_key",
+                          "result_public_key", "model_sha256"}
+                if (type(attestation) is not dict or set(attestation) != fields or
+                        any(type(attestation[key]) is not str or not attestation[key]
+                            for key in fields) or
+                        attestation["model_sha256"] != policy["model_sha256"]):
+                    rule = "provider_attestation_invalid"
+                else:
+                    try:
+                        binding = key_binding(
+                            transfer["request_hash"], policy["model_sha256"],
+                            attestation["nonce"], attestation["exchange_public_key"],
+                            attestation["result_public_key"])
+                        jwks = fetch_google_jwks()
+                        verified = verify_google_attestation(
+                            attestation["token"], jwks,
+                            audience=policy["audience"],
+                            image_digest=policy["image_digest"],
+                            project_id=policy["project_id"], zone=policy["zone"],
+                            hwmodel=policy["hwmodel"],
+                            nonce=attestation["nonce"], binding=binding)
+                    except (OSError, ValueError, TypeError):
+                        verified = False
+                    if not verified:
+                        rule = "provider_attestation_invalid"
+            elif rule is None and attestation is not None:
+                rule = "provider_attestation_unexpected"
+            attestation_hash = (hashlib.sha256(canonical(attestation).encode()).hexdigest()
+                                if rule is None and assurance == "hosted_attested" else None)
             if rule is None:
                 db.execute("UPDATE generation_receipts SET status='dispatched' "
                            "WHERE generation_id=?", (generation_id,))
+                if assurance == "hosted_attested":
+                    db.execute("INSERT INTO generation_attestations VALUES (?,?,?,?,?,?)",
+                               (generation_id, attestation_hash,
+                                attestation["result_public_key"], policy["model_sha256"],
+                                policy["image_digest"], attestation["nonce"]))
             after = self._snapshot(db)
             event_id = self._append(
                 db, "trusted-provider-gateway",
                 {"kind": "provider.call.authorize", "generation_id": generation_id,
                  "provider": provider,
-                 "request_hash": transfer["request_hash"] if transfer else None},
+                 "request_hash": transfer["request_hash"] if transfer else None,
+                 "attestation_hash": attestation_hash},
                 {"rule": rule or "provider_call_authorized"},
                 "deny" if rule else "allow", before, after)
             db.commit()
@@ -1304,7 +1445,8 @@ class Substrate:
                 "reason": rule or "provider_call_authorized"}
 
     def complete_generation(self, generation_id: str, text: str,
-                            receipt: dict[str, Any] | None = None) -> dict[str, Any]:
+                            receipt: dict[str, Any] | None = None,
+                            attestation: dict[str, Any] | None = None) -> dict[str, Any]:
         try:
             payload = text.encode("utf-8") if isinstance(text, str) else b""
         except UnicodeError:
@@ -1320,6 +1462,9 @@ class Substrate:
                                   (generation_id,)).fetchone() if run else None
             receipt_row = db.execute("SELECT * FROM generation_receipts WHERE generation_id=?",
                                      (generation_id,)).fetchone() if run else None
+            attestation_row = db.execute(
+                "SELECT * FROM generation_attestations WHERE generation_id=?",
+                (generation_id,)).fetchone() if run else None
             if before != expected:
                 rule = "state_integrity"
             elif run is None:
@@ -1351,6 +1496,27 @@ class Substrate:
                 rule = "provider_receipt_unexpected"
             else:
                 rule = None
+            if rule is None and provider is not None and self.providers[provider].get(
+                    "assurance", "hosted_opaque") == "hosted_attested":
+                expected_result = {
+                    "generation_id": generation_id,
+                    "request_hash": transfer["request_hash"],
+                    "model_sha256": self.providers[provider]["attestation"]["model_sha256"],
+                    "output_sha256": hashlib.sha256(payload).hexdigest(),
+                    "image_digest": self.providers[provider]["attestation"]["image_digest"],
+                    "nonce": attestation_row["nonce"] if attestation_row else None,
+                }
+                if (attestation_row is None or type(attestation) is not dict or
+                        set(attestation) != {"preflight", "result"} or
+                        hashlib.sha256(canonical(attestation["preflight"]).encode()).hexdigest()
+                        != attestation_row["evidence_hash"] or
+                        not verify_attested_result(attestation_row["result_public_key"],
+                                                   attestation["result"], expected_result) or
+                        receipt.get("attestation_hash") !=
+                        hashlib.sha256(canonical(attestation).encode()).hexdigest()):
+                    rule = "provider_attestation_invalid"
+            elif rule is None and attestation is not None:
+                rule = "provider_attestation_unexpected"
             action = {"kind": "generation.complete", "generation_id": generation_id,
                       "provider": provider,
                       "request_hash": transfer["request_hash"] if transfer else None}
@@ -1364,7 +1530,12 @@ class Substrate:
                 db.execute("UPDATE generation_receipts SET status='used' WHERE generation_id=?",
                            (generation_id,))
             object_id = self._insert_object(db, run["classification"], "text/plain",
-                                            [run["actor"]], input_ids, "generate", payload)
+                                             [run["actor"]], input_ids, "generate", payload)
+            tier = (self.providers[provider].get("assurance", "hosted_opaque")
+                    if provider is not None else "local_verified")
+            held = (tier == "hosted_opaque" or
+                    any(self._assurance_hold(db, item) for item in input_ids))
+            self._record_assurance(db, object_id, tier, held)
             db.execute("UPDATE generations SET status='completed', output_id=? WHERE id=?",
                        (object_id, generation_id))
             after = self._snapshot(db)
@@ -1383,7 +1554,9 @@ class Substrate:
         if caps.get("data", {}).get("sensitive_access") is True:
             return True
         return any(actor in json.loads(row["readers"]) for row in db.execute(
-            "SELECT readers FROM objects WHERE classification!='public'"))
+            "SELECT objects.readers FROM objects LEFT JOIN object_assurances a "
+            "ON a.object_id=objects.id WHERE objects.classification!='public' "
+            "OR a.release_hold=1"))
 
     def _decide(self, actor: str, action: dict[str, Any], session_id: str,
                 db: sqlite3.Connection):
@@ -1483,8 +1656,10 @@ class Substrate:
             if service is None or service.get("mode") != "publication":
                 return "deny", "publication_destination_not_allowed", None
             if (service.get("egress", "external") == "external" and
-                    parent["classification"] != "public"):
+                     parent["classification"] != "public"):
                 return "deny", "object_classification_blocks_egress", None
+            if self._assurance_hold(db, object_id):
+                return "deny", "object_release_required", None
             if parent["media_type"] != "text/plain":
                 return "deny", "publication_requires_text", None
             content = parent["payload"].decode("utf-8")
@@ -1717,6 +1892,7 @@ class Substrate:
                 value = self._insert_object(db, parent["classification"], media_type,
                                             json.loads(parent["readers"]), [parent["id"]],
                                             action["operation"], transformed)
+                self._copy_assurance(db, parent["id"], value)
             elif decision == "allow" and not authorize_only and action["kind"] == "generation.prepare":
                 input_ids, hashes, classification, provider = namespace[:4]
                 approval_id = namespace[4] if len(namespace) > 4 else None
@@ -2078,6 +2254,11 @@ class ObjectDeclassificationRequest(BaseModel):
     reason: str
 
 
+class ObjectReleaseRequest(BaseModel):
+    object_id: str
+    reason: str
+
+
 class GenerationClaimRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -2092,6 +2273,7 @@ class GenerationCompleteRequest(BaseModel):
     generation_id: str
     text: str
     receipt: dict[str, Any] | None = None
+    attestation: dict[str, Any] | None = None
 
 
 class ProviderCallAuthorizationRequest(BaseModel):
@@ -2100,6 +2282,7 @@ class ProviderCallAuthorizationRequest(BaseModel):
     generation_id: str
     provider: str
     gateway_credential: str
+    attestation: dict[str, Any] | None = None
 
 
 class ExecutionRequest(BaseModel):
@@ -2242,6 +2425,19 @@ def create_app(substrate: Substrate) -> FastAPI:
         except IntegrityError as exc:
             raise HTTPException(503, str(exc)) from exc
 
+    @app.post("/objects/release")
+    def object_release(body: ObjectReleaseRequest,
+                       authorization: str | None = Header(default=None)):
+        token = (authorization or "").removeprefix("Bearer ")
+        if not substrate.is_operator(token):
+            raise HTTPException(401, "invalid operator token")
+        try:
+            return substrate.release_object(body.object_id, body.reason)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        except IntegrityError as exc:
+            raise HTTPException(503, str(exc)) from exc
+
     @app.post("/generations/claim")
     def generation_claim(body: GenerationClaimRequest,
                          authorization: str | None = Header(default=None)):
@@ -2261,7 +2457,8 @@ def create_app(substrate: Substrate) -> FastAPI:
         if not substrate.is_operator(token):
             raise HTTPException(401, "invalid trusted adapter token")
         try:
-            return substrate.complete_generation(body.generation_id, body.text, body.receipt)
+            return substrate.complete_generation(body.generation_id, body.text,
+                                                 body.receipt, body.attestation)
         except IntegrityError as exc:
             raise HTTPException(503, str(exc)) from exc
 
@@ -2269,7 +2466,8 @@ def create_app(substrate: Substrate) -> FastAPI:
     def provider_call(body: ProviderCallAuthorizationRequest):
         try:
             return substrate.authorize_provider_call(
-                body.generation_id, body.provider, body.gateway_credential)
+                body.generation_id, body.provider, body.gateway_credential,
+                body.attestation)
         except IntegrityError as exc:
             raise HTTPException(503, str(exc)) from exc
 

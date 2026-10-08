@@ -78,13 +78,16 @@ def claim_sealed_inputs(client, generation_id: str,
 
 def complete_generated_text(client, generation_id: str,
                             operator_token: str, text: str,
-                            receipt: dict | None = None) -> dict:
+                            receipt: dict | None = None,
+                            attestation: dict | None = None) -> dict:
     if type(text) is not str or not text.strip():
         raise RuntimeError("Generation adapter returned no text")
     headers = {"Authorization": f"Bearer {operator_token}"}
     request = {"generation_id": generation_id, "text": text}
     if receipt is not None:
         request["receipt"] = receipt
+    if attestation is not None:
+        request["attestation"] = attestation
     completion = client.post("/generations/complete", headers=headers, json=request)
     if completion.status_code != 200 or completion.json().get("decision") != "succeeded":
         raise RuntimeError("Sealed generation completion was denied")

@@ -27,14 +27,18 @@ def request_identity(generation_id: str, provider: str, profile: dict,
 
 
 def receipt_payload(generation_id: str, provider: str, request_hash: str,
-                    response_hash: str, challenge: str) -> dict:
-    return {
+                    response_hash: str, challenge: str,
+                    attestation_hash: str | None = None) -> dict:
+    payload = {
         "generation_id": generation_id,
         "provider": provider,
         "request_hash": request_hash,
         "response_hash": response_hash,
         "challenge": challenge,
     }
+    if attestation_hash is not None:
+        payload["attestation_hash"] = attestation_hash
+    return payload
 
 
 def sign_receipt(secret: bytes, payload: dict) -> str:
@@ -85,29 +89,41 @@ class GatewayReceipt:
     response_hash: str
     challenge: str
     signature: str
+    attestation_hash: str | None = None
 
     def as_dict(self) -> dict:
         return {
             **receipt_payload(self.generation_id, self.provider, self.request_hash,
-                              self.response_hash, self.challenge),
+                              self.response_hash, self.challenge,
+                              self.attestation_hash),
             "signature": self.signature,
         }
 
 
 def create_receipt(secret: bytes, generation_id: str, provider: str,
-                   request_hash: str, response: bytes, challenge: str) -> GatewayReceipt:
+                   request_hash: str, response: bytes, challenge: str,
+                   attestation: dict | None = None) -> GatewayReceipt:
     response_hash = hashlib.sha256(response).hexdigest()
+    attestation_hash = (hashlib.sha256(canonical(attestation).encode()).hexdigest()
+                        if attestation is not None else None)
     payload = receipt_payload(generation_id, provider, request_hash,
-                              response_hash, challenge)
-    return GatewayReceipt(**payload, signature=sign_receipt(secret, payload))
+                              response_hash, challenge, attestation_hash)
+    return GatewayReceipt(generation_id, provider, request_hash, response_hash,
+                          challenge, sign_receipt(secret, payload), attestation_hash)
 
 
 def verify_receipt(secret: bytes, receipt: dict) -> bool:
     required = {"generation_id", "provider", "request_hash", "response_hash",
                 "challenge", "signature"}
-    if type(receipt) is not dict or set(receipt) != required:
+    if type(receipt) is not dict or set(receipt) not in (required, required | {"attestation_hash"}):
         return False
     if any(type(receipt[key]) is not str or not receipt[key] for key in required):
         return False
+    if "attestation_hash" in receipt and (
+            type(receipt["attestation_hash"]) is not str or
+            len(receipt["attestation_hash"]) != 64):
+        return False
     payload = {key: receipt[key] for key in required - {"signature"}}
+    if "attestation_hash" in receipt:
+        payload["attestation_hash"] = receipt["attestation_hash"]
     return hmac.compare_digest(receipt["signature"], sign_receipt(secret, payload))
