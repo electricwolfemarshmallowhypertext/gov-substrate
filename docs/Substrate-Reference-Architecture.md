@@ -35,6 +35,22 @@ The substrate checks the circuit breaker before authorization and again before e
 
 The substrate API is independent of Docker. The v0.5.0 release evidence used Docker/OCI. The v0.6.0 source adds evidence from rootless Podman, gVisor, Wasmtime/WASI, NVIDIA OpenShell, native Linux, native Windows, a disposable Kind/Calico cluster, and a disposable managed GKE Autopilot cluster under recorded configurations. Any other backend requires the same level of runtime-specific proof before equivalent claims are made.
 
+## Implemented boundaries at a glance
+
+- **State:** governed transitions, session and persistent state, integrity checks, and audited one-shot overrides.
+- **Network:** destination-scoped requests through an audited adapter; the reference agent container has no direct network route.
+- **Filesystem:** actor-, session-, and shared-file authority through an audited adapter; the reference agent has no workspace mount.
+- **Delegated services:** services that can proxy, store, forward, or invoke downstream resources fail closed unless their downstream authority is mediated.
+- **Data egress:** external publication accepts governed public objects rather than arbitrary agent-supplied bytes.
+- **Object provenance:** transforms and generated text retain exact parents and inherit the highest input classification. Lowering classification requires an audited operator action.
+- **Hosted transfer:** external model providers are denied by default and must be registered for the classifications they may receive.
+- **Execution control:** one-use grants, scoped emergency stops, verified graceful and forced worker shutdown, and orphan reconciliation.
+- **Compromised-adapter controls:** exact provider request identities, circuit-aware one-use gateway dispatch, request-bound operator approval, signed completion receipts, optional or high-assurance-required independent audit witnessing, and anomaly-triggered containment.
+
+The v0.6.0 source adds short-lived task credentials, denial-triggered stops with measured shutdown time, and a [testable reference harness inventory](Reference-Harness-Inventory.yaml). Each stop records what was revoked, when and why it happened, and whether the worker actually stopped.
+
+Generation is model- and provider-agnostic. The optional local worker and the OpenAI, Anthropic, Gemini, and OpenRouter adapters use the same sealed-input and governed-output path.
+
 ## Controls added after v0.5.0
 
 The example registry now requires a task identity for agent sessions. An operator
@@ -372,6 +388,48 @@ These are explicit prototype proxies, not validated measures of institutional he
 | Friction coherence | `friction_coherence` | Lowest ratio of median gate latencies across actors making the same action kind, requiring at least two observations per actor. `1` is equal latency; `null` when no comparable groups exist. It excludes human and economic burden. |
 | Accountability topology | `accountability_topology` | Share of non-genesis events with an actor and policy rule, provided the audit chain verifies; `0` if the chain fails, `null` before an attempt. It does not establish real-world responsibility. |
 
+## Detailed evidence categories and backend results
+
+The project reports seven kinds of evidence separately:
+
+- **Unit tests** verify policy and control logic. Fakes and mocks are allowed here; these tests do not prove runtime isolation.
+- **Runtime conformance** uses real workers to verify the backend-neutral supervisor contract: launch, exact identity, verified stop, late-completion rejection, and orphan reconciliation.
+- **Runtime enforcement** uses a model-independent hostile Rust worker to make real OS and runtime attempts against forbidden and granted paths.
+- **Model integration** uses real Qwen inference through the same sealed-input and governed-output path, separately from the hostile-worker proof.
+- **Hosted validation** verifies the governed request and output path with external providers. It does not attest to a provider's internal runtime.
+- **Incident-derived acceptance** replays documented proxy, authorization, side-channel, persistence, redirect, and exfiltration failure classes against local services and isolated workers.
+- **Compromised-host/provider evaluation** separates detectable adapter or provider contradictions from behavior that remains outside the observable boundary.
+
+[Runtime conformance](Runtime-Conformance.md) defines the shared contract and evidence rules. Native Ubuntu Docker/containerd, rootless Podman/crun, gVisor/runsc, Wasmtime/WASI, NVIDIA OpenShell, native Linux, native Windows, Kind/Calico, and GKE Autopilot use the same real suite. Docker/OCI remains the reference backend. Each result comes from the hostile probe running in the named backend rather than from configuration inspection alone.
+
+Frozen runtime evidence:
+
+- native Ubuntu Docker/containerd: **3 conformance + 2 runtime-enforcement tests passed**;
+- rootless Podman/crun with the Docker daemon unavailable: **3 + 2 passed**;
+- gVisor `runsc` release `release-20260921.0`: **3 + 2 passed**;
+- Wasmtime 49.0.1 on Windows 11 and Ubuntu 24.04.5: **3 + 2 passed** on each host;
+- NVIDIA OpenShell v0.1.2 with its Docker driver on Ubuntu 24.04: **3 + 2 passed**;
+- native Linux namespaces, Landlock, seccomp, capabilities, and cgroup v2: **3 + 2 passed**;
+- native Windows AppContainer, low integrity, zero capabilities, and Job Object supervision: **3 + 2 passed**;
+- Kubernetes 1.36.4 with Calico 3.32.2, restricted Pod Security, and default-deny ingress and egress: **3 + 2 passed** in a disposable Kind cluster;
+- GKE Autopilot 1.35.8 with restricted Pod Security and default-deny ingress and egress: **3 + 2 passed** in a disposable managed cluster;
+- [Phase 3 OCI CI and runtime manifests](https://github.com/electricwolfemarshmallowhypertext/gov-substrate/actions/runs/36727109512);
+- [Phase 4 Wasmtime/WASI CI and runtime manifest](https://github.com/electricwolfemarshmallowhypertext/gov-substrate/actions/runs/36736013718);
+- [Phase 5 NVIDIA OpenShell CI and runtime manifest](https://github.com/electricwolfemarshmallowhypertext/gov-substrate/actions/runs/37021722123);
+- [Phase 6 native Linux and Windows CI and runtime manifests](https://github.com/electricwolfemarshmallowhypertext/gov-substrate/actions/runs/36756130136);
+- [Phase 7 Kubernetes/Calico CI and runtime manifest](https://github.com/electricwolfemarshmallowhypertext/gov-substrate/actions/runs/36761111887).
+
+Release verification for v0.5.0:
+
+- unit suite: **91 passed, 10 opt-in skips**;
+- real Qwen Docker acceptance: **4 passed**;
+- the same real-runtime acceptance with Phi-4 Mini: **4 passed**;
+- environment isolation probes: **5 passed**;
+- [release CI](https://github.com/electricwolfemarshmallowhypertext/gov-substrate/actions/runs/36651807299): unit, Qwen acceptance, and environment jobs passed;
+- [manual model-matrix CI](https://github.com/electricwolfemarshmallowhypertext/gov-substrate/actions/runs/36617457396): Qwen and Phi acceptance passed.
+
+Local model evidence uses pinned, hash-verified official Qwen and Microsoft Phi artifacts through the same Docker worker. Hosted reports cover GPT-6 Luna, GPT-6 Sol, Claude Opus 4.7, direct Gemini Flash, and OpenRouter with pinned GLM, Grok, and Kimi upstreams. Future model runs should answer a new boundary question rather than add model names.
+
 ## Evidence levels and current results
 
 The [Phase 10 evidence freeze](Evidence-Freeze-2026-10-05.md) is the canonical
@@ -447,6 +505,33 @@ an uncooperative worker, verified its removal and exact runtime ID in the
 trip receipt, and restart reconciliation found and stopped an orphan. Focused
 tests also checked manual, automatic, and unconfirmed trip receipts. These
 results verify the tested reference configuration, not every deployment.
+
+## Evaluation report index
+
+- [Runtime conformance](Runtime-Conformance.md)
+- [NVIDIA OpenShell runtime evaluation](OpenShell-Runtime-Evaluation.md)
+- [Kubernetes runtime evaluation](Kubernetes-Runtime-Evaluation.md)
+- [Native operating-system runtime evaluation](Native-OS-Runtime-Evaluation.md)
+- [Wasmtime/WASI runtime evaluation](Wasmtime-Runtime-Evaluation.md)
+- [Environment skeleton](Environment-Skeleton-Evaluation.md)
+- [Local-model runtime matrix](Local-Model-Matrix-Evaluation.md)
+- [Incident-derived escape evaluation](Incident-Derived-Escape-Evaluation.md)
+- [Compromised host/provider evaluation](Compromised-Host-Provider-Evaluation.md)
+- [Free-form output provenance](Free-Form-Output-Provenance.md)
+- [Generation adapters](Generation-Adapters.md)
+- [Hosted OpenAI validation](Hosted-Object-Validation.md)
+- [Claude Opus 4.7 validation](Anthropic-Opus-4.7-Validation-Report.md)
+- [Direct Gemini validation](Gemini-Direct-Validation.md)
+- [OpenRouter GLM validation](OpenRouter-Validation.md)
+- [OpenRouter Grok validation](OpenRouter-Grok-4.7-Validation.md)
+- [OpenRouter Kimi validation](OpenRouter-Kimi-K3-Validation.md)
+
+Earlier evaluations document the failures that motivated scoped authority, persistence lifetimes, delegated-service handling, sensitive-data egress, and object provenance:
+
+- [Containment evaluation](Containment-Evaluation.md)
+- [Scoped-authority evaluation](Scoped-Authority-Evaluation.md)
+- [Sensitive-data egress evaluation](Sensitive-Data-Egress-Evaluation.md)
+- [Object-provenance evaluation](Object-Provenance-Evaluation.md)
 
 ## Adversarial evaluation
 
@@ -544,3 +629,5 @@ kernel or provider behavior not exposed in verifiable metadata remains outside
 this boundary.**
 
 An admitted operation cannot be rolled back; its decision event commits before execution, and a process crash before the outcome event can leave an unresolved attempt. A database owner can drop triggers or rewrite the hash chain; external anchoring is needed for stronger immutability. Invalid authentication and malformed HTTP requests are rejected before an actor can be attributed and are not part of the audit. The four health values remain prototype proxies, not empirical validation of the paper's full framework.
+
+The substrate controls capabilities placed behind its boundary. It cannot secure an agent given an alternate unmediated route, attest to hidden behavior inside a hosted provider, or defend itself from a fully compromised trusted host or kernel. Docker/OCI is the reference backend. Rootless Podman, gVisor, Wasmtime/WASI, NVIDIA OpenShell, native Linux, native Windows, disposable Kind/Calico, and disposable GKE Autopilot configurations have separate real conformance evidence; untested backends require the same proof before equivalent claims are made.
