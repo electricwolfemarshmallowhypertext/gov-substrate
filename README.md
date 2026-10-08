@@ -10,6 +10,8 @@ Current source version: [v0.6.0](https://github.com/electricwolfemarshmallowhype
 
 > **TL;DR:** Agent intent is not authority. Governance Substrate places permissions, execution control, provenance, and audit beneath the agent so the system — not the prompt — decides what actions are allowed.
 
+![Governance Substrate flow from governed context through authorization, execution, verified outcome, and audit](img/governance-substrate-flow.png)
+
 ## Demonstrated result
 
 The reference implementation has enforced capability boundaries independently of model behavior across tested local and hosted model paths, and container, native, WASI, and Kubernetes runtimes.
