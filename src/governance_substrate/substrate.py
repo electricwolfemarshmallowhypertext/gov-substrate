@@ -31,6 +31,7 @@ from .provider_gateway import (issue_gateway_credential, request_identity,
 from .google_attestation import (fetch_google_jwks, key_binding,
                                 verify_google_attestation, verify_attested_result)
 from .runtime_supervisor import RuntimeSupervisor, StopResult
+from .tool_adapter import ToolAdapter
 
 
 def canonical(value: Any) -> str:
@@ -93,9 +94,11 @@ class Substrate:
                  runtime_supervisor: RuntimeSupervisor | None = None,
                  audit_witness: AuditWitness | None = None,
                  gateway_secrets: dict[str, bytes] | None = None,
-                 require_audit_witness: bool = False):
+                 require_audit_witness: bool = False,
+                 tool_adapters: dict[str, ToolAdapter] | None = None):
         self.db_path = str(db_path)
         self._execution_lock = threading.RLock()
+        self.tool_adapters = dict(tool_adapters or {})
         self.actors = copy.deepcopy(registry["actors"])
         self.tokens = dict(registry["tokens"])
         self.operator_token = registry["operator_token"]
@@ -259,6 +262,9 @@ class Substrate:
                 self.circuit_operator_token.encode()).hexdigest()
         if self.providers:
             registry_material["providers"] = self.providers
+        if self.tool_adapters:
+            registry_material["tool_adapters"] = {
+                name: adapter.identity for name, adapter in self.tool_adapters.items()}
         if self.monitoring is not None:
             registry_material["monitoring"] = self.monitoring
         if self.require_task_identity:
@@ -822,7 +828,7 @@ class Substrate:
                 (scope == "global" and target != "*") or
                 (scope == "actor" and target not in self.actors) or
                 (scope == "capability" and target not in
-                 ("session", "state", "object", "network", "filesystem", "generation")) or
+                 ("session", "state", "object", "network", "filesystem", "generation", "tool")) or
                 (scope == "provider" and target not in self.providers) or
                 type(active) is not bool or not isinstance(reason, str) or not reason.strip()):
             raise ValueError("invalid circuit change")
@@ -1798,7 +1804,23 @@ class Substrate:
         if kind == "tool.invoke":
             tool = action.get("tool")
             enabled = isinstance(tool, str) and caps["tools"].get(tool) is True
-            return "deny", "tool_adapter_absent" if enabled else "tool_disabled", None
+            if not enabled:
+                return "deny", "tool_disabled", None
+            adapter = self.tool_adapters.get(tool)
+            if adapter is None:
+                return "deny", "tool_adapter_absent", None
+            if (set(action) - {"kind", "tool", "arguments", "call_id"} or
+                    type(action.get("arguments")) is not dict or
+                    ("call_id" in action and (type(action["call_id"]) is not str or
+                                             len(action["call_id"]) > 256))):
+                return "deny", "invalid_tool_arguments", None
+            try:
+                adapter.validate(action["arguments"])
+            except (TypeError, ValueError):
+                return "deny", "invalid_tool_arguments", None
+            if adapter.external_transfer and self._sensitive_reader(db, actor, caps):
+                return "deny", "sensitive_external_egress_disabled", None
+            return "allow", "tool_granted", adapter
         if kind == "credential.expand":
             return "deny", "credential_scope_fixed", None
         return "deny", "unknown_action", None
@@ -1807,6 +1829,8 @@ class Substrate:
                 execution_token: str | None = None,
                 authorize_only: bool = False,
                 task_id: str | None = None) -> dict[str, Any]:
+        if action.get("kind") == "tool.invoke":
+            action = copy.deepcopy(action)
         if action.get("kind") in ("network.request", "object.publish"):
             return self._propose(actor, session_token, action, execution_token,
                                  authorize_only, task_id)
@@ -1949,6 +1973,10 @@ class Substrate:
                     logged_action["approval_request_id"] = approval_request_id
                 if decision == "allow":
                     logged_action["generation_id"] = value
+            if action.get("kind") == "tool.invoke":
+                logged_action = {"kind": "tool.invoke", "tool": action.get("tool"),
+                                 "arguments_sha256": digest(action.get("arguments")),
+                                 "call_id": action.get("call_id")}
             if action.get("kind") == "network.request" and "services" in self.actors[actor]["network"]:
                 url = action.get("url")
                 try:
@@ -2115,6 +2143,37 @@ class Substrate:
                     {"rule": "adapter_result"}, result["outcome"], after, current,
                     elapsed_ms=(time.perf_counter() - started) * 1000,
                 )
+                db.commit()
+        if decision == "allow" and action["kind"] == "tool.invoke":
+            try:
+                with self._db() as db:
+                    expected = self._verify(db)
+                    live = db.execute(
+                        "SELECT id FROM sessions WHERE actor=? AND token_hash=? AND active=1",
+                        (actor, hashlib.sha256(session_token.encode()).hexdigest())).fetchone()
+                    if (self._snapshot(db) != expected or live is None or
+                            not self._task_session_live(db, live["id"]) or
+                            self._session_task_id(db, live["id"]) != task_id or
+                            self._stopped(db, actor, "tool", None)):
+                        raise ValueError("capability_unavailable")
+                response = namespace.execute(copy.deepcopy(action["arguments"]))
+                result.update(outcome="succeeded", tool_result=response)
+                outcome = {"result_sha256": digest(response)}
+                if isinstance(response.get("tool_error"), str) and response["tool_error"]:
+                    result.update(outcome="failed", error="upstream_tool_error")
+                    outcome["error"] = "upstream_tool_error"
+            except Exception as exc:
+                result.update(outcome="failed", error=type(exc).__name__)
+                outcome = {"error": type(exc).__name__}
+            with self._db() as db:
+                db.execute("BEGIN IMMEDIATE")
+                snapshot = self._snapshot(db)
+                result["outcome_event_id"] = self._append(
+                    db, actor, {"kind": "tool.result", "tool": action["tool"],
+                                "call_id": action.get("call_id"),
+                                "request_event_id": event_id, **outcome},
+                    {"rule": "adapter_result"}, result["outcome"], snapshot, snapshot,
+                    elapsed_ms=(time.perf_counter() - started) * 1000)
                 db.commit()
         return result
 

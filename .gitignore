@@ -13,6 +13,10 @@ __pycache__/
 *.db-wal
 .env
 .network_lab_*/
+/.authority_challenge_results/
+/.agentlab-source/
+/.agentlab-venv/
+/.agentlab-smtp-results/
 /dist/
 /TODO.md
 # Private grant, research, and manuscript drafts.

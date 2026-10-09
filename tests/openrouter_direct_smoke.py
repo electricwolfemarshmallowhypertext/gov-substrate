@@ -11,7 +11,6 @@ import os
 import sys
 import tempfile
 import threading
-from dataclasses import dataclass
 from decimal import Decimal
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -21,12 +20,14 @@ from fastapi.testclient import TestClient
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from governance_substrate.generation_adapter import run_with_adapter
 from governance_substrate.hosted_generation_adapters import (OpenRouterClient, OpenRouterHTTPError,
                                         OpenRouterResponseError,
                                         OpenRouterTextAdapter)
 from governance_substrate.substrate import Substrate, create_app
+from openrouter_profiles import PROFILES, ValidationProfile
 
 
 PROVIDER = "openrouter"
@@ -35,27 +36,6 @@ INPUT_RESERVE = 4096  # Estimate only; OpenRouter does not enforce this input ca
 MAX_REQUESTS = 2
 
 
-@dataclass(frozen=True)
-class ValidationProfile:
-    model: str
-    upstream: str
-    zdr: bool
-    retention: str
-    input_rate: Decimal
-    output_rate: Decimal
-
-
-PROFILES = {
-    "glm": ValidationProfile(
-        "z-ai/glm-5.2", "z-ai", True, "zero retention",
-        Decimal("1.40"), Decimal("4.40")),
-    "grok": ValidationProfile(
-        "x-ai/grok-4.7", "xai", False, "30 days",
-        Decimal("2.00"), Decimal("6.00")),
-    "kimi": ValidationProfile(
-        "moonshotai/kimi-k3", "moonshotai", True, "zero retention",
-        Decimal("3.00"), Decimal("15.00")),
-}
 DEFAULT_PROFILE = PROFILES["glm"]
 
 
