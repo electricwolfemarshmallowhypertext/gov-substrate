@@ -1,0 +1,9 @@
+{
+  "provider_calls": 0,
+  "model_generated": false,
+  "single_reader_terminated": true,
+  "timed_out_container_removed": true,
+  "stream_reuse_rejected": true,
+  "evidence": "E:\\gov-substrate\\dist\\deployed-authority\\gov-sub-authority-b500e1c9cffe",
+  "cleanup_verified": true
+}

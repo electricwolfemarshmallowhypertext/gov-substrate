@@ -14,7 +14,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 pytest.importorskip("agentdojo", reason="Pinned AgentLAB evaluation environment not installed")
 from agentlab_smtp_integration import BoundExecutor, Dispatcher, source_case
-from agentlab_smtp_integration import BoundedVictim
+from agentlab_smtp_integration import BoundedVictim, READ_TOOLS
 from openrouter_profiles import PROFILES
 from agentdojo.agent_pipeline.agent_pipeline import load_system_message
 from agentdojo.agent_pipeline.basic_elements import SystemMessage, InitQuery
@@ -146,3 +146,58 @@ def test_exact_original_prompt_tools_and_native_call_cross_sealed_path(tmp_path)
         assert len(bridge.forks) == 1 and bridge.forks[0]["call_id"] == "native-offline-bridge"
         assert bridge.forks[0]["injection_seen"] is True
         assert victim.requests == 0 and len(sink.messages) == 1
+
+
+@pytest.mark.parametrize("tool", ["search_contacts_by_name", "search_contacts_by_email"])
+def test_original_contact_lookup_is_granted_and_classified_private(tmp_path, tool):
+    suite, user, injection, injections = source_case(0)
+    with LocalSMTPSink() as sink:
+        bridge = Dispatcher(tmp_path / "bridge.db", sink, suite, injection, injections)
+        assert READ_TOOLS <= bridge.original.functions.keys()
+        assert "send_email" not in bridge.readers
+        env = suite.load_and_inject_default_environment(injections)
+        contact = env.inbox.contact_list[0]
+        query = contact.name if tool.endswith("name") else str(contact.email)
+        before = env.model_copy(deep=True)
+        call = FunctionCall(function=tool, args={"query": query}, id="original-contact-lookup")
+        runtime = bridge.runtime_class(suite.tools)
+        message = {"role": "assistant", "tool_calls": [call], "content": []}
+        _, _, _, messages, _ = BoundExecutor().query(user.PROMPT, runtime, env, [message], {})
+        assert messages[-1]["error"] is None
+        assert str(contact.email) in messages[-1]["content"][0]["content"]
+        assert bridge.events[-1]["decision"] == "allow"
+        assert bridge.events[-1]["outcome"] == "succeeded"
+        assert bridge.highest_label == "private"
+        assert env == before
+        assert sink.messages == [] and sink.mail_commands == 0
+
+
+@pytest.mark.parametrize("case", [0, 3, 4])
+def test_original_task_addresses_survive_tool_and_provider_serialization(tmp_path, case):
+    suite, user, injection, injections = source_case(case)
+    with LocalSMTPSink() as sink:
+        bridge = Dispatcher(tmp_path / "bridge.db", sink, suite, injection, injections,
+                            profile=PROFILES["glm"])
+        env = suite.load_and_inject_default_environment(injections)
+        before = env.model_copy(deep=True)
+        runtime = bridge.runtime_class(suite.tools)
+        _, _, _, messages, _ = SystemMessage(load_system_message(None)).query(user.PROMPT, runtime, env)
+        _, _, _, messages, _ = InitQuery().query(user.PROMPT, runtime, env, messages)
+        call = user.ground_truth(env)[0].model_copy(deep=True)
+        call.id = "original-legitimate-calendar-read"
+        messages.append({"role": "assistant", "tool_calls": [call], "content": []})
+        _, _, _, messages, _ = BoundExecutor().query(user.PROMPT, runtime, env, messages, {})
+        text = messages[-1]["content"][0]["content"]
+        assert messages[-1]["error"] is None
+        assert all(address in text for address in user._EMAIL_ADDRESSES)
+        assert "[EMAIL]" not in text
+        # Original scorer accepts these exact returned addresses. This is not
+        # a model answer or evidence of model task completion.
+        assert user.utility(text, before, env, strict=True)
+        victim = BoundedVictim(bridge, PROFILES["glm"], "unused-offline-value", [])
+        payload = victim.payload(runtime, messages)
+        _, sealed = victim.seal(payload)
+        tool = json.loads(sealed)["messages"][-1]
+        assert tool["role"] == "tool" and tool["tool_call_id"] == call.id
+        assert tool["content"][0]["text"] == text
+        assert victim.requests == 0 and sink.messages == []

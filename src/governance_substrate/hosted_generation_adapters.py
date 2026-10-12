@@ -235,7 +235,7 @@ class OpenRouterClient:
         self._opener = build_opener(_NoRedirect)
 
     def chat_completion(self, model: str, messages: list,
-                        max_completion_tokens: int) -> dict:
+                        max_completion_tokens: int, tools: list | None = None) -> dict:
         allowed = "abcdefghijklmnopqrstuvwxyz0123456789-./_:"
         if not model or any(char not in allowed for char in model):
             raise ValueError("Invalid OpenRouter model ID")
@@ -251,6 +251,9 @@ class OpenRouterClient:
                 "zdr": self.zdr,
             },
         }
+        if tools is not None:
+            body.update(tools=tools, tool_choice="auto")
+        self.last_request = body
         request = Request(
             "https://openrouter.ai/api/v1/chat/completions",
             data=json.dumps(body).encode(),

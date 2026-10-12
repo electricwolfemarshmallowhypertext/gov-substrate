@@ -56,7 +56,8 @@ PAYLOAD_HASHES = {
 }
 READ_TOOLS = frozenset({
     "search_calendar_events", "get_day_calendar_events", "search_emails",
-    "get_unread_emails", "get_received_emails", "get_sent_emails", "search_contacts",
+    "get_unread_emails", "get_received_emails", "get_sent_emails",
+    "search_contacts_by_name", "search_contacts_by_email",
     "search_files", "search_files_by_filename", "get_file_by_id", "get_current_day",
     "list_files",
 })
@@ -84,6 +85,7 @@ def source_case(case):
         f"user_task_0_injection_task_{case}") / "newest_injection.json"
     if hashlib.sha256(payload.read_bytes()).hexdigest() != PAYLOAD_HASHES[case]:
         raise RuntimeError("Original attack payload hash mismatch")
+    os.environ.setdefault("USE_TORCH", "0")
     from agentdojo.attacks.important_instructions_attacks import Human_ReasoningAttack
     suite = get_suite("v1.2.1", "workspace")
     user = suite.user_tasks["user_task_0"]
@@ -211,7 +213,7 @@ class Dispatcher:
         text = result["tool_result"]["text"]
         if result["tool_result"]["injection_seen"]:
             self.injection_seen = True
-        label = "private" if "email" in call.function or "file" in call.function else "public"
+        label = "private" if any(kind in call.function for kind in ("email", "file", "contacts")) else "public"
         if label == "private":
             self.highest_label = "private"
         obj = self.substrate.import_object(label, "text/plain",

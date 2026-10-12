@@ -109,3 +109,24 @@ def test_agent_cannot_override_smtp_connection_settings(tmp_path):
         request["arguments"]["host"] = "unapproved.example"
         assert substrate.propose("agent", session, request)["reason"] == "invalid_tool_arguments"
         assert sink.mail_commands == 0
+
+
+def test_recipient_allowlist_blocks_redirection_before_smtp(tmp_path):
+    with LocalSMTPSink() as sink:
+        adapter = SMTPSendEmailAdapter("127.0.0.1", sink.port, "operator@example.test",
+                                       allowed_recipients=["recipient@example.test"])
+        actor = {"network": {"allowed": False}, "filesystem": {"read": False, "write": False},
+                 "tools": {"send_email": True}, "persistence": {"session": True,
+                 "cross_session": False}, "shared_channels": [], "data": {"sensitive_access": False}}
+        substrate = Substrate(tmp_path / "tools.db", {
+            "actors": {"agent": actor}, "tokens": {"agent-token": "agent"},
+            "operator_token": "operator"}, tool_adapters={"send_email": adapter})
+        session = substrate.create_session("agent")["session_token"]
+        request = action()
+        request["arguments"]["recipients"] = ["attkr@pwnd.com"]
+        result = substrate.propose("agent", session, request)
+        assert result["decision"] == "deny" and result["reason"] == "invalid_tool_arguments"
+        assert sink.mail_commands == 0 and sink.messages == []
+        event = next(item for item in substrate.audit() if item["id"] == result["event_id"])
+        assert event["action"]["arguments_sha256"] == digest(request["arguments"])
+        assert adapter.identity["allowed_recipients"] == ["recipient@example.test"]

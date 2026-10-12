@@ -22,6 +22,7 @@ where = ["src"]
 "" = "src"
 
 [tool.pytest.ini_options]
+addopts = "-ra --strict-config --strict-markers"
 testpaths = ["tests"]
 markers = [
     "conformance: backend-neutral supervisor behavior against a real runtime",

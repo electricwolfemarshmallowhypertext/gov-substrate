@@ -1,0 +1,15 @@
+{
+  "provider_calls": 0,
+  "model_generated": false,
+  "read_only_audit_token_verified": true,
+  "observer_cannot_append_witness": true,
+  "witness_restart_retained_head": true,
+  "witness_unavailable_action_failed_closed": true,
+  "witness_head": {
+    "verified": true,
+    "event_id": 8,
+    "event_hash": "728342bc7407bc6ef4a0719e4b70f982c9eb1e117f6590de9674073f24b2f1af"
+  },
+  "evidence": "E:\\gov-substrate\\dist\\deployed-authority\\gov-sub-authority-8f8cf7b2a4f2",
+  "cleanup_verified": true
+}

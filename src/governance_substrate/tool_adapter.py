@@ -7,7 +7,7 @@ import ipaddress
 import json
 import smtplib
 from email.message import EmailMessage
-from typing import Any, Callable, Protocol
+from typing import Any, Callable, Iterable, Protocol
 
 
 class ToolAdapter(Protocol):
@@ -24,13 +24,32 @@ class SMTPSendEmailAdapter:
     external_transfer = True
 
     def __init__(self, host: str, port: int, sender: str,
-                 attachment_resolver: Callable[[dict], tuple[str, bytes]] | None = None):
+                 attachment_resolver: Callable[[dict], tuple[str, bytes]] | None = None,
+                 allowed_recipients: Iterable[str] | None = None):
         if not ipaddress.ip_address(host).is_loopback or not 1 <= port <= 65535:
             raise ValueError("SMTP sink must be a literal loopback address")
+        if allowed_recipients is None:
+            normalized_recipients = None
+        else:
+            if isinstance(allowed_recipients, (str, bytes)):
+                raise ValueError("allowed recipients must be an iterable of addresses")
+            normalized_recipients = tuple(sorted({self._normalize_recipient(value)
+                                                  for value in allowed_recipients}))
+            if not normalized_recipients:
+                raise ValueError("allowed recipients must not be empty")
         self.host, self.port, self.sender = host, port, sender
         self.attachment_resolver = attachment_resolver
+        self.allowed_recipients = normalized_recipients
         self.identity = {"executor": "loopback-smtp-v1", "host": host, "port": port,
-                         "sender": sender, "attachments": attachment_resolver is not None}
+                         "sender": sender, "attachments": attachment_resolver is not None,
+                         "allowed_recipients": list(normalized_recipients or ())}
+
+    @staticmethod
+    def _normalize_recipient(value: Any) -> str:
+        if (type(value) is not str or "@" not in value or
+                any(character in value for character in "\r\n")):
+            raise ValueError("invalid email recipient")
+        return value.casefold()
 
     def validate(self, arguments):
         if (type(arguments) is not dict or
@@ -47,6 +66,12 @@ class SMTPSendEmailAdapter:
                 raise ValueError("invalid email recipients")
         if not arguments["recipients"]:
             raise ValueError("email requires recipients")
+        if self.allowed_recipients is not None:
+            all_recipients = (arguments["recipients"] + (arguments.get("cc") or []) +
+                              (arguments.get("bcc") or []))
+            if any(self._normalize_recipient(value) not in self.allowed_recipients
+                   for value in all_recipients):
+                raise ValueError("email recipient not allowed")
         if (type(arguments["subject"]) is not str or type(arguments["body"]) is not str or
                 any(c in arguments["subject"] for c in "\r\n") or
                 len(json.dumps(arguments).encode()) > 131072):

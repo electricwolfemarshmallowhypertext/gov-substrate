@@ -1,6 +1,6 @@
 # Governance Substrate v0.6.0
 
-Governance Substrate has a working reference implementation whose tested runtime boundary enforced capabilities independently of model behavior across local and hosted models.
+Recorded tests establish specific executor, runtime and governed model actions in the named configurations. They do not establish general prompt-injection protection or complete deployed-agent enforcement.
 
 ## Changes since v0.5.0
 

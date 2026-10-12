@@ -13,6 +13,7 @@ import threading
 import time
 import base64
 import copy
+import fnmatch
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
@@ -32,6 +33,25 @@ from .google_attestation import (fetch_google_jwks, key_binding,
                                 verify_google_attestation, verify_attested_result)
 from .runtime_supervisor import RuntimeSupervisor, StopResult
 from .tool_adapter import ToolAdapter
+
+
+def path_protected(path: str, patterns: list[str]) -> bool:
+    """Match case-folded protected patterns against the full path and each component.
+
+    A pattern ending in "/" protects that directory prefix; any other pattern may
+    use fnmatch wildcards and protects a matching file or directory at any depth.
+    """
+    folded = path.casefold()
+    components = folded.split("/")
+    for item in patterns:
+        pattern = item.casefold()
+        if pattern.endswith("/"):
+            if folded.startswith(pattern):
+                return True
+        elif (fnmatch.fnmatchcase(folded, pattern) or
+              any(fnmatch.fnmatchcase(part, pattern) for part in components)):
+            return True
+    return False
 
 
 def canonical(value: Any) -> str:
@@ -67,6 +87,11 @@ def load_registry(path: str | Path) -> dict[str, Any]:
     if control_token is not None and (not control_token or control_token in tokens or
                                       control_token == operator_token):
         raise ValueError("circuit operator token must be distinct and nonempty")
+    audit_env = data.get("audit_reader_token_env")
+    audit_token = os.environ[audit_env] if audit_env else None
+    if audit_token is not None and (not audit_token or audit_token in tokens or
+                                   audit_token in (operator_token, control_token)):
+        raise ValueError("audit reader token must be distinct and nonempty")
     providers = copy.deepcopy(data.get("providers", {}))
     gateway_secrets = {}
     if not isinstance(providers, dict):
@@ -83,7 +108,7 @@ def load_registry(path: str | Path) -> dict[str, Any]:
                 raise ValueError("provider gateway secret must be nonempty")
             gateway_secrets[name] = secret.encode()
     return {"actors": actors, "tokens": tokens, "operator_token": operator_token,
-            "circuit_operator_token": control_token, "providers": providers,
+            "circuit_operator_token": control_token, "audit_reader_token": audit_token, "providers": providers,
             "gateway_secrets": gateway_secrets, "monitoring": data.get("monitoring"),
             "require_task_identity": data.get("require_task_identity", False)}
 
@@ -102,6 +127,12 @@ class Substrate:
         self.actors = copy.deepcopy(registry["actors"])
         self.tokens = dict(registry["tokens"])
         self.operator_token = registry["operator_token"]
+        self.audit_reader_token = registry.get("audit_reader_token")
+        if self.audit_reader_token is not None and (not isinstance(self.audit_reader_token, str) or
+                not self.audit_reader_token or self.audit_reader_token in self.tokens or
+                self.audit_reader_token == self.operator_token or
+                self.audit_reader_token == registry.get("circuit_operator_token")):
+            raise ValueError("audit reader token must be distinct and nonempty")
         self.circuit_operator_token = registry.get("circuit_operator_token")
         if self.circuit_operator_token is not None and (
                 not isinstance(self.circuit_operator_token, str) or
@@ -257,6 +288,8 @@ class Substrate:
                                    for token, actor in self.tokens.items()},
             "operator_token_hash": hashlib.sha256(self.operator_token.encode()).hexdigest(),
         }
+        if self.audit_reader_token is not None:
+            registry_material["audit_reader_token_hash"] = hashlib.sha256(self.audit_reader_token.encode()).hexdigest()
         if self.circuit_operator_token is not None:
             registry_material["circuit_operator_token_hash"] = hashlib.sha256(
                 self.circuit_operator_token.encode()).hexdigest()
@@ -1786,11 +1819,9 @@ class Substrate:
                 parts_of(path)
             except ValueError:
                 return "deny", "invalid_path", None
+            if path_protected(path, capability.get("protected", [])):
+                return "deny", "protected_path", None
             if kind == "filesystem.write":
-                protected = capability.get("protected", [])
-                if any(path == item or (item.endswith("/") and path.startswith(item))
-                       for item in protected):
-                    return "deny", "protected_path", None
                 content = action.get("content")
                 if not isinstance(content, str) or len(content.encode("utf-8")) > MAX_CONTENT:
                     return "deny", "invalid_content", None
@@ -2538,8 +2569,10 @@ def create_app(substrate: Substrate) -> FastAPI:
     @app.get("/audit")
     def audit(authorization: str | None = Header(default=None)):
         token = (authorization or "").removeprefix("Bearer ")
-        if not substrate.is_operator(token):
-            raise HTTPException(401, "invalid operator token")
+        if not (substrate.is_operator(token) or
+                (substrate.audit_reader_token is not None and
+                 hmac.compare_digest(token, substrate.audit_reader_token))):
+            raise HTTPException(401, "invalid audit reader token")
         try:
             return substrate.audit()
         except IntegrityError as exc:

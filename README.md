@@ -14,9 +14,9 @@ Current source version: [v0.6.0](https://github.com/electricwolfemarshmallowhype
 
 ## Demonstrated result
 
-The reference implementation has enforced capability boundaries independently of model behavior across tested local and hosted model paths, and container, native, WASI, and Kubernetes runtimes.
+Recorded executor and runtime tests demonstrate specific capability denials in the documented container, native, WASI and Kubernetes configurations. Hosted-model results establish only the actions described in their individual reports.
 
-In the tested configurations, governed actions passed through the substrate, ungranted runtime paths were blocked, generated outputs retained provenance and classification, and supervised workers could be revoked, stopped, and verified.
+A GLM agent completed a legitimate task through the separate Docker deployment on the pre-repair build; its injection run made no prohibited request. The revised deployment has no live run yet. It has unpaid Docker and saved-request verification only; fresh live enforcement and injection-triggered enforcement remain separate, pending results.
 
 ## How it works
 
