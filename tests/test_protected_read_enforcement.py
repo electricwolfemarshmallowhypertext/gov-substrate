@@ -117,6 +117,9 @@ def run_protected_read(action_factory=None):
                "--mount", f"type=bind,source={ROOT / 'src'},target=/source/src,readonly",
                "--mount", f"type=bind,source={directory},target=/evidence",
                image_id, "python", "-"]
+    evidence_owner = directory.stat()
+    if evidence_owner.st_uid != 0:
+        command[4:4] = ["--user", f"{evidence_owner.st_uid}:{evidence_owner.st_gid}"]
     result = subprocess.run(command, input=PROOF, text=True, capture_output=True, timeout=60)
     assert result.returncode == 0, result.stdout + result.stderr
     receipt = json.loads((directory / "receipt.json").read_text())
