@@ -30,3 +30,14 @@ GovernanceAsSubstrate_TSmith_Sep2026_V2.pdf
 # Local assistant settings and private evaluation notes.
 /.claude/
 /docs/evaluations/Directed-Scenarios.md
+
+# Retired AgentLAB pilots and superseded synthetic challenge files.
+/tests/agentlab_openrouter_pilot.py
+/tests/agentlab_smtp_integration.py
+/tests/authority_challenge.py
+/tests/authority_challenge_cases.py
+/tests/test_agentlab_fixed_replay.py
+/tests/test_agentlab_openrouter_pilot.py
+/tests/test_agentlab_smtp_integration.py
+/tests/test_authority_challenge_fixture.py
+/tests/test_authority_challenge_protocol.py

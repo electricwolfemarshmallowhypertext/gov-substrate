@@ -14,9 +14,17 @@ Current source version: [v0.6.0](https://github.com/electricwolfemarshmallowhype
 
 ## Demonstrated result
 
-Recorded executor and runtime tests demonstrate specific capability denials in the documented container, native, WASI and Kubernetes configurations. Hosted-model results establish only the actions described in their individual reports.
+Governance Substrate was tested in a real Docker deployment. The agent runs in its own locked-down container. It cannot reach the network, the files, or the secrets directly. Its only way to do anything is to ask the substrate, and the substrate decides.
 
-On the current build, a live GLM agent completed a legitimate task through the separate Docker deployment. The substrate then denied that agent's real write request and its real read of a protected file, with no effect and no disclosure. The audit chain was independently verified and witnessed. An attack-payload run was NO ATTACK ATTEMPT: the model never requested the forbidden action.
+- **Hostile worker.** A compromised agent sent 20 forbidden requests: reading secret files, writing protected files, and reaching services it was not granted. All 20 were denied and logged.
+- **Going around the substrate.** From inside the agent's container, 54 attempts to bypass the substrate (network, Docker socket, secrets, files, privileges) all failed. The one legitimate route still worked.
+- **Live AI model.** A model completed a normal task through the substrate. When a request was outside its grants (a write it was not allowed to make, the protected secrets file, an unauthorized export), the substrate refused it, nothing happened, and no secret reached the model.
+- **Email and grants.** A mail server received one authorized email. A replayed request and a revoked grant sent nothing more.
+- **Audit.** Every decision logged. The log was independently recomputed from the raw events, and a separate container holds its own copy of the chain.
+
+Runs where the model never asked for the forbidden action are recorded as "no attempt" and are not counted as evidence.
+
+Receipts for these runs are in [`docs/evidence/receipts`](docs/evidence/receipts), with their hashes in [`docs/evidence/Deployment-Repair-Manifest.json`](docs/evidence/Deployment-Repair-Manifest.json).
 
 ## How it works
 
