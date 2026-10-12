@@ -90,7 +90,9 @@ def observe():
         journal = json.load(response)['entries']
     assert ([(item['event_id'], item['event_hash'], item['previous_hash']) for item in journal] ==
             [(event['id'], event['event_hash'], event['prev_hash']) for event in events]), 'witness_history_mismatch'
-    records = [json.loads(line) for line in Path('/effects/requests.jsonl').read_text().splitlines()]
+    journal_path = Path('/effects/requests.jsonl')
+    journal_bytes = journal_path.read_bytes() if journal_path.exists() else b''
+    records = [json.loads(line) for line in journal_bytes.decode('utf-8').splitlines()]
     paths = [record['path'] for record in records]
     assert paths.count('/ticket') == expected['tickets']
     assert paths.count('/complete') == expected['completions']
@@ -124,7 +126,7 @@ def observe():
               'observer_uid': os.getuid(), 'state_mount_absent': True,
               'audit_head': previous, 'witness_head': witnessed, 'witness_entries_verified': len(journal), 'events': events, 'effect_records': records,
               'receiver_journal_sha256': hashlib.sha256(
-                  Path('/effects/requests.jsonl').read_bytes()).hexdigest()}
+                  journal_bytes).hexdigest()}
     print(json.dumps(result), flush=True)
 
 
