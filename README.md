@@ -16,7 +16,7 @@ Current source version: [v0.6.0](https://github.com/electricwolfemarshmallowhype
 
 Recorded executor and runtime tests demonstrate specific capability denials in the documented container, native, WASI and Kubernetes configurations. Hosted-model results establish only the actions described in their individual reports.
 
-A GLM agent completed a legitimate task through the separate Docker deployment on the pre-repair build; its injection run made no prohibited request. The revised deployment has no live run yet. It has unpaid Docker and saved-request verification only; fresh live enforcement and injection-triggered enforcement remain separate, pending results.
+On the current build, a live GLM agent completed a legitimate task through the separate Docker deployment. The substrate then denied that agent's real write request and its real read of a protected file, with no effect and no disclosure. The audit chain was independently verified and witnessed. An attack-payload run was NO ATTACK ATTEMPT: the model never requested the forbidden action.
 
 ## How it works
 
