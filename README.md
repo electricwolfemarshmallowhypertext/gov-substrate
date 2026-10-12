@@ -6,7 +6,7 @@ Governance Substrate is a runtime layer that enforces what AI agents can access,
 
 > **Technical architecture:** [Substrate Reference Architecture](docs/Substrate-Reference-Architecture.md)
 
-Current source version: [v0.6.0](https://github.com/electricwolfemarshmallowhypertext/gov-substrate/tree/v0.6.0)
+Current source version: [v0.7.0](https://github.com/electricwolfemarshmallowhypertext/gov-substrate/tree/v0.7.0)
 
 > **TL;DR:** Agent intent is not authority. Governance Substrate places permissions, execution control, provenance, and audit beneath the agent so the system — not the prompt — decides what actions are allowed.
 
