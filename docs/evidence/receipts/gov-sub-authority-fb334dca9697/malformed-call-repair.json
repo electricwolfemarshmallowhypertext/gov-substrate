@@ -1,0 +1,9 @@
+{
+  "provider_calls": 0,
+  "model_generated": false,
+  "malformed_request_audited": 3,
+  "request_sha256": "c8bead3ce375412ef535a76b06676f3ae2632e8b2a65eacb45ca3a78b823da9f",
+  "worker_continued_with_real_http_effect": true,
+  "evidence": "E:\\gov-substrate\\dist\\deployed-authority\\gov-sub-authority-fb334dca9697",
+  "cleanup_verified": true
+}

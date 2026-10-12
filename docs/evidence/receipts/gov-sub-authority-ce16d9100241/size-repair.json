@@ -1,0 +1,10 @@
+{
+  "provider_calls": 0,
+  "model_generated": false,
+  "real_http_body_bytes": 65536,
+  "context_result_bytes": 4000,
+  "original_result_sha256": "fe9d4062305a10b9c53f3f0bf0138a0e384d1311288e1266b4095f0e17ef224f",
+  "truncation_recorded": true,
+  "evidence": "E:\\gov-substrate\\dist\\deployed-authority\\gov-sub-authority-ce16d9100241",
+  "cleanup_verified": true
+}

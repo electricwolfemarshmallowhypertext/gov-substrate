@@ -1,0 +1,5 @@
+FROM python@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/worker
+COPY src/governance_substrate/agent_worker.py src/governance_substrate/agent_transport.py /worker/
+USER 65534:65534
+CMD ["python", "-u", "/worker/agent_worker.py"]

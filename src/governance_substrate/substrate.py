@@ -13,6 +13,7 @@ import threading
 import time
 import base64
 import copy
+import fnmatch
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
@@ -31,6 +32,26 @@ from .provider_gateway import (issue_gateway_credential, request_identity,
 from .google_attestation import (fetch_google_jwks, key_binding,
                                 verify_google_attestation, verify_attested_result)
 from .runtime_supervisor import RuntimeSupervisor, StopResult
+from .tool_adapter import ToolAdapter
+
+
+def path_protected(path: str, patterns: list[str]) -> bool:
+    """Match case-folded protected patterns against the full path and each component.
+
+    A pattern ending in "/" protects that directory prefix; any other pattern may
+    use fnmatch wildcards and protects a matching file or directory at any depth.
+    """
+    folded = path.casefold()
+    components = folded.split("/")
+    for item in patterns:
+        pattern = item.casefold()
+        if pattern.endswith("/"):
+            if folded.startswith(pattern):
+                return True
+        elif (fnmatch.fnmatchcase(folded, pattern) or
+              any(fnmatch.fnmatchcase(part, pattern) for part in components)):
+            return True
+    return False
 
 
 def canonical(value: Any) -> str:
@@ -66,6 +87,11 @@ def load_registry(path: str | Path) -> dict[str, Any]:
     if control_token is not None and (not control_token or control_token in tokens or
                                       control_token == operator_token):
         raise ValueError("circuit operator token must be distinct and nonempty")
+    audit_env = data.get("audit_reader_token_env")
+    audit_token = os.environ[audit_env] if audit_env else None
+    if audit_token is not None and (not audit_token or audit_token in tokens or
+                                   audit_token in (operator_token, control_token)):
+        raise ValueError("audit reader token must be distinct and nonempty")
     providers = copy.deepcopy(data.get("providers", {}))
     gateway_secrets = {}
     if not isinstance(providers, dict):
@@ -82,7 +108,7 @@ def load_registry(path: str | Path) -> dict[str, Any]:
                 raise ValueError("provider gateway secret must be nonempty")
             gateway_secrets[name] = secret.encode()
     return {"actors": actors, "tokens": tokens, "operator_token": operator_token,
-            "circuit_operator_token": control_token, "providers": providers,
+            "circuit_operator_token": control_token, "audit_reader_token": audit_token, "providers": providers,
             "gateway_secrets": gateway_secrets, "monitoring": data.get("monitoring"),
             "require_task_identity": data.get("require_task_identity", False)}
 
@@ -93,12 +119,20 @@ class Substrate:
                  runtime_supervisor: RuntimeSupervisor | None = None,
                  audit_witness: AuditWitness | None = None,
                  gateway_secrets: dict[str, bytes] | None = None,
-                 require_audit_witness: bool = False):
+                 require_audit_witness: bool = False,
+                 tool_adapters: dict[str, ToolAdapter] | None = None):
         self.db_path = str(db_path)
         self._execution_lock = threading.RLock()
+        self.tool_adapters = dict(tool_adapters or {})
         self.actors = copy.deepcopy(registry["actors"])
         self.tokens = dict(registry["tokens"])
         self.operator_token = registry["operator_token"]
+        self.audit_reader_token = registry.get("audit_reader_token")
+        if self.audit_reader_token is not None and (not isinstance(self.audit_reader_token, str) or
+                not self.audit_reader_token or self.audit_reader_token in self.tokens or
+                self.audit_reader_token == self.operator_token or
+                self.audit_reader_token == registry.get("circuit_operator_token")):
+            raise ValueError("audit reader token must be distinct and nonempty")
         self.circuit_operator_token = registry.get("circuit_operator_token")
         if self.circuit_operator_token is not None and (
                 not isinstance(self.circuit_operator_token, str) or
@@ -254,11 +288,16 @@ class Substrate:
                                    for token, actor in self.tokens.items()},
             "operator_token_hash": hashlib.sha256(self.operator_token.encode()).hexdigest(),
         }
+        if self.audit_reader_token is not None:
+            registry_material["audit_reader_token_hash"] = hashlib.sha256(self.audit_reader_token.encode()).hexdigest()
         if self.circuit_operator_token is not None:
             registry_material["circuit_operator_token_hash"] = hashlib.sha256(
                 self.circuit_operator_token.encode()).hexdigest()
         if self.providers:
             registry_material["providers"] = self.providers
+        if self.tool_adapters:
+            registry_material["tool_adapters"] = {
+                name: adapter.identity for name, adapter in self.tool_adapters.items()}
         if self.monitoring is not None:
             registry_material["monitoring"] = self.monitoring
         if self.require_task_identity:
@@ -822,7 +861,7 @@ class Substrate:
                 (scope == "global" and target != "*") or
                 (scope == "actor" and target not in self.actors) or
                 (scope == "capability" and target not in
-                 ("session", "state", "object", "network", "filesystem", "generation")) or
+                 ("session", "state", "object", "network", "filesystem", "generation", "tool")) or
                 (scope == "provider" and target not in self.providers) or
                 type(active) is not bool or not isinstance(reason, str) or not reason.strip()):
             raise ValueError("invalid circuit change")
@@ -1780,11 +1819,9 @@ class Substrate:
                 parts_of(path)
             except ValueError:
                 return "deny", "invalid_path", None
+            if path_protected(path, capability.get("protected", [])):
+                return "deny", "protected_path", None
             if kind == "filesystem.write":
-                protected = capability.get("protected", [])
-                if any(path == item or (item.endswith("/") and path.startswith(item))
-                       for item in protected):
-                    return "deny", "protected_path", None
                 content = action.get("content")
                 if not isinstance(content, str) or len(content.encode("utf-8")) > MAX_CONTENT:
                     return "deny", "invalid_content", None
@@ -1798,7 +1835,23 @@ class Substrate:
         if kind == "tool.invoke":
             tool = action.get("tool")
             enabled = isinstance(tool, str) and caps["tools"].get(tool) is True
-            return "deny", "tool_adapter_absent" if enabled else "tool_disabled", None
+            if not enabled:
+                return "deny", "tool_disabled", None
+            adapter = self.tool_adapters.get(tool)
+            if adapter is None:
+                return "deny", "tool_adapter_absent", None
+            if (set(action) - {"kind", "tool", "arguments", "call_id"} or
+                    type(action.get("arguments")) is not dict or
+                    ("call_id" in action and (type(action["call_id"]) is not str or
+                                             len(action["call_id"]) > 256))):
+                return "deny", "invalid_tool_arguments", None
+            try:
+                adapter.validate(action["arguments"])
+            except (TypeError, ValueError):
+                return "deny", "invalid_tool_arguments", None
+            if adapter.external_transfer and self._sensitive_reader(db, actor, caps):
+                return "deny", "sensitive_external_egress_disabled", None
+            return "allow", "tool_granted", adapter
         if kind == "credential.expand":
             return "deny", "credential_scope_fixed", None
         return "deny", "unknown_action", None
@@ -1807,6 +1860,8 @@ class Substrate:
                 execution_token: str | None = None,
                 authorize_only: bool = False,
                 task_id: str | None = None) -> dict[str, Any]:
+        if action.get("kind") == "tool.invoke":
+            action = copy.deepcopy(action)
         if action.get("kind") in ("network.request", "object.publish"):
             return self._propose(actor, session_token, action, execution_token,
                                  authorize_only, task_id)
@@ -1949,6 +2004,10 @@ class Substrate:
                     logged_action["approval_request_id"] = approval_request_id
                 if decision == "allow":
                     logged_action["generation_id"] = value
+            if action.get("kind") == "tool.invoke":
+                logged_action = {"kind": "tool.invoke", "tool": action.get("tool"),
+                                 "arguments_sha256": digest(action.get("arguments")),
+                                 "call_id": action.get("call_id")}
             if action.get("kind") == "network.request" and "services" in self.actors[actor]["network"]:
                 url = action.get("url")
                 try:
@@ -2115,6 +2174,37 @@ class Substrate:
                     {"rule": "adapter_result"}, result["outcome"], after, current,
                     elapsed_ms=(time.perf_counter() - started) * 1000,
                 )
+                db.commit()
+        if decision == "allow" and action["kind"] == "tool.invoke":
+            try:
+                with self._db() as db:
+                    expected = self._verify(db)
+                    live = db.execute(
+                        "SELECT id FROM sessions WHERE actor=? AND token_hash=? AND active=1",
+                        (actor, hashlib.sha256(session_token.encode()).hexdigest())).fetchone()
+                    if (self._snapshot(db) != expected or live is None or
+                            not self._task_session_live(db, live["id"]) or
+                            self._session_task_id(db, live["id"]) != task_id or
+                            self._stopped(db, actor, "tool", None)):
+                        raise ValueError("capability_unavailable")
+                response = namespace.execute(copy.deepcopy(action["arguments"]))
+                result.update(outcome="succeeded", tool_result=response)
+                outcome = {"result_sha256": digest(response)}
+                if isinstance(response.get("tool_error"), str) and response["tool_error"]:
+                    result.update(outcome="failed", error="upstream_tool_error")
+                    outcome["error"] = "upstream_tool_error"
+            except Exception as exc:
+                result.update(outcome="failed", error=type(exc).__name__)
+                outcome = {"error": type(exc).__name__}
+            with self._db() as db:
+                db.execute("BEGIN IMMEDIATE")
+                snapshot = self._snapshot(db)
+                result["outcome_event_id"] = self._append(
+                    db, actor, {"kind": "tool.result", "tool": action["tool"],
+                                "call_id": action.get("call_id"),
+                                "request_event_id": event_id, **outcome},
+                    {"rule": "adapter_result"}, result["outcome"], snapshot, snapshot,
+                    elapsed_ms=(time.perf_counter() - started) * 1000)
                 db.commit()
         return result
 
@@ -2479,8 +2569,10 @@ def create_app(substrate: Substrate) -> FastAPI:
     @app.get("/audit")
     def audit(authorization: str | None = Header(default=None)):
         token = (authorization or "").removeprefix("Bearer ")
-        if not substrate.is_operator(token):
-            raise HTTPException(401, "invalid operator token")
+        if not (substrate.is_operator(token) or
+                (substrate.audit_reader_token is not None and
+                 hmac.compare_digest(token, substrate.audit_reader_token))):
+            raise HTTPException(401, "invalid audit reader token")
         try:
             return substrate.audit()
         except IntegrityError as exc:

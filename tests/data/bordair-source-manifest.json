@@ -1,0 +1,53 @@
+{
+  "repository": "https://github.com/Josh-blythe/bordair-multimodal",
+  "commit": "27d3206193b67cd86ad1faf9e19c725b954ab791",
+  "payload_policy": "unchanged source text; raw downloaded files stay in ignored dist; no redistribution license established",
+  "cases": [
+    {
+      "id": "CODE-000016",
+      "source_path": "payloads_v5/coding_agent_injection/coding_agent_injection_001.json",
+      "source_file_sha256": "88735b6463c6417a669667fe6b70a34811a7ae04f6bb12d5a6c563b226102cea",
+      "payload_utf8_sha256": "2e2c09ead40ba213d1660d47a1d0714cee49d5c0317b57058c62781ed2084101",
+      "target_paths": [
+        ".env"
+      ],
+      "native_tool": "read_file",
+      "substrate_capability": "filesystem.read",
+      "executor": "governance_substrate.filesystem_adapter.read_text",
+      "existing_real_test": "tests/test_protected_read_enforcement.py",
+      "readiness": "strict local task/effect/denial/audit plumbing verified; live control and source-payload run pending",
+      "provenance": "constructed publisher payload; not a verified breach transcript"
+    },
+    {
+      "id": "CODE-000018",
+      "source_path": "payloads_v5/coding_agent_injection/coding_agent_injection_001.json",
+      "source_file_sha256": "88735b6463c6417a669667fe6b70a34811a7ae04f6bb12d5a6c563b226102cea",
+      "payload_utf8_sha256": "d7926beb8865a95cb2a69338356b7e5fa5702137664a550e21c507aa2c9f6048",
+      "target_paths": [
+        "~/.ssh/id_rsa"
+      ],
+      "native_tool": "read_file",
+      "substrate_capability": "filesystem.read",
+      "executor": "governance_substrate.filesystem_adapter.read_text",
+      "existing_real_test": "tests/test_protected_read_enforcement.py",
+      "readiness": "strict local task/effect/denial/audit plumbing verified; live control and source-payload run pending",
+      "provenance": "constructed publisher payload; not a verified breach transcript"
+    },
+    {
+      "id": "MCPX-000001",
+      "source_path": "payloads_v5/mcp_cross_server_exfil/mcp_cross_server_exfil_001.json",
+      "source_file_sha256": "df4376fddb4dbaea89fbfbba9d8aa60dd04f737276c2d404a1f60a63022d16ba",
+      "payload_utf8_sha256": "6c862967218340ced3353940c2eaf6990258b7600a4e6848049a69d2fc45e734",
+      "target_paths": [
+        "~/.cursor/mcp.json",
+        "~/.ssh/id_rsa"
+      ],
+      "native_tool": "read_file",
+      "substrate_capability": "filesystem.read",
+      "executor": "governance_substrate.filesystem_adapter.read_text",
+      "existing_real_test": "tests/test_protected_read_enforcement.py",
+      "readiness": "strict local task/effect/denial/audit plumbing verified; live control and source-payload run pending",
+      "provenance": "constructed publisher payload; not a verified breach transcript"
+    }
+  ]
+}

@@ -1,0 +1,136 @@
+services:
+  witness:
+    image: ${AUTHORITY_IMAGE}
+    command: [python, -m, governance_substrate.audit_witness]
+    environment: {PYTHONPATH: /source, WITNESS_PATH: /witness/heads.jsonl}
+    volumes:
+      - ../../src:/source:ro
+      - ${AUTHORITY_CERTS}/witness:/certs:ro
+      - witness_state:/witness
+    networks: [witness]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: [CMD, python, -c, "import socket; socket.create_connection(('127.0.0.1',8443),2).close()"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+  receiver:
+    image: ${AUTHORITY_IMAGE}
+    command: [python, /tests/deployed_authority_service.py, receiver]
+    environment: {PYTHONPATH: /source}
+    volumes:
+      - ../../src:/source:ro
+      - ../../tests/deployed_authority_service.py:/tests/deployed_authority_service.py:ro
+      - ${AUTHORITY_CONFIG}/note.txt:/config/note.txt:ro
+      - ${AUTHORITY_EFFECTS}:/effects
+    networks: [effects]
+    healthcheck:
+      test: [CMD, python, -c, "import socket; socket.create_connection(('127.0.0.1',8080),2).close()"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+  substrate:
+    image: ${AUTHORITY_IMAGE}
+    command: [python, -m, governance_substrate.agent, serve]
+    environment:
+      PYTHONPATH: /source
+      GOV_SUBSTRATE_REGISTRY: /config/registry.json
+      GOV_SUBSTRATE_DB: /state/substrate.db
+      GOV_SUBSTRATE_WORKSPACE: /workspace
+      AGENT_TOKEN: ${AUTHORITY_AGENT_TOKEN}
+      AMBIENT_TOKEN: ${AUTHORITY_AMBIENT_TOKEN}
+      GOV_SUBSTRATE_OPERATOR_TOKEN: ${AUTHORITY_OPERATOR_TOKEN}
+      GOV_SUBSTRATE_AGENT_GATEWAY_SECRET: ${AUTHORITY_GATEWAY_SECRET}
+      GOV_SUBSTRATE_AUDIT_READER_TOKEN: ${AUTHORITY_AUDIT_READER_TOKEN}
+      GOV_SUBSTRATE_HIGH_ASSURANCE: '1'
+      GOV_SUBSTRATE_WITNESS_URL: https://witness:8443
+      GOV_SUBSTRATE_WITNESS_CA: /witness-certs/ca.crt
+      GOV_SUBSTRATE_WITNESS_CERT: /witness-certs/substrate.crt
+      GOV_SUBSTRATE_WITNESS_KEY: /witness-certs/substrate.key
+    volumes:
+      - ../../src:/source:ro
+      - ${AUTHORITY_CONFIG}/registry.json:/config/registry.json:ro
+      - ${AUTHORITY_CERTS}/substrate:/witness-certs:ro
+      - state:/state
+      - ${AUTHORITY_WORKSPACE}:/workspace
+      - ipc_agent:/ipc/agent
+      - ipc_audit:/ipc/audit
+    tmpfs:
+      - /ipc/operator:mode=0700
+    networks: [effects, witness]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: [CMD, python, -c, "import os; from governance_substrate.agent import SubstrateClient; assert SubstrateClient('/ipc/operator/substrate.sock',os.environ['AGENT_TOKEN']).request('GET','/health').status_code == 200"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+    depends_on:
+      receiver: {condition: service_healthy}
+      witness: {condition: service_healthy}
+  agent:
+    image: ${AUTHORITY_WORKER_IMAGE}
+    command: [python, -u, /worker/agent_worker.py]
+    environment:
+      PYTHONPATH: /worker
+      AGENT_TOKEN: ${AUTHORITY_AGENT_TOKEN}
+    volumes:
+      - ../../src/governance_substrate/agent_worker.py:/worker/agent_worker.py:ro
+      - ../../src/governance_substrate/agent_transport.py:/worker/agent_transport.py:ro
+      - ipc_agent:/ipc/agent
+    network_mode: none
+    user: '65534:65534'
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 64
+    depends_on:
+      substrate: {condition: service_healthy}
+    stdin_open: true
+  counterfactual:
+    image: ${AUTHORITY_IMAGE}
+    command: [python, /tests/deployed_authority_service.py, direct]
+    environment: {PYTHONPATH: /source}
+    volumes:
+      - ../../src:/source:ro
+      - ../../tests/deployed_authority_service.py:/tests/deployed_authority_service.py:ro
+      - ${AUTHORITY_DIRECT_WORKSPACE}:/workspace
+    networks: [effects]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    stdin_open: true
+  observer:
+    image: ${AUTHORITY_IMAGE}
+    command: [python, /tests/deployed_authority_service.py, observer]
+    environment:
+      PYTHONPATH: /source
+      AUDIT_READER_TOKEN: ${AUTHORITY_AUDIT_READER_TOKEN}
+    volumes:
+      - ../../src:/source:ro
+      - ../../tests/deployed_authority_service.py:/tests/deployed_authority_service.py:ro
+      - ${AUTHORITY_EFFECTS}:/effects:ro
+      - ${AUTHORITY_WORKSPACE}:/workspace:ro
+      - ${AUTHORITY_DIRECT_WORKSPACE}:/counterfactual-workspace:ro
+      - ipc_audit:/ipc/audit:ro
+      - ${AUTHORITY_CERTS}/observer:/certs:ro
+    networks: [witness]
+    user: '65534:65534'
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    stdin_open: true
+networks:
+  effects: {internal: true}
+  witness: {internal: true}
+volumes:
+  witness_state: {}
+  state: {}
+  ipc_agent: {}
+  ipc_audit: {}

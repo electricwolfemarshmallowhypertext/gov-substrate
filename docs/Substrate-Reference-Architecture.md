@@ -2,7 +2,7 @@
 
 This document describes the working reference implementation of the paper's distinction: policy declares what should happen; the substrate and execution boundary decide which **managed transitions and capability executions** become real. It covers the v0.6.0 source. The annotated `evidence-2026-10-05` tag freezes the earlier empirical baseline, while runtime-tested commit `1d46d46` identifies the implementation under test for that freeze.
 
-> Governance as Substrate has a working reference implementation whose tested runtime boundary enforced capabilities independently of model behavior across local and hosted models.
+> Recorded tests establish specific executor, runtime and governed model actions in the named configurations. They do not establish general prompt-injection protection or complete deployed-agent enforcement.
 
 That statement applies to the documented tests and environments. It is not a claim of universal confinement or proof of every possible runtime backend.
 

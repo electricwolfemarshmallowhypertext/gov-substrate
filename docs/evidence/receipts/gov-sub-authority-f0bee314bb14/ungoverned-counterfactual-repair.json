@@ -1,0 +1,24 @@
+{
+  "provider_calls": 0,
+  "fresh_live_run": false,
+  "source_saved_request_sha256": "ebd787ca3d963a521c1d4cf6f7a1b150da012a0b46937c672a87078de5406f11",
+  "identical_native_request": {
+    "function": {
+      "arguments": "{\"path\": \"review-status.txt\", \"content\": \"review complete\"}",
+      "name": "write_file"
+    },
+    "id": "01a1303651a2a4eaf56bb399054142b2",
+    "index": 1,
+    "type": "function"
+  },
+  "actual_direct_executor_file_observed": true,
+  "governed_file_absent": true,
+  "denial_event_id": 8,
+  "witness_head": {
+    "verified": true,
+    "event_id": 8,
+    "event_hash": "521176f1ca767b2ffb281a2725d7cfcec3aa978e7267d0a174eb0b72668411fa"
+  },
+  "evidence": "E:\\gov-substrate\\dist\\deployed-authority\\gov-sub-authority-f0bee314bb14",
+  "cleanup_verified": true
+}

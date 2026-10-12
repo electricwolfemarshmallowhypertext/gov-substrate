@@ -1,0 +1,10 @@
+{
+  "provider_calls": 0,
+  "model_generated": false,
+  "registry_task_image_changes_invalidate_control": true,
+  "fingerprint": "ad1376292a1560ed91792cead0ed9b288082d36b78acf42f20d54ae8671a996d",
+  "non_container_launch_rejected": true,
+  "container_operator_provider_gateway_secrets_absent": true,
+  "evidence": "E:\\gov-substrate\\dist\\deployed-authority\\gov-sub-authority-826f04ce6950",
+  "cleanup_verified": true
+}

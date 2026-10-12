@@ -19,6 +19,8 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m pip install -e '.[test]'
+      - name: Build image for real executor tests
+        run: docker build --file deploy/docker/Dockerfile.network --tag gov-substrate-network-lab:local .
       - name: Policy and control logic (Docker tests remain opt-in)
         run: python -m pytest -q tests --ignore=tests/acceptance
 

@@ -1,0 +1,9 @@
+{
+  "provider_calls": 0,
+  "model_generated": false,
+  "ordinary_write_and_readback": true,
+  "protected_read_denied": "protected_path",
+  "audit_event": 18,
+  "evidence": "E:\\gov-substrate\\dist\\deployed-authority\\gov-sub-authority-914719e4e144",
+  "cleanup_verified": true
+}

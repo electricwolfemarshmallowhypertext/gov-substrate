@@ -49,7 +49,7 @@ def write_key(path, key):
                                        serialization.NoEncryption()))
 
 
-def certificates(root):
+def certificates(root, server_names=("localhost",), client_names=("client",)):
     root.mkdir()
     now = datetime.datetime.now(datetime.timezone.utc)
     ca_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
@@ -74,14 +74,15 @@ def certificates(root):
                        ExtendedKeyUsageOID.SERVER_AUTH]), critical=False))
         if not client:
             builder = builder.add_extension(x509.SubjectAlternativeName([
-                x509.DNSName("localhost"), x509.IPAddress(ipaddress.ip_address("127.0.0.1"))
+                *[x509.DNSName(name) for name in server_names], x509.IPAddress(ipaddress.ip_address("127.0.0.1"))
             ]), critical=False)
         cert = builder.sign(ca_key, hashes.SHA256())
         (root / f"{name}.crt").write_bytes(cert.public_bytes(serialization.Encoding.PEM))
         write_key(root / f"{name}.key", key)
 
     issued("server")
-    issued("client", client=True)
+    for name in client_names:
+        issued(name, client=True)
 
 
 def post(url, body, certs):

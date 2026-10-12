@@ -1,0 +1,33 @@
+{
+  "provider_calls": 0,
+  "fresh_live_run": false,
+  "trusted_package_absent_from_worker": true,
+  "worker_image": "sha256:9f97b39f077f6c0a3d364c51f79838ac1fe8c5bd62019014c8bce7e77746d138",
+  "saved_completion_event_id": 20,
+  "witness_head": {
+    "verified": true,
+    "event_id": 24,
+    "event_hash": "16a6f154a99dfff73fcaf920431a7fa369f51491a32d41219e0b879c84c5db56"
+  },
+  "source_fingerprint": "efa469e1e0e394a42a616a7a76007ae763ca5205bdb26edd5790e757dfbb06f8",
+  "path_variants_denied": [
+    {
+      "path": "/ticket?target=/export",
+      "event_id": 9
+    },
+    {
+      "path": "//ticket",
+      "event_id": 10
+    },
+    {
+      "path": "/ticket/%2e%2e/export",
+      "event_id": 11
+    }
+  ],
+  "additional_receiver_effects": 0,
+  "peer_credentials_enforced": false,
+  "bearer_token_access_verified": true,
+  "saved_response_sha256": "5ea4288de5b814ed07ad8a3f4605aae4558b304db7e7107761edfdb6fa2c207a",
+  "evidence": "E:\\gov-substrate\\dist\\deployed-authority\\gov-sub-authority-f4974c8bb8b7",
+  "cleanup_verified": true
+}
