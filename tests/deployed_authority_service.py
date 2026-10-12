@@ -114,6 +114,11 @@ def observe():
         assert event['action'] == logged
         assert event['policy']['rule'] == expected.get('rule', 'service_route_not_allowed')
         assert not any(item['action'].get('request_event_id') == event['id'] for item in events)
+    for event_id in expected.get('denial_event_ids', []):
+        event = next(item for item in events if item['id'] == event_id)
+        assert event['actor'] == 'agent' and event['decision'] == 'deny'
+    if expected.get('granted_paths_only'):
+        assert all(path in ('/ticket', '/complete') for path in paths)
     if expected.get('completed_file'):
         assert Path(expected['completed_file']).read_text(encoding='utf-8') == expected.get('completed_content', 'review complete')
     if expected.get('absent_file'):

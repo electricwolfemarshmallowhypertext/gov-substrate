@@ -50,7 +50,7 @@
     {
       "rows": "6",
       "artifact": "receipts/gov-sub-authority-fb334dca9697/malformed-call-repair.json",
-      "sha256": "9fc0bcbc4b2cb856afcfe3ad59f5ad18828cb7b05bbba74c23c264d013d8a20b",
+      "sha256": "3a0d84bb35ce07c02b331808ac4c77ab5cd0937b3571c3f41cc8b94d94d8a93a",
       "provider_calls": 0,
       "fresh_live_run": false,
       "observed_audit_checkpoints": [],
@@ -60,7 +60,7 @@
     {
       "rows": "7",
       "artifact": "receipts/gov-sub-authority-b500e1c9cffe/stream-repair.json",
-      "sha256": "05fd6cf7f94e57a149f08134beb2e956889c802bb06d9169470a59a784f1d9d4",
+      "sha256": "580c880d288bd4deca64823ea5b398def66d275a505f8b3febd49deee754a872",
       "provider_calls": 0,
       "fresh_live_run": false,
       "observed_audit_checkpoints": [],
@@ -70,7 +70,7 @@
     {
       "rows": "5",
       "artifact": "receipts/gov-sub-authority-ce16d9100241/size-repair.json",
-      "sha256": "1f17fb9e213ae566284c476feb84e3fc3f59d7e997dbd259e35f24a1d8736ae0",
+      "sha256": "5f952c384c3c31b9ec124b73a6de949ed9ab86395f382bee7e51076b0885cb35",
       "provider_calls": 0,
       "fresh_live_run": false,
       "observed_audit_checkpoints": [],
@@ -80,7 +80,7 @@
     {
       "rows": "10",
       "artifact": "receipts/gov-sub-authority-914719e4e144/protected-read-repair.json",
-      "sha256": "3262d950afe0bc8acc8eca49c390ad6ff9dfc0fbf2db4d658a9d1e73c23f526c",
+      "sha256": "bf16f427723c8e7b44fa83648acf695b7657fb4a4e4dd10cfd163636bdce88b2",
       "provider_calls": 0,
       "fresh_live_run": false,
       "observed_audit_checkpoints": [],
@@ -90,7 +90,7 @@
     {
       "rows": "12,13",
       "artifact": "receipts/gov-sub-authority-826f04ce6950/fingerprint-environment-repair.json",
-      "sha256": "41b51a83fcc16d235b09e1e622d1e7027f0943b734eae249aaed1074012c66f6",
+      "sha256": "d37dd0fb22ec6d06e37689013a067759375c9292af16c7e320207c257b70b86d",
       "provider_calls": 0,
       "fresh_live_run": false,
       "observed_audit_checkpoints": [],
@@ -100,7 +100,7 @@
     {
       "rows": "8",
       "artifact": "receipts/gov-sub-authority-8f8cf7b2a4f2/observer-witness-repair.json",
-      "sha256": "05336eee98596ed9967e121b761be321f7458dd399927031db9f929f8bc8f029",
+      "sha256": "2c001a99c32082b40a6a17c924721a5b84a4c94cbf10c510cea2f1f5aebddf26",
       "provider_calls": 0,
       "fresh_live_run": false,
       "observed_audit_checkpoints": [
@@ -116,7 +116,7 @@
     {
       "rows": "9",
       "artifact": "receipts/gov-sub-authority-f0bee314bb14/ungoverned-counterfactual-repair.json",
-      "sha256": "596848d8db234dfb9a79157713b41c16564da6d560f34a8acca5483bc65073be",
+      "sha256": "143f685184194675c29654e2a43efe17ed25c0e8aa37a6997334791da6fe06f0",
       "provider_calls": 0,
       "fresh_live_run": false,
       "observed_audit_checkpoints": [
@@ -132,7 +132,7 @@
     {
       "rows": "14,16",
       "artifact": "receipts/gov-sub-authority-f4974c8bb8b7/worker-split-path-repair.json",
-      "sha256": "9732ea0a72b70e0d59acfedb995eaf844d7021ff7b01838da03e95957763c258",
+      "sha256": "749fe98b8999353e440d3399ce0644804e9aa2d2618a0969831fc385a7f7848d",
       "provider_calls": 0,
       "fresh_live_run": false,
       "observed_audit_checkpoints": [
@@ -148,7 +148,7 @@
     {
       "rows": "final-unpaid",
       "artifact": "receipts/gov-sub-authority-9b0142ff8892/receipt.json",
-      "sha256": "3f17e352d68853e6b97f52d8f1b12eb53ba88d112ff14b0f22532a4cec879b7e",
+      "sha256": "1ecc7b98f31b67c2601c4b71ad9edd8df3503145cc496fdccbf99b26b8d9e38f",
       "provider_calls": 0,
       "fresh_live_run": false,
       "observed_audit_checkpoints": [
@@ -174,7 +174,7 @@
     {
       "rows": "final-unpaid,row16-persistent",
       "artifact": "receipts/gov-sub-authority-d833958e4fb8/receipt.json",
-      "sha256": "a1043de33c81066f9c06d6a889539237d29628ef809685a9b59ca32e375b4e4a",
+      "sha256": "4c6ac1df4b011e5fbccdb07f2dd301538f5008bbdbb50e225c13c25ed72e0b18",
       "provider_calls": 0,
       "fresh_live_run": false,
       "source_fingerprint": "cc8432c35af2f0b0f70b2e95fa7e38fa45781b7a69e0d579a0832b05fe9cab66",
@@ -205,7 +205,7 @@
     {
       "rows": "unpaid-readiness: rows 1-9,peer-credentials",
       "artifact": "receipts/gov-sub-authority-7e6ee4afba29/receipt.json",
-      "sha256": "d99fbcbdbbc952d67855475c43c7cb94efc472afddcbff08ed850a5dfea92490",
+      "sha256": "c328b3b22032e973bedc6883a99938958ef22cfd1e57c052346fb79fa8b81070",
       "provider_calls": 0,
       "fresh_live_run": false,
       "source_fingerprint": "8dcaa11faf1bef18f612f98ee00ebb65f926475952ffd4e6c0040c931e18169e",
@@ -221,7 +221,7 @@
     {
       "rows": "live-control",
       "artifact": "receipts/gov-sub-authority-2851f6327159/receipt.json",
-      "sha256": "3e82d70af443a7bf773f519a1c64ddf008da5b62bd7cb09d8e485bb508f43d3e",
+      "sha256": "29aa91466c2585672cd1eb9480f469f0079f7de3ef403585332475364f8ee7b9",
       "provider_calls": 4,
       "fresh_live_run": true,
       "source_fingerprint": "8dcaa11faf1bef18f612f98ee00ebb65f926475952ffd4e6c0040c931e18169e",
@@ -240,7 +240,7 @@
     {
       "rows": "live-injection-run",
       "artifact": "receipts/gov-sub-authority-8dc51363b4db/receipt.json",
-      "sha256": "d5ceaf086d38f530c9dc42ad30deabef84911cc0829eae8c25eef9eccf39788e",
+      "sha256": "96e0234313721e6b3170831a2f2f28d4e4c6013a61a3e801857f2703cc45f863",
       "provider_calls": 4,
       "fresh_live_run": true,
       "source_fingerprint": "8dcaa11faf1bef18f612f98ee00ebb65f926475952ffd4e6c0040c931e18169e",
@@ -259,7 +259,7 @@
     {
       "rows": "live-governance",
       "artifact": "receipts/gov-sub-authority-f22af90e6229/receipt.json",
-      "sha256": "2680086a320c69b9065d47c9bedd8af7a8646b9c0044cee4a1ea0c6e725ff77c",
+      "sha256": "4d30dff82926333b1af581aa00fe9c68e252388d04e53aaf43ec20230b9062d3",
       "provider_calls": 4,
       "fresh_live_run": true,
       "source_fingerprint": "8dcaa11faf1bef18f612f98ee00ebb65f926475952ffd4e6c0040c931e18169e",
@@ -294,5 +294,6 @@
     "reason": "Windows application control blocked PyTorch shm.dll during stored AgentLAB payload import.",
     "resolution": "Supported USE_TORCH=0 tokenizer-only mode; no Windows policy change.",
     "failed_log_sha256": "ed238c0e1ed28720266c0694d63686def780f216994a7effdc555567c1cd903d"
-  }
+  },
+  "receipt_hash_basis": "sha256 of the committed LF receipt files in docs/evidence/receipts; the originals in dist/ are identical except CRLF line endings"
 }
