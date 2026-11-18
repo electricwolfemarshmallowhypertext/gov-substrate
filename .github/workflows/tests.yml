@@ -514,6 +514,9 @@ jobs:
           set -euo pipefail
           sudo apt-get update -qq
           sudo apt-get install -y -qq socat
+          # The driver pulls these before binding; prepare them outside the readiness window.
+          timeout 300 docker pull ghcr.io/nvidia/openshell/supervisor:0.1.2
+          timeout 300 docker pull ghcr.io/nvidia/openshell/sandbox:0.1.2
           root="$RUNNER_TEMP/openshell"
           mkdir -p "$root" "$HOME/.config/openshell/gateways/phase5/mtls"
           openshell-gateway generate-certs --output-dir "$root/tls" \
@@ -563,6 +566,13 @@ jobs:
             fi
             sleep 1
           done
+          if ! nc -z 127.0.0.1 18670; then
+            echo "OpenShell gateway did not listen on 127.0.0.1:18670 within 90 seconds" >&2
+            cat "$root/gateway.log"
+            docker version
+            docker info
+            exit 1
+          fi
           bridge_ip="$(docker network inspect bridge -f '{{(index .IPAM.Config 0).Gateway}}')"
           nohup socat "TCP-LISTEN:18671,bind=$bridge_ip,reuseaddr,fork" \
             TCP:127.0.0.1:18670 >"$root/bridge-proxy.log" 2>&1 &
