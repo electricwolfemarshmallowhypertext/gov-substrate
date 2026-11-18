@@ -5,8 +5,6 @@ import os
 import sys
 
 MAX_BATCH = 16
-NOT_EXECUTED = {'outcome': 'not_executed',
-                'reason': 'Read the preceding tool result before requesting this action again.'}
 
 if __package__:
     from .agent_transport import SubstrateClient, canonical
@@ -37,17 +35,20 @@ def worker():
                 calls = message.get('tool_calls') or []
                 if type(calls) is not list:
                     raise RuntimeError('invalid_tool_call_list')
-                overflow = [{'call_id': call.get('id') if isinstance(call, dict) else None,
-                             'native_call': call, 'action': None, 'authorization': None,
-                             'deferred': True, 'overflow': True, 'result': NOT_EXECUTED}
-                            for call in calls[MAX_BATCH:]]
-                calls = calls[:MAX_BATCH]
                 # Return the first tool result before accepting any dependent action.
                 capture_only = command.get('capture_only', False)
                 if type(capture_only) is not bool:
                     raise ValueError('invalid_capture_option')
                 executed = [client.native(calls[0])] if calls and not capture_only else []
-                deferred = [client.defer(call) for call in calls[1:]] + overflow
+                deferred = []
+                for index, call in enumerate(calls[1:], 1):
+                    event = client.defer(call)
+                    authorization = event.get('authorization') or {}
+                    if type(authorization.get('event_id')) is not int:
+                        raise RuntimeError('deferred_call_audit_receipt_absent')
+                    if index >= MAX_BATCH:
+                        event['overflow'] = True
+                    deferred.append(event)
                 result = {'message': message, 'calls': executed, 'deferred_calls': deferred,
                           'native_requests': calls[:1] if capture_only else [],
                           'governed_output_read': source}
