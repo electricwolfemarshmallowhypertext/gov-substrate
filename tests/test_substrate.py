@@ -213,3 +213,19 @@ def test_unlogged_registry_change_fails_closed(system):
     response = restarted.post("/proposals", headers=headers(session=session), json={
         "action": {"kind": "state.write", "scope": "session", "key": "x", "value": 1}})
     assert response.status_code == 503
+
+
+def test_pending_write_records_its_originating_session(system):
+    substrate, client, _, headers = system
+    session = client.post("/sessions", headers=headers()).json()
+    result = propose(client, headers, session["session_token"],
+                     {"kind": "state.write", "scope": "persistent", "key": "note", "value": "review"})
+    assert result["decision"] == "escalate"
+    event = substrate.audit()[result["event_id"] - 1]
+    assert event["policy"].get("origin_session_id") == session["session_id"]
+    new_session(client, headers)
+    response = substrate.override(result["event_id"], "reviewed")
+    assert response["decision"] == "deny"
+    assert response["reason"] == "origin_authority_revoked"
+    last = substrate.audit()[-1]
+    assert last["state_before"] == last["state_after"]

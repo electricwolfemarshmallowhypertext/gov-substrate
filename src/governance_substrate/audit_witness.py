@@ -59,7 +59,7 @@ class MTLSAuditWitness:
         }) == {"verified": True, "event_id": event_id, "event_hash": event_hash}
 
 
-def serve_witness():
+def serve_witness(*, address=("0.0.0.0", 8443), cert_dir="/certs"):
     """Serve the existing append/verify contract with durable, role-bound mTLS."""
     import hashlib
     import os
@@ -113,11 +113,11 @@ def serve_witness():
             payload = json.dumps(result).encode()
             self.send_response(200); self.send_header('Content-Length', str(len(payload)))
             self.end_headers(); self.wfile.write(payload)
-    server = ThreadingHTTPServer(('0.0.0.0', 8443), Handler)
+    server = ThreadingHTTPServer(address, Handler)
     context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
     context.verify_mode = ssl.CERT_REQUIRED
-    context.load_cert_chain('/certs/server.crt', '/certs/server.key')
-    context.load_verify_locations('/certs/ca.crt')
+    context.load_cert_chain(Path(cert_dir) / 'server.crt', Path(cert_dir) / 'server.key')
+    context.load_verify_locations(Path(cert_dir) / 'ca.crt')
     server.socket = context.wrap_socket(server.socket, server_side=True)
     server.serve_forever()
 

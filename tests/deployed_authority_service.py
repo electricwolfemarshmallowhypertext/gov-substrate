@@ -64,11 +64,7 @@ def receiver():
     HTTPServer(('0.0.0.0', 8080), Handler).serve_forever()
 
 
-def observe():
-    assert os.getuid() == 65534
-    assert not Path('/state').exists() and not Path('/config/registry.json').exists()
-    expected = json.load(sys.stdin)
-    events = api('GET', '/audit', os.environ['AUDIT_READER_TOKEN'])
+def verify_event_chain(events):
     previous = '0' * 64
     for event in events:
         fields = {key: value for key, value in event.items() if key not in ('id', 'event_hash')}
@@ -76,6 +72,15 @@ def observe():
             fields[key] = canonical(fields[key])
         assert fields['prev_hash'] == previous and digest(fields) == event['event_hash']
         previous = event['event_hash']
+    return previous
+
+
+def observe():
+    assert os.getuid() == 65534
+    assert not Path('/state').exists() and not Path('/config/registry.json').exists()
+    expected = json.load(sys.stdin)
+    events = api('GET', '/audit', os.environ['AUDIT_READER_TOKEN'])
+    previous = verify_event_chain(events)
     context = ssl.create_default_context(cafile='/certs/ca.crt')
     context.load_cert_chain('/certs/observer.crt', '/certs/observer.key')
     request = Request('https://witness:8443/verify',

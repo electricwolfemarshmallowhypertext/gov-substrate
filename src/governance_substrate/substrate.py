@@ -2039,7 +2039,10 @@ class Substrate:
                 logged_action = {"kind": "unknown", "action_sha256": digest(action)}
             if task_id is not None:
                 logged_action = {**logged_action, "task_id": task_id}
-            event_id = self._append(db, actor, logged_action, {"rule": rule}, decision, before, after,
+            policy = {"rule": rule}
+            if decision == "escalate" and rule == "cross_session_disabled":
+                policy["origin_session_id"] = session_id
+            event_id = self._append(db, actor, logged_action, policy, decision, before, after,
                                     elapsed_ms=(time.perf_counter() - started) * 1000)
             db.commit()
         result = {"event_id": event_id, "decision": decision, "reason": rule}
@@ -2212,6 +2215,21 @@ class Substrate:
         with self._execution_lock:
             return self._override(event_id, reason)
 
+    def _override_origin_live(self, db, target):
+        actor = target["actor"]
+        session_id = json.loads(target["policy"]).get("origin_session_id")
+        if session_id is None:
+            # Historical events had no explicit binding. Accept only an unambiguous origin.
+            sessions = json.loads(target["state_before"])["sessions"]
+            origins = [sid for sid, row in sessions.items() if row["actor"] == actor and row["active"]]
+            if len(origins) != 1:
+                return False
+            session_id = origins[0]
+        active = db.execute("SELECT 1 FROM sessions WHERE id=? AND actor=? AND active=1",
+                            (session_id, actor)).fetchone()
+        return bool(active) and self._task_session_live(db, session_id) and not self._stopped(
+            db, actor, "state", None)
+
     def _override(self, event_id: int, reason: str) -> dict[str, Any]:
         started = time.perf_counter()
         with self._db() as db:
@@ -2232,6 +2250,9 @@ class Substrate:
                     rule = "target_not_escalated"
                 elif db.execute("SELECT 1 FROM events WHERE override_of=?", (event_id,)).fetchone():
                     rule = "already_overridden"
+                elif (json.loads(target["policy"]).get("rule") == "cross_session_disabled" and
+                      not self._override_origin_live(db, target)):
+                    rule = "origin_authority_revoked"
                 else:
                     rule = None
             if rule is not None:
