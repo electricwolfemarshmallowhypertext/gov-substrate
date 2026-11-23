@@ -25,7 +25,9 @@ Event numbers below apply independently to both runs.
 
 ## Evidence identity
 
-Frozen base: `pre-Stanford-HAI`, `7e9aeac7eab8a1ef3939308f75346504b344e34f`. The runs used working-tree source on that base. The SHA-256 values below identify the actual tested file bytes. The raw local directories under `dist/housing-review/<run-id>/` contain the receipt, SQLite state, audit export, witness response and journal. Their hashes allow a local holder to check the evidence; the files are excluded from Git.
+The [H-001 evidence bundle](../evidence/H-001-evidence.zip) contains the original audit events, witness journal and response, final head, and receipt for each run. These files retain their original bytes, including the event fields required to reproduce each hash. Identifiers and one-way digests of randomly generated session tokens occur in the audit snapshots. Credentials, keys, SQLite databases, host logs and environment files are excluded.
+
+**Bundle SHA-256:** `fd32ce12084bc8eea0d0ff8f4a76d9690267f1c5d75170a8c74ab4cce05cbeea`. The archive includes a file-level checksum manifest. The run receipts record their frozen base, `pre-Stanford-HAI` at `7e9aeac7eab8a1ef3939308f75346504b344e34f`. The six measured source files match commit `908311810edd7a086aa37a9d43faa56b1924a9ac` byte for byte.
 
 | Run ID | Events | Witness head | Receipt SHA-256 |
 |---|---:|---|---|
@@ -41,14 +43,19 @@ Frozen base: `pre-Stanford-HAI`, `7e9aeac7eab8a1ef3939308f75346504b344e34f`. The
 | `src/governance_substrate/substrate.py` | `e7eb627610cc76f8073748893fec3af5d9f69d38009bc47108d5cdc8a0b66340` |
 | `src/governance_substrate/audit_witness.py` | `0c1967c33a5db90157c463d2ebace1342f05b172b67e88d340eae4263c3ac0e8` |
 
-From the repository root with the project test dependencies and `PYTHONPATH=src`, run the fixture with Python assertions enabled:
+### Verify the archived runs
+
+Use the source at `9083118` in a Python environment with the project and its test dependencies installed (`python -m pip install ".[test]"`). From the repository root, extract the ZIP into a fresh `h001-evidence` directory and run the existing verifier with assertions enabled:
 
 ```text
-python -B tests/housing_referral.py --approved-referral-reason "Approve referral because the two memos conflict"
-python -B tests/housing_referral.py --verify dist/housing-review/<run-id>
+python -m zipfile -e docs/evidence/H-001-evidence.zip h001-evidence
+python -B tests/housing_referral.py --verify h001-evidence/d804377f2f058757
+python -B tests/housing_referral.py --verify h001-evidence/7f10353f7508a107
 ```
 
-The first command replays the reviewer decision against fresh state. The second checks an archived event chain against its saved witness entries and head. Random IDs, timestamps and chain heads vary by run.
+If using a checkout of the original commit, supply the downloaded ZIP path on the first line. Each command invoking the verifier must exit zero and print the corresponding witness head from the table above. In a clean source export, both archived runs verified (60 events each); the same verifier rejected an altered copy of each audit. Archived records allow independent recomputation of chain and witness agreement. The stored witness responses are unsigned; offline verification alone cannot authenticate the historical witness or establish control of the original host.
+
+To replay the workflow with fresh synthetic state, run `python -B tests/housing_referral.py --approved-referral-reason "Approve referral because the two memos conflict"`. Random IDs, timestamps and chain heads vary across runs.
 
 ## Scope of the correction
 
