@@ -16,6 +16,7 @@ public guide, separate from private grant drafts and the research paper.
 | Can a real worker use an ungranted capability? | [Runtime conformance](evidence/Runtime-Conformance.md), [environment probes](evaluations/Environment-Skeleton-Evaluation.md), and [incident replay](evaluations/Incident-Derived-Escape-Evaluation.md) |
 | Does governed generation work across model paths? | [Local model matrix](evaluations/Local-Model-Matrix-Evaluation.md), [hosted validation](evaluations/Hosted-Object-Validation.md), and [generation adapters](Generation-Adapters.md) |
 | What happens after revocation or adapter compromise? | [Containment](evaluations/Containment-Evaluation.md) and [compromised host/provider evaluation](evaluations/Compromised-Host-Provider-Evaluation.md) |
+| Can a pending write still be approved after the originating authority is revoked? | In two scripted H-001 runs, a referral approved while authority was active persisted. After revocation, approval of a second pending write was denied. A successor recorded a note under a fresh task. [Evaluation and offline verification](https://github.com/electricwolfemarshmallowhypertext/gov-substrate/blob/v0.7.1/docs/evaluations/Housing-Referral-Evaluation.md) |
 | Can a remote runtime be checked before receiving governed input? | [Confidential Space evaluation plan and recorded results](evaluations/Google-Confidential-Space-Validation-Plan.md) |
 
 The frozen [manifest and raw results](evidence/evidence-freeze-2026-10-05/manifest.json)

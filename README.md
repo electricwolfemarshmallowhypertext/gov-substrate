@@ -6,7 +6,7 @@ Governance Substrate is a runtime layer that enforces what AI agents can access,
 
 > **Technical architecture:** [Substrate Reference Architecture](docs/Substrate-Reference-Architecture.md)
 
-Current source version: [v0.7.1](docs/releases/Release-v0.7.1.md)
+Current source version: [v0.7.1](https://github.com/electricwolfemarshmallowhypertext/gov-substrate/releases/tag/v0.7.1)
 
 > **TL;DR:** Agent intent is not authority. Governance Substrate places permissions, execution control, provenance, and audit beneath the agent so the system — not the prompt — decides what actions are allowed.
 
@@ -38,14 +38,14 @@ The project separates policy tests from real runtime evidence. Evaluation includ
 
 Start with the [research case and evidence](docs/Research-Case-and-Evidence.md). The canonical empirical baseline is the [Phase 10 evidence freeze](docs/evidence/Evidence-Freeze-2026-10-05.md).
 
-The [H-001 housing-policy evaluation](docs/evaluations/Housing-Referral-Evaluation.md) includes downloadable evidence and offline verification instructions for two scripted runs of a human-approved referral.
+In two scripted runs of the [H-001 housing-policy evaluation](docs/evaluations/Housing-Referral-Evaluation.md), the runtime denied the analyst's request to close the case and recorded the referral authorized by a human reviewer. After authority was revoked, the runtime rejected approval of a pending write. A replacement analyst received a fresh task and recorded a case note. All 120 audit events matched the separate witness records. The evaluation includes the evidence bundle and offline verification instructions.
 
 ## Research
 
 **Governance as Substrate: Engineering Patterns for Resilient Collective Systems — V2, September 2026 Revision**
 
 - [Research paper DOI](https://doi.org/10.5281/zenodo.23002435)
-- [v0.6.0 release notes](docs/releases/Release-v0.6.0.md)
+- [Historical v0.6.0 release notes](docs/releases/Release-v0.6.0.md)
 
 ## Scope
 

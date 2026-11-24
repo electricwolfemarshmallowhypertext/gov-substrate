@@ -1,6 +1,6 @@
 # H-001: operational authority in a synthetic housing referral
 
-**Research question.** Can a case analyst refer a disputed case to a human while the runtime prevents the analyst from closing it, including after responsibility transfers? In two local runs, the analyst's closure request was denied, the human-approved referral persisted, and the replacement analyst continued the case. Both obsolete approval attempts were denied. Across the two runs, 120 of 120 audit events matched the separate witness.
+**Research question.** Can a case analyst refer a disputed case to a human while the runtime prevents the analyst from closing it, including after responsibility transfers? In two local runs, the analyst's closure request was denied, the human-approved referral persisted, and the replacement analyst continued the case. In each run, the runtime denied one attempt to approve a write that was pending when authority was revoked. Across the two runs, 120 of 120 audit events matched the separate witness.
 
 Stanford HAI's law and policy grant describes research into reasoning under disagreement and tools that support professional judgment. H-001 evaluates the narrower operational question of which actions can take effect once a reviewer has made a decision. [Stanford HAI Hoffman-Yee research grants, 2026 recipients](https://hai.stanford.edu/research/grant-programs/hoffman-yee-research-grants?section=2026-grant-recipients)
 
@@ -17,15 +17,15 @@ Event numbers below apply independently to both runs.
 | Observation | Measured result |
 |---|---|
 | Delegation and access | A child request for a capability outside the parent's categories was rejected. The lead read its restricted exhibit. The analyst's read of that exhibit was denied. Both read back the assigned memos byte for byte. |
-| Disposition | Event 27 denied the analyst's closure request. Event 28 denied an override of that denial. Event 31 recorded the registrar's positive control on a separate key. No audited after-state contained a disposition for H-001. |
+| Disposition | Event 27 denied the analyst's closure request. Event 28 denied an override of that denial. Event 31 recorded the registrar's positive control on a separate key. The only `closed` value in final state belonged to the registrar's `positive-control` key. No audited after-state contained a disposition for H-001. |
 | Human approval | Event 32 escalated a persistent referral. Event 33 applied one reasoned override linked to 32. Event 34 denied a duplicate. |
 | Transfer and stale authority | Event 35 left a second write pending. Events 38–39 withdrew the lead's authority, revoking two tasks, two sessions, and one unused execution grant. Event 40 denied approval of event 35. The former task credential received HTTP 401, the old session was rejected, and the saved grant was verified revoked in SQLite. |
-| Successor control | The replacement actor received a fresh task, accessed both memos and recorded one session note. Grant replay was denied. The unrelated registrar remained functional. |
+| Successor control | The replacement analyst received a fresh task, read both source memos, and wrote one session note for H-001. The referral remained in the original analyst's persistent namespace. Grant replay was denied. The unrelated registrar remained functional. |
 | State and verification | Read-only SQLite inspection found exactly three rows per run: the analyst's referral, the successor's note, and the separate registrar control. Each observer recomputed all 60 hashes and compared event IDs, hashes and predecessors with the witness. A modified copy failed offline verification in each run. |
 
 ## Evidence identity
 
-The [H-001 evidence bundle](../evidence/H-001-evidence.zip) contains the original audit events, witness journal and response, final head, and receipt for each run. These files retain their original bytes, including the event fields required to reproduce each hash. Identifiers and one-way digests of randomly generated session tokens occur in the audit snapshots. Credentials, keys, SQLite databases, host logs and environment files are excluded.
+The [H-001 evidence bundle](../evidence/H-001-evidence.zip) contains the original audit events, witness journal and response, final head, and receipt for each run. The same ZIP is available as a [v0.7.1 release asset](https://github.com/electricwolfemarshmallowhypertext/gov-substrate/releases/download/v0.7.1/H-001-evidence.zip). These files retain their original bytes, including the event fields required to reproduce each hash. Identifiers and one-way digests of randomly generated session tokens occur in the audit snapshots. Credentials, keys, SQLite databases, host logs and environment files are excluded.
 
 **Bundle SHA-256:** `fd32ce12084bc8eea0d0ff8f4a76d9690267f1c5d75170a8c74ab4cce05cbeea`. The archive includes a file-level checksum manifest. The run receipts record their frozen base, `pre-Stanford-HAI` at `7e9aeac7eab8a1ef3939308f75346504b344e34f`. The six measured source files match commit `908311810edd7a086aa37a9d43faa56b1924a9ac` byte for byte.
 

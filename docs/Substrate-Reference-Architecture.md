@@ -1,13 +1,14 @@
 # Governance Substrate Reference Architecture
 
-This document describes the working reference implementation of the paper's distinction: policy declares what should happen; the substrate and execution boundary decide which **managed transitions and capability executions** become real. It covers published v0.7.0 and the subsequent fixes at commit `7128313a14c081f2dddb7ccb7d2ec7ba893903a1`. Historical runs retain their own source identities. The annotated `evidence-2026-10-05` tag freezes the earlier empirical baseline, while runtime-tested commit `1d46d46` identifies the implementation under test for that freeze.
+This document describes the working reference implementation of the paper's distinction: policy declares what should happen; the substrate and execution boundary decide which **managed transitions and capability executions** become real. It covers the v0.7.1 release. Historical runs retain their own source identities. The annotated `evidence-2026-10-05` tag freezes the earlier empirical baseline, while runtime-tested commit `1d46d46` identifies the implementation under test for that freeze.
 
 > Recorded evidence includes legitimate live-agent execution and specific runtime denials in the separate deployment. Claims apply to the named actions, source fingerprints and configurations; they do not establish general prompt-injection protection.
 
 That statement applies to the documented tests and environments. It is not a claim of universal confinement or proof of every possible runtime backend.
 
-- Published release: [Governance Substrate v0.7.0](https://github.com/electricwolfemarshmallowhypertext/gov-substrate/tree/v0.7.0), commit `03f715bde3f5f28c39870090036dc02e0e147f50`.
-- Reviewed source: [commit 7128313](https://github.com/electricwolfemarshmallowhypertext/gov-substrate/commit/7128313a14c081f2dddb7ccb7d2ec7ba893903a1), including the OpenShell startup and overflow-audit fixes. The v0.7.0 tag is unchanged.
+- Published release: [Governance Substrate v0.7.1](https://github.com/electricwolfemarshmallowhypertext/gov-substrate/releases/tag/v0.7.1), commit `309905a82648dbd6f3a9691358c29911fd23f838`.
+- H-001 source: the six measured files match commit `9083118`. The run receipts identify `pre-Stanford-HAI` at `7e9aeac` as their frozen baseline.
+- Earlier fixes: [commit 7128313](https://github.com/electricwolfemarshmallowhypertext/gov-substrate/commit/7128313a14c081f2dddb7ccb7d2ec7ba893903a1), including the OpenShell startup and overflow-audit fixes. The v0.7.0 tag points to `03f715bde3f5f28c39870090036dc02e0e147f50`.
 - Research basis: [Governance as Substrate, V2 — September 2026 Revision](https://doi.org/10.5281/zenodo.23002435)
 
 The paper PDF remains outside this repository because its prose is not distributed under the software license.
@@ -96,7 +97,7 @@ deployments must bound billing separately.
 
 ## Managed state boundary (Milestone 1)
 
-Actors authenticate with bearer tokens from environment variables or operator-issued task tokens. Legacy sessions replace the prior session for the same actor; task sessions are separate and bind to their task identity. Every valid proposal reaches one SQLite transaction that checks the capability registry, verifies the previous audit chain and committed state, makes a decision, and appends an event. An admitted `state.write` and its audit event commit together. A denied or escalated proposal leaves managed state unchanged and still produces an event. An authenticated operator can apply an escalated persistent write once, with a reason and an audit link to the original proposal.
+Actors authenticate with bearer tokens from environment variables or operator-issued task tokens. Legacy sessions replace the prior session for the same actor; task sessions are separate and bind to their task identity. Every valid proposal reaches one SQLite transaction that checks the capability registry, verifies the previous audit chain and committed state, makes a decision, and appends an event. An admitted `state.write` and its audit event commit together. A denied or escalated proposal leaves managed state unchanged and still produces an event. An authenticated operator can apply an escalated persistent write once, with a reason and an audit link to the original proposal. At approval time, the runtime checks that the originating session is still active for the original actor, its task is still live where applicable, and the actor's state circuit permits the write. If originating authority has been revoked, the runtime records a denial and leaves managed state unchanged. For older events without an explicit session binding, the original snapshot must identify exactly one active session for that actor. The same liveness and circuit checks apply.
 
 The state layer includes actor identity, explicit capabilities, session and persistent namespaces, prior events, and current health observations. The audit records actor, action, policy rule and registry digest, full managed state before and after, decision, timestamp, and override link. SQLite triggers reject ordinary updates and deletes of audit rows; a SHA-256 chain detects unauthorized changes to audit content. Direct changes to managed state are detected against the last admitted state snapshot on the next request.
 
@@ -628,6 +629,7 @@ Earlier evaluations document the failures that motivated scoped authority, persi
 
 - [Containment evaluation](evaluations/Containment-Evaluation.md)
 - [Scoped-authority evaluation](evaluations/Scoped-Authority-Evaluation.md)
+- [H-001 synthetic housing referral](evaluations/Housing-Referral-Evaluation.md) exercised a personnel change within one registry version. Task grants constrained capability categories and lifetime. Configured roles and object reader lists controlled access to individual resources.
 - [Sensitive-data egress evaluation](evaluations/Sensitive-Data-Egress-Evaluation.md)
 - [Object-provenance evaluation](evaluations/Object-Provenance-Evaluation.md)
 
